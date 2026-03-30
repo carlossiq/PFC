@@ -1,0 +1,17 @@
+{
+  "textual": {
+    "title": "TITLE",
+    "abstract": "ABS",
+    "claims": null,
+    "description": "ABS",
+    "full_text": null
+  },
+  "simple": {
+    "authors": "AUTH",
+    "affiliation": "AFFILORG",
+    "field_of_study": "SUBJAREA",
+    "keywords": "KEY",
+    "source_title": "SRCTITLE",
+    "year": "PUBYEAR"
+  }
+}

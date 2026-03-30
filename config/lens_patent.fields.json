@@ -1,0 +1,19 @@
+{
+  "api": "lens_patent",
+  "query_container": "query",
+  "field_map": {
+    "TITLE": "title",
+    "ABSTRACT": "abstract",
+    "YEAR": "year_published",
+    "APPLICANT": "applicant.name",
+    "INVENTOR": "inventor.name",
+    "CLAIMS": {
+      "preferred": "claim",
+      "aliases": ["claims"]
+    },
+    "DESCRIPTION": "description",
+    "FULL_TEXT": "full_text",
+    "IPC": "class_ipcr.symbol",
+    "CPC": "class_cpc.symbol"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "textual_fields": [
+    "TITLE",
+    "ABSTRACT",
+    "CLAIMS",
+    "DESCRIPTION",
+    "FULL_TEXT"
+  ],
+  "simple_fields": [
+    "IPC",
+    "CPC",
+    "AUTHORS",
+    "AFFILIATION",
+    "APPLICANT",
+    "INVENTOR",
+    "FIELD_OF_STUDY",
+    "KEYWORDS",
+    "SOURCE_TITLE",
+    "YEAR"
+  ],
+  "required_fields": [
+    "TITLE"
+  ],
+  "optional_fields": [
+    "ABSTRACT",
+    "CLAIMS",
+    "DESCRIPTION",
+    "FULL_TEXT",
+    "IPC",
+    "CPC",
+    "AUTHORS",
+    "AFFILIATION",
+    "APPLICANT",
+    "INVENTOR",
+    "FIELD_OF_STUDY",
+    "KEYWORDS",
+    "SOURCE_TITLE",
+    "YEAR"
+  ]
+}

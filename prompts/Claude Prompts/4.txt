@@ -1,0 +1,44 @@
+Use the existing project structure and implement only this module.
+Do not modify unrelated files.
+
+Act as a senior Python backend engineer and implement the query builder layer for a FastAPI technology prospecting API.
+
+Requirements:
+- code in English
+- function comments in Portuguese
+- full typing
+- no pseudocode
+
+Implement:
+- services/query_builders/base.py
+- services/query_builders/factory.py
+- services/query_builders/lens_patent_query_builder.py
+- services/query_builders/lens_scholarly_query_builder.py
+- services/query_builders/ops_query_builder.py
+- services/query_builders/scopus_query_builder.py
+
+Rules:
+- support search_mode="probe" and search_mode="general"
+- builders receive normalized LLM structured fields
+- builders must read field map JSON files
+- builders must apply API-specific syntax
+- builders must inject SEARCH_YEAR_FROM and SEARCH_YEAR_TO
+- builders must support boolean logic:
+  - different fields: AND by default
+  - groups inside same field: AND or OR
+  - terms inside same group: AND or OR
+  - always use parentheses
+  - support exclusions with NOT when present
+- builders must respect max query length
+
+Output:
+- Lens builders must return full JSON payload
+- Scopus builder must return full request params
+- OPS builder must return full CQL/request structure
+
+Important:
+- implement a functional first version
+- mark TODO where final query strategy is still open
+- do not invent hidden rules
+
+Return full code for all files.

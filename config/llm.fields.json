@@ -1,0 +1,81 @@
+{
+  "global_fields": {
+    "TITLE": {
+      "description": "Busca no título do documento.",
+      "source": ["scholarly", "patent"],
+      "api": ["lens_scholarly", "lens_patent", "ops", "scopus"]
+    },
+    "ABSTRACT": {
+      "description": "Busca no resumo do documento.",
+      "source": ["scholarly", "patent"],
+      "api": ["lens_scholarly", "lens_patent", "ops", "scopus"]
+    },
+    "YEAR": {
+      "description": "Filtro temporal por ano.",
+      "source": ["scholarly", "patent"],
+      "api": ["lens_scholarly", "lens_patent", "ops", "scopus"]
+    }
+  },
+  "api_specific_fields": {
+    "KEYWORDS": {
+      "description": "Busca nas palavras-chave do documento.",
+      "source": ["scholarly"],
+      "api": ["lens_scholarly", "scopus"]
+    },
+    "AUTHORS": {
+      "description": "Busca pelos autores do documento.",
+      "source": ["scholarly"],
+      "api": ["lens_scholarly", "scopus"]
+    },
+    "AFFILIATION": {
+      "description": "Busca pela afiliação institucional dos autores.",
+      "source": ["scholarly"],
+      "api": ["lens_scholarly", "scopus"]
+    },
+    "SOURCE_TITLE": {
+      "description": "Busca no nome da fonte de publicação.",
+      "source": ["scholarly"],
+      "api": ["lens_scholarly", "scopus"]
+    },
+    "FIELD_OF_STUDY": {
+      "description": "Busca por área de estudo ou área temática.",
+      "source": ["scholarly"],
+      "api": ["lens_scholarly", "scopus"]
+    },
+    "APPLICANT": {
+      "description": "Busca pelo depositante da patente.",
+      "source": ["patent"],
+      "api": ["lens_patent", "ops"]
+    },
+    "INVENTOR": {
+      "description": "Busca pelo inventor da patente.",
+      "source": ["patent"],
+      "api": ["lens_patent", "ops"]
+    },
+    "CLAIMS": {
+      "description": "Busca nas reivindicações da patente.",
+      "source": ["patent"],
+      "api": ["lens_patent", "ops"]
+    },
+    "DESCRIPTION": {
+      "description": "Busca na descrição detalhada da patente.",
+      "source": ["patent"],
+      "api": ["lens_patent"]
+    },
+    "FULL_TEXT": {
+      "description": "Busca em texto completo quando disponível/indexado.",
+      "source": ["scholarly", "patent"],
+      "api": ["lens_scholarly", "lens_patent", "ops"]
+    },
+    "IPC": {
+      "description": "Busca por classificação IPC.",
+      "source": ["patent"],
+      "api": ["lens_patent", "ops"]
+    },
+    "CPC": {
+      "description": "Busca por classificação CPC.",
+      "source": ["patent"],
+      "api": ["lens_patent", "ops"]
+    }
+  }
+}

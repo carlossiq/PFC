@@ -1,0 +1,42 @@
+Use the existing project structure and implement only this module.
+Do not modify unrelated files.
+
+Act as a senior Python backend engineer and implement the pipeline orchestrator for a FastAPI technology prospecting API.
+
+Requirements:
+- code in English
+- function comments in Portuguese
+- full typing
+- no pseudocode
+
+Implement:
+- pipeline/orchestrator.py
+
+Pipeline to orchestrate:
+1. receive intake input
+2. generate initial strategy via LLM
+3. execute probe search
+4. collect documents for semantic expansion
+5. extract terms with KeyBERT
+6. rerank documents/terms with SBERT
+7. generate final strategy for:
+   - patent
+   - scholarly
+8. execute real search on enabled APIs
+9. apply semantic relevance filter
+10. deduplicate
+11. normalize metadata
+12. persist filtered documents
+
+Rules:
+- generate run_id per request
+- preserve detailed stage outputs for test routes
+- continue on partial API failures
+- collect failures by API
+- keep orchestration separate from business services
+- support TEST_MODE
+
+Return:
+- full orchestrator code
+- typed result object for pipeline execution
+- TODOs only where truly open by design

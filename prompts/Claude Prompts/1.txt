@@ -1,0 +1,50 @@
+Use the existing project structure and implement only this module.
+Do not modify unrelated files.
+
+Act as a senior Python backend engineer and generate the foundation of a production-ready FastAPI project for a technology prospecting API.
+
+Requirements:
+- Python 3.12+
+- FastAPI
+- Uvicorn
+- .venv
+- Pydantic Settings
+- structured logging
+- environment loading from .env
+- typed code
+- modular architecture
+- code in English
+- function comments in Portuguese
+- no pseudocode
+
+Create:
+- project tree
+- app/main.py
+- core/config.py
+- core/logging.py
+- api/routes/health.py
+- base app startup
+- run_id generation per request
+- request logging middleware
+- .env.example
+- requirements.txt
+- README with setup instructions
+
+Architecture:
+app/
+  main.py
+  api/routes/
+  core/
+  schemas/
+  services/
+  pipeline/
+  db/
+  tests/
+
+Rules:
+- keep code functional
+- use clean separation of concerns
+- include complete imports
+- include TODO only where future design is intentionally open
+- do not implement business pipeline yet
+- return the full code for all created files

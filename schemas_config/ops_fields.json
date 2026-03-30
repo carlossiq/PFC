@@ -1,0 +1,17 @@
+{
+  "textual": {
+    "title": "title",
+    "abstract": "abstract",
+    "claims": "claims",
+    "description": "description",
+    "full_text": "text"
+  },
+  "simple": {
+    "ipc": "ipc",
+    "cpc": "cpc",
+    "authors": "inventor",
+    "applicant": "applicant",
+    "inventor": "inventor",
+    "year": "publication.date"
+  }
+}
