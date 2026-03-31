@@ -26,6 +26,7 @@ from services.nlp import (
 )
 from services.prompt import PromptLoader
 from services.query_builders import QueryBuilderFactory
+from services.search import LensService
 
 logger = get_logger(__name__)
 
@@ -679,3 +680,252 @@ async def test_field_schema(
             data={"error": str(exc)},
             run_id=run_id,
         )
+
+
+@router.post("/probe-search", response_model=SuccessResponse[dict[str, Any]])
+async def test_probe_search(
+    request: Request,
+    intake: InputIntake,
+) -> SuccessResponse[dict[str, Any]]:
+    """
+    Rota de teste para visualizar busca probe COMPLETA com API real.
+
+    Executa pipeline completo de probe:
+    1. Geração de estratégia via LLM
+    2. Construção de query Lens Patent
+    3. Busca na API Lens Patent (10 documentos)
+    4. Extração de dados dos documentos
+
+    Args:
+        request: Objeto da requisição.
+        intake: Entrada do usuário (theme, objective, keywords).
+
+    Returns:
+        Response com LLM strategy, query gerada e primeiros documentos encontrados.
+
+    Raises:
+        HTTPException: Se alguma etapa falhar.
+    """
+    import uuid
+
+    run_id = str(uuid.uuid4())
+
+    try:
+        logger.info(
+            "probe_search_test_started",
+            run_id=run_id,
+            theme=intake.theme,
+        )
+
+        # Etapa 1: Gerar estratégia via LLM
+        llm_service = LLMServiceFactory.get_instance()
+        field_schema_service = FieldSchemaService()
+
+        # Carregar prompt para probe
+        system_prompt = PromptLoader.load_probe_system_prompt()
+
+        # Obter campos dinâmicos para probe
+        probe_fields = field_schema_service.get_fields_for_probe()
+        probe_api = getattr(settings, "probe_api", "lens_patent")
+
+        logger.info(
+            "probe_search_llm_started",
+            run_id=run_id,
+            probe_api=probe_api,
+        )
+
+        # Processar com LLM
+        llm_output = await llm_service.process_intake(
+            intake=intake,
+            system_prompt=system_prompt,
+        )
+
+        # Normalizar saída
+        normalized_output = LLMOutputNormalizer.normalize(
+            llm_output,
+            enabled_fields=probe_fields,
+        )
+
+        logger.info(
+            "probe_search_llm_completed",
+            run_id=run_id,
+            active_fields=sum(normalized_output.get_active_fields().values()),
+        )
+
+        # Etapa 2: Construir query
+        builder = QueryBuilderFactory.create(probe_api, search_mode="probe")
+        query = builder.build_query(
+            llm_output=normalized_output,
+            year_from=getattr(settings, "search_year_from", 2015),
+            year_to=getattr(settings, "search_year_to", 2026),
+        )
+
+        logger.info(
+            "probe_search_query_built",
+            run_id=run_id,
+            query_size=query.get("size"),
+        )
+
+        # Etapa 3: Executar busca na API Lens Patent
+        lens_service = LensService()
+
+        logger.info("probe_search_api_started", run_id=run_id)
+
+        search_result = await lens_service.search_patent(
+            query=query,
+            run_id=run_id,
+        )
+
+        lens_service.close()
+
+        logger.info(
+            "probe_search_api_completed",
+            run_id=run_id,
+            success=search_result.success,
+            documents_found=search_result.results_returned,
+            total_available=search_result.total_count,
+        )
+
+        # Etapa 4: Extrair dados dos documentos
+        documents_sample = []
+        if search_result.success and search_result.results:
+            for doc in search_result.results:
+                doc_data = {
+                    "lens_id": doc.get("lens_id"),
+                    "title": _extract_title_from_doc(doc),
+                    "abstract": doc.get("abstract"),
+                    "publication_date": doc.get("date_published"),
+                    "jurisdiction": doc.get("jurisdiction"),
+                    "applicant": _extract_applicant_from_doc(doc),
+                    "inventor": _extract_inventor_from_doc(doc),
+                    "ipc_classifications": _extract_ipc_from_doc(doc),
+                    "cpc_classifications": _extract_cpc_from_doc(doc),
+                }
+                documents_sample.append(doc_data)
+
+        # Preparar resposta
+        response_data = {
+            "run_id": run_id,
+            "intake": {
+                "theme": intake.theme,
+                "description": intake.description,
+                "area_of_study": intake.area_of_study,
+                "keywords": intake.keywords,
+            },
+            "llm_strategy": {
+                "active_fields": normalized_output.get_active_fields(),
+                "field_count": sum(normalized_output.get_active_fields().values()),
+                "title": _safe_model_dump(normalized_output.title),
+                "abstract": _safe_model_dump(normalized_output.abstract),
+                "claims": _safe_model_dump(normalized_output.claims),
+                "ipc": _safe_model_dump(normalized_output.ipc),
+                "cpc": _safe_model_dump(normalized_output.cpc),
+            },
+            "query_generated": {
+                "api": probe_api,
+                "search_mode": "probe",
+                "size": query.get("size"),
+                "from": query.get("from"),
+                "has_query_bool": "query" in query and "bool" in query.get("query", {}),
+                "must_clauses_count": len(query.get("query", {}).get("bool", {}).get("must", [])),
+                "full_query": query,
+            },
+            "api_results": {
+                "api": "lens_patent",
+                "success": search_result.success,
+                "total_available": search_result.total_count,
+                "results_returned": search_result.results_returned,
+                "duration_seconds": round(search_result.duration_seconds, 2),
+                "error": search_result.error_message if not search_result.success else None,
+            },
+            "documents": {
+                "total_retrieved": len(documents_sample),
+                "samples": documents_sample,
+            },
+        }
+
+        logger.info(
+            "probe_search_test_completed",
+            run_id=run_id,
+            success=True,
+            documents_retrieved=len(documents_sample),
+        )
+
+        return SuccessResponse(
+            success=True,
+            data=response_data,
+            message=f"Probe search completed: {len(documents_sample)} documents found",
+            run_id=run_id,
+        )
+
+    except Exception as exc:
+        logger.error(
+            "probe_search_test_error",
+            error=str(exc),
+            error_type=type(exc).__name__,
+            run_id=run_id,
+            exc_info=True,
+        )
+
+        return SuccessResponse(
+            success=False,
+            data={"error": str(exc), "error_type": type(exc).__name__},
+            message=f"Probe search test failed: {str(exc)}",
+            run_id=run_id,
+        )
+
+
+def _safe_model_dump(obj: Any) -> dict | None:
+    """Converte modelo para dict de forma segura."""
+    if hasattr(obj, "is_empty") and obj.is_empty():
+        return None
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    return None
+
+
+def _extract_title_from_doc(doc: dict) -> str:
+    """Extrai título do documento Lens Patent."""
+    biblio = doc.get("biblio", {})
+    invention_titles = biblio.get("invention_title", [])
+    if invention_titles and isinstance(invention_titles, list):
+        return invention_titles[0].get("text", "N/A")
+    return "N/A"
+
+
+def _extract_applicant_from_doc(doc: dict) -> str:
+    """Extrai requerente do documento Lens Patent."""
+    biblio = doc.get("biblio", {})
+    parties = biblio.get("parties", {})
+    applicants = parties.get("applicants", [])
+    if applicants and isinstance(applicants, list):
+        return applicants[0].get("extracted_name", {}).get("value", "N/A")
+    return "N/A"
+
+
+def _extract_inventor_from_doc(doc: dict) -> str:
+    """Extrai inventor do documento Lens Patent."""
+    biblio = doc.get("biblio", {})
+    parties = biblio.get("parties", {})
+    inventors = parties.get("inventors", [])
+    if inventors and isinstance(inventors, list):
+        return inventors[0].get("extracted_name", {}).get("value", "N/A")
+    return "N/A"
+
+
+def _extract_ipc_from_doc(doc: dict) -> list[str]:
+    """Extrai classificações IPC do documento."""
+    classifications = doc.get("classifications_ipcr", {})
+    ipc_list = classifications.get("classifications", [])
+    if ipc_list:
+        return [c.get("symbol", "") for c in ipc_list[:3]]
+    return []
+
+
+def _extract_cpc_from_doc(doc: dict) -> list[str]:
+    """Extrai classificações CPC do documento."""
+    classifications = doc.get("classifications_cpc", {})
+    cpc_list = classifications.get("classifications", [])
+    if cpc_list:
+        return [c.get("symbol", "") for c in cpc_list[:3]]
+    return []

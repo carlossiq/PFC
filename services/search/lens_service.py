@@ -130,11 +130,15 @@ class LensService:
 
                 duration = time.time() - start_time
 
+                # API retorna "data" e "total"
+                results_list = data.get("data", [])
+                total = data.get("total")
+
                 logger.info(
                     "lens_search_success",
                     api_type=api_type,
-                    results_count=len(data.get("results", [])),
-                    total_count=data.get("total_count"),
+                    results_count=len(results_list) if isinstance(results_list, list) else 0,
+                    total_count=total,
                     duration=duration,
                     run_id=run_id,
                 )
@@ -143,9 +147,9 @@ class LensService:
                     api_name=f"lens_{api_type}",
                     success=True,
                     query=str(query),
-                    results=data.get("results", []),
-                    total_count=data.get("total_count"),
-                    results_returned=len(data.get("results", [])),
+                    results=results_list if isinstance(results_list, list) else [],
+                    total_count=total,
+                    results_returned=len(results_list) if isinstance(results_list, list) else 0,
                     retry_count=retry_count,
                     duration_seconds=duration,
                     run_id=run_id,

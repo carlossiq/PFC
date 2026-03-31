@@ -94,7 +94,7 @@ class LensPatentQueryBuilder(BaseQueryBuilder):
             payload["query"]["bool"]["must"].append(
                 {
                     "range": {
-                        "publication_date": {
+                        "date_published": {
                             "gte": f"{year_from}-01-01",
                             "lte": f"{year_to}-12-31",
                         }
@@ -109,12 +109,6 @@ class LensPatentQueryBuilder(BaseQueryBuilder):
             payload["size"] = getattr(settings, "final_top_k", 100)
 
         payload["from"] = 0
-
-        # Adicionar sorting
-        payload["sort"] = [{"publication_date": {"order": "desc"}}]
-
-        # Adicionar include de campos
-        payload["include"] = self._DEFAULT_INCLUDE
 
         logger.info(
             "lens_patent_query_built",

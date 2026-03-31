@@ -73,33 +73,30 @@ class FieldSchemaService:
         """
         Retorna lista de campos para busca PROBE.
 
-        Inclui campos que contêm:
-        - PROBE_API (ex: lens_patent)
-        - PROBE_API_EXT (ex: lens_scholarly) se configurado
+        Busca probe retorna APENAS campos GLOBAIS (TITLE, ABSTRACT)
+        que são universais e não dependem de API específica.
+
+        Isso garante que a busca probe seja agnóstica à API
+        e foque em termos amplos, não em metadados específicos.
 
         Returns:
-            Lista de nomes de campos disponíveis para a busca probe.
-            Ex: ["TITLE", "ABSTRACT", "CLAIMS", "IPC", "APPLICANT"]
+            Lista de nomes de campos globais para a busca probe.
+            Ex: ["TITLE", "ABSTRACT"]
         """
         cache_key = "probe"
         if cache_key in self.cache:
             return self.cache[cache_key]
 
-        probe_api = getattr(settings, "probe_api", "lens_patent")
-        probe_api_ext = getattr(settings, "probe_api_ext", "")
+        # Retornar APENAS campos globais para busca probe
+        global_fields = self.schema.get("global_fields", {})
+        fields = sorted(list(global_fields.keys()))
 
-        # APIs para incluir na busca probe
-        probe_apis = {probe_api}
-        if probe_api_ext and probe_api_ext.strip():  # Verificar se não está vazio
-            probe_apis.add(probe_api_ext)
-
-        fields = self._filter_fields_by_apis(probe_apis)
         self.cache[cache_key] = fields
 
         logger.info(
             "probe_fields_resolved",
-            probe_apis=list(probe_apis),
             field_count=len(fields),
+            fields=fields,
         )
 
         return fields
@@ -108,21 +105,26 @@ class FieldSchemaService:
         """
         Retorna dicionário {field_name: field_type} para busca PROBE.
 
+        Retorna APENAS campos globais (TITLE, ABSTRACT) com seus tipos.
+
         Returns:
-            Dict com campos e seus tipos. Ex: {"TITLE": "textual", "IPC": "simple"}
+            Dict com campos globais e seus tipos. Ex: {"TITLE": "textual", "ABSTRACT": "textual"}
         """
         cache_key = "probe_with_types"
         if cache_key in self.cache:
             return self.cache[cache_key]
 
-        probe_api = getattr(settings, "probe_api", "lens_patent")
-        probe_api_ext = getattr(settings, "probe_api_ext", None)
+        # Retornar APENAS campos globais com seus tipos
+        global_fields = self.schema.get("global_fields", {})
+        fields_with_types = {}
 
-        probe_apis = {probe_api}
-        if probe_api_ext:
-            probe_apis.add(probe_api_ext)
+        for field_name, field_config in global_fields.items():
+            field_type = field_config.get("field_type", "textual")
+            fields_with_types[field_name] = field_type
 
-        fields_with_types = self._filter_fields_by_apis_with_types(probe_apis)
+        # Ordenar por nome
+        fields_with_types = dict(sorted(fields_with_types.items()))
+
         self.cache[cache_key] = fields_with_types
 
         return fields_with_types
