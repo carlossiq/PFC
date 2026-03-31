@@ -23,12 +23,14 @@ class AnthropicLLMService(BaseLLMService):
     e retornar consultas estruturadas em JSON.
     """
 
-    def __init__(self, api_key: Optional[str] = None) -> None:
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None) -> None:
         """
         Inicializa o serviço Anthropic.
 
         Args:
             api_key: Chave de API do Anthropic Claude.
+            model: Versão do modelo Claude (ex: 'claude-3-5-sonnet-20241022').
+                   Se None, usa o padrão da configuração.
 
         Raises:
             ValueError: Se api_key não for fornecida.
@@ -37,6 +39,13 @@ class AnthropicLLMService(BaseLLMService):
             raise ValueError("Anthropic API key is required")
 
         super().__init__(api_key)
+
+        # Se model não for fornecido, tenta obter da configuração
+        if model is None:
+            from core.config import settings
+            model = settings.llm_anthropic_model
+
+        self.model = model
 
         try:
             from anthropic import Anthropic
@@ -97,11 +106,47 @@ class AnthropicLLMService(BaseLLMService):
             # Chamar Claude API
             response = await self._call_claude(system_prompt, user_message)
 
+            # Log raw response para debugging
+            logger.info(
+                "anthropic_raw_response",
+                theme=intake.theme,
+                response_length=len(response),
+                response_preview=response[:500] if response else "EMPTY",
+            )
+
             # Extrair JSON da resposta
-            json_output = self._extract_json(response)
+            try:
+                json_output = self._extract_json(response)
+            except ValueError as parse_exc:
+                logger.error(
+                    "anthropic_json_parse_failed",
+                    theme=intake.theme,
+                    error=str(parse_exc),
+                    raw_response=response,
+                )
+                raise
+
+            # Log JSON parseado ANTES de converter para LLMOutput
+            logger.info(
+                "anthropic_json_parsed",
+                theme=intake.theme,
+                json_keys=list(json_output.keys()),
+                abstract_exists="ABSTRACT" in json_output,
+                title_exists="TITLE" in json_output,
+                json_preview=str(json_output)[:500],
+            )
+
+            # Converter chaves de UPPERCASE para lowercase (Claude usa UPPERCASE)
+            json_output_normalized = {k.lower(): v for k, v in json_output.items()}
+
+            logger.info(
+                "anthropic_json_keys_normalized",
+                original_keys=list(json_output.keys()),
+                normalized_keys=list(json_output_normalized.keys()),
+            )
 
             # Validar e retornar
-            llm_output = LLMOutput(**json_output)
+            llm_output = LLMOutput(**json_output_normalized)
 
             logger.info(
                 "anthropic_processing_success",
@@ -134,15 +179,18 @@ class AnthropicLLMService(BaseLLMService):
             intake: Entrada do usuário.
 
         Returns:
-            Mensagem formatada com tema, objetivo e palavras-chave.
+            Mensagem formatada com tema, descrição, área de estudo e palavras-chave.
         """
         message = f"Theme: {intake.theme}\n"
 
-        if intake.objective:
-            message += f"Objective: {intake.objective}\n"
+        if intake.description:
+            message += f"Description: {intake.description}\n"
 
-        if intake.initial_keywords:
-            message += f"Initial Keywords: {', '.join(intake.initial_keywords)}\n"
+        if intake.area_of_study:
+            message += f"Area of Study: {intake.area_of_study}\n"
+
+        if intake.keywords:
+            message += f"Keywords: {', '.join(intake.keywords)}\n"
 
         return message
 
@@ -166,7 +214,7 @@ class AnthropicLLMService(BaseLLMService):
         """
         try:
             response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model=self.model,
                 max_tokens=4096,
                 system=system_prompt,
                 messages=[
@@ -184,6 +232,7 @@ class AnthropicLLMService(BaseLLMService):
             raise
 
     @staticmethod
+    @staticmethod
     def _extract_json(response: str) -> dict:
         """
         Extrai JSON da resposta do Claude.
@@ -199,13 +248,19 @@ class AnthropicLLMService(BaseLLMService):
         Raises:
             ValueError: Se JSON não for encontrado ou inválido.
         """
+        if not response or not response.strip():
+            raise ValueError("Empty response from Claude")
+
         # Tentar extrair JSON entre ```json e ```
         if "```json" in response:
             start = response.find("```json") + 7
             end = response.find("```", start)
             if end > start:
                 json_str = response[start:end].strip()
-                return json.loads(json_str)
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"Invalid JSON in ```json block: {exc}")
 
         # Tentar extrair JSON entre ``` e ```
         if "```" in response:
@@ -213,10 +268,13 @@ class AnthropicLLMService(BaseLLMService):
             end = response.find("```", start)
             if end > start:
                 json_str = response[start:end].strip()
-                return json.loads(json_str)
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"Invalid JSON in ``` block: {exc}")
 
         # Tentar parse direto
         try:
             return json.loads(response)
-        except json.JSONDecodeError:
-            raise ValueError("Could not extract valid JSON from Claude response")
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Could not parse response as JSON: {exc}. Response preview: {response[:200]}")

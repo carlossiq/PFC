@@ -1,0 +1,15 @@
+{
+  "api": "lens_scholarly",
+  "query_container": "query",
+  "field_map": {
+    "TITLE": "title",
+    "ABSTRACT": "abstract",
+    "YEAR": "year_published",
+    "KEYWORDS": "keyword",
+    "AUTHORS": "author.display_name",
+    "AFFILIATION": "author.affiliation.name",
+    "SOURCE_TITLE": "source.title",
+    "FIELD_OF_STUDY": "source.asjc_subject",
+    "FULL_TEXT": "full_text"
+  }
+}

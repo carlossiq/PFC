@@ -30,7 +30,7 @@ class PromptLoader:
         Carrega prompt do sistema geral.
 
         Lê arquivo general_system_prompt.txt que contém instruções
-        gerais para o LLM processar requisições de prospecção.
+        gerais para o LLM processar requisições de prospecção exploratória.
 
         Returns:
             Conteúdo do prompt do sistema.
@@ -46,7 +46,7 @@ class PromptLoader:
         Carrega prompt do sistema para modo probe.
 
         Lê arquivo probe_system_prompt.txt que contém instruções
-        otimizadas para o LLM em modo de teste/prova.
+        gerais para o LLM processar requisições de prospecção inicial.
 
         Returns:
             Conteúdo do prompt do sistema.
@@ -96,7 +96,9 @@ class PromptLoader:
 
         # Verificar existência
         if not prompt_path.exists():
-            logger.error(f"prompt_file_not_found", filename=filename, path=str(prompt_path))
+            logger.error(
+                f"prompt_file_not_found", filename=filename, path=str(prompt_path)
+            )
             raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
 
         # Carregar de arquivo

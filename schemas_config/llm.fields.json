@@ -1,40 +1,90 @@
 {
-  "textual_fields": [
-    "TITLE",
-    "ABSTRACT",
-    "CLAIMS",
-    "DESCRIPTION",
-    "FULL_TEXT"
-  ],
-  "simple_fields": [
-    "IPC",
-    "CPC",
-    "AUTHORS",
-    "AFFILIATION",
-    "APPLICANT",
-    "INVENTOR",
-    "FIELD_OF_STUDY",
-    "KEYWORDS",
-    "SOURCE_TITLE",
-    "YEAR"
-  ],
-  "required_fields": [
-    "TITLE"
-  ],
-  "optional_fields": [
-    "ABSTRACT",
-    "CLAIMS",
-    "DESCRIPTION",
-    "FULL_TEXT",
-    "IPC",
-    "CPC",
-    "AUTHORS",
-    "AFFILIATION",
-    "APPLICANT",
-    "INVENTOR",
-    "FIELD_OF_STUDY",
-    "KEYWORDS",
-    "SOURCE_TITLE",
-    "YEAR"
-  ]
+  "global_fields": {
+    "TITLE": {
+      "description": "Busca no título do documento.",
+      "field_type": "textual",
+      "source": ["scholarly", "patent"],
+      "api": ["lens_scholarly", "lens_patent", "ops", "scopus"]
+    },
+    "ABSTRACT": {
+      "description": "Busca no resumo do documento.",
+      "field_type": "textual",
+      "source": ["scholarly", "patent"],
+      "api": ["lens_scholarly", "lens_patent", "ops", "scopus"]
+    }
+  },
+  "api_specific_fields": {
+    "KEYWORDS": {
+      "description": "Busca nas palavras-chave do documento.",
+      "field_type": "textual",
+      "source": ["scholarly"],
+      "api": ["lens_scholarly", "scopus"]
+    },
+    "AUTHORS": {
+      "description": "Busca pelos autores do documento.",
+      "field_type": "simple",
+      "source": ["scholarly"],
+      "api": ["lens_scholarly", "scopus"]
+    },
+    "AFFILIATION": {
+      "description": "Busca pela afiliação institucional dos autores.",
+      "field_type": "simple",
+      "source": ["scholarly"],
+      "api": ["lens_scholarly", "scopus"]
+    },
+    "SOURCE_TITLE": {
+      "description": "Busca no nome da fonte de publicação.",
+      "field_type": "simple",
+      "source": ["scholarly"],
+      "api": ["lens_scholarly", "scopus"]
+    },
+    "FIELD_OF_STUDY": {
+      "description": "Busca por área de estudo ou área temática.",
+      "field_type": "simple",
+      "source": ["scholarly"],
+      "api": ["lens_scholarly", "scopus"]
+    },
+    "APPLICANT": {
+      "description": "Busca pelo depositante da patente.",
+      "field_type": "simple",
+      "source": ["patent"],
+      "api": ["lens_patent", "ops"]
+    },
+    "INVENTOR": {
+      "description": "Busca pelo inventor da patente.",
+      "field_type": "simple",
+      "source": ["patent"],
+      "api": ["lens_patent", "ops"]
+    },
+    "CLAIMS": {
+      "description": "Busca nas reivindicações da patente.",
+      "field_type": "textual",
+      "source": ["patent"],
+      "api": ["lens_patent", "ops"]
+    },
+    "DESCRIPTION": {
+      "description": "Busca na descrição detalhada da patente.",
+      "field_type": "textual",
+      "source": ["patent"],
+      "api": ["lens_patent"]
+    },
+    "FULL_TEXT": {
+      "description": "Busca em texto completo quando disponível/indexado.",
+      "field_type": "textual",
+      "source": ["scholarly", "patent"],
+      "api": ["lens_scholarly", "lens_patent", "ops"]
+    },
+    "IPC": {
+      "description": "Busca por classificação IPC.",
+      "field_type": "simple",
+      "source": ["patent"],
+      "api": ["lens_patent", "ops"]
+    },
+    "CPC": {
+      "description": "Busca por classificação CPC.",
+      "field_type": "simple",
+      "source": ["patent"],
+      "api": ["lens_patent", "ops"]
+    }
+  }
 }

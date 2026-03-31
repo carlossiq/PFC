@@ -14,6 +14,8 @@ from services.llm.mock_service import MockLLMService
 
 logger = get_logger(__name__)
 
+logger = get_logger(__name__)
+
 
 class LLMServiceFactory:
     """
@@ -47,13 +49,13 @@ class LLMServiceFactory:
             RuntimeError: Se nenhum serviço puder ser criado.
         """
         # Verificar modo de teste
-        test_mode = os.getenv("TEST_MODE", "false").lower() == "true"
+        test_mode = settings.test_mode
         if test_mode:
             logger.info("LLM factory: TEST_MODE enabled, using MockLLMService")
             return MockLLMService()
 
-        # Determinar provedor
-        provider = provider or os.getenv("LLM_PROVIDER", "mock").lower()
+        # Determinar provedor (usar settings em vez de os.getenv para respeitar .env)
+        provider = provider or settings.llm_provider.lower()
 
         # Criar baseado no provedor
         if provider == "gemini":
@@ -71,7 +73,7 @@ class LLMServiceFactory:
         Cria serviço Gemini.
 
         Args:
-            api_key: Chave de API (se None, tenta obter de LLM_GEMINI_API_KEY).
+            api_key: Chave de API (se None, tenta obter de settings).
 
         Returns:
             Instância de GeminiLLMService.
@@ -79,14 +81,15 @@ class LLMServiceFactory:
         Raises:
             ValueError: Se API key não estiver disponível.
         """
-        api_key = api_key or os.getenv("LLM_GEMINI_API_KEY")
+        api_key = api_key or settings.llm_gemini_api_key
+        model = settings.llm_gemini_model
 
         if not api_key:
             logger.warning("Gemini API key not found, falling back to mock")
             return MockLLMService()
 
         try:
-            service = GeminiLLMService(api_key=api_key)
+            service = GeminiLLMService(api_key=api_key, model=model)
             if service.is_available():
                 logger.info("LLM factory: Gemini service created successfully")
                 return service
@@ -103,7 +106,7 @@ class LLMServiceFactory:
         Cria serviço Anthropic.
 
         Args:
-            api_key: Chave de API (se None, tenta obter de LLM_ANTHROPIC_API_KEY).
+            api_key: Chave de API (se None, tenta obter de settings).
 
         Returns:
             Instância de AnthropicLLMService.
@@ -111,14 +114,15 @@ class LLMServiceFactory:
         Raises:
             ValueError: Se API key não estiver disponível.
         """
-        api_key = api_key or os.getenv("LLM_ANTHROPIC_API_KEY")
+        api_key = api_key or settings.llm_anthropic_api_key
+        model = settings.llm_anthropic_model
 
         if not api_key:
             logger.warning("Anthropic API key not found, falling back to mock")
             return MockLLMService()
 
         try:
-            service = AnthropicLLMService(api_key=api_key)
+            service = AnthropicLLMService(api_key=api_key, model=model)
             if service.is_available():
                 logger.info("LLM factory: Anthropic service created successfully")
                 return service

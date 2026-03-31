@@ -23,12 +23,16 @@ class GeminiLLMService(BaseLLMService):
     e retornar consultas estruturadas em JSON.
     """
 
-    def __init__(self, api_key: Optional[str] = None) -> None:
+    def __init__(
+        self, api_key: Optional[str] = None, model: Optional[str] = None
+    ) -> None:
         """
         Inicializa o serviço Gemini.
 
         Args:
             api_key: Chave de API do Google Gemini.
+            model: Versão do modelo Gemini (ex: 'gemini-2.0-flash-exp').
+                   Se None, usa o padrão da configuração.
 
         Raises:
             ValueError: Se api_key não for fornecida.
@@ -38,10 +42,18 @@ class GeminiLLMService(BaseLLMService):
 
         super().__init__(api_key)
 
+        # Se model não for fornecido, tenta obter da configuração
+        if model is None:
+            from core.config import settings
+
+            model = settings.llm_gemini_model
+
+        self.model = model
+
         try:
             import google.generativeai as genai
 
-            self.client = genai.GenerativeModel("gemini-2.0-flash-exp")
+            self.client = genai.GenerativeModel(self.model)
             genai.configure(api_key=api_key)
             self._is_available = True
         except ImportError:
@@ -98,11 +110,47 @@ class GeminiLLMService(BaseLLMService):
             # Chamar Gemini API
             response = await self._call_gemini(system_prompt, user_message)
 
+            # Log raw response para debugging
+            logger.info(
+                "gemini_raw_response",
+                theme=intake.theme,
+                response_length=len(response),
+                response_preview=response[:500] if response else "EMPTY",
+            )
+
             # Extrair JSON da resposta
-            json_output = self._extract_json(response)
+            try:
+                json_output = self._extract_json(response)
+            except ValueError as parse_exc:
+                logger.error(
+                    "gemini_json_parse_failed",
+                    theme=intake.theme,
+                    error=str(parse_exc),
+                    raw_response=response,
+                )
+                raise
+
+            # Log JSON parseado ANTES de converter para LLMOutput
+            logger.info(
+                "gemini_json_parsed",
+                theme=intake.theme,
+                json_keys=list(json_output.keys()),
+                abstract_exists="ABSTRACT" in json_output,
+                title_exists="TITLE" in json_output,
+                json_preview=str(json_output)[:500],
+            )
+
+            # Converter chaves de UPPERCASE para lowercase (Gemini usa UPPERCASE)
+            json_output_normalized = {k.lower(): v for k, v in json_output.items()}
+
+            logger.info(
+                "gemini_json_keys_normalized",
+                original_keys=list(json_output.keys()),
+                normalized_keys=list(json_output_normalized.keys()),
+            )
 
             # Validar e retornar
-            llm_output = LLMOutput(**json_output)
+            llm_output = LLMOutput(**json_output_normalized)
 
             logger.info(
                 "gemini_processing_success",
@@ -135,15 +183,18 @@ class GeminiLLMService(BaseLLMService):
             intake: Entrada do usuário.
 
         Returns:
-            Mensagem formatada com tema, objetivo e palavras-chave.
+            Mensagem formatada com tema, descrição, área de estudo e palavras-chave.
         """
         message = f"Theme: {intake.theme}\n"
 
-        if intake.objective:
-            message += f"Objective: {intake.objective}\n"
+        if intake.description:
+            message += f"Description: {intake.description}\n"
 
-        if intake.initial_keywords:
-            message += f"Initial Keywords: {', '.join(intake.initial_keywords)}\n"
+        if intake.area_of_study:
+            message += f"Area of Study: {intake.area_of_study}\n"
+
+        if intake.keywords:
+            message += f"Keywords: {', '.join(intake.keywords)}\n"
 
         return message
 
@@ -153,7 +204,7 @@ class GeminiLLMService(BaseLLMService):
         user_message: str,
     ) -> str:
         """
-        Faz chamada à API Gemini.
+        Faz chamada à API Gemini de forma assíncrona.
 
         Args:
             system_prompt: Prompt do sistema.
@@ -169,8 +220,8 @@ class GeminiLLMService(BaseLLMService):
             # Combinar prompts
             full_prompt = f"{system_prompt}\n\n{user_message}"
 
-            # Fazer chamada (síncrona pois API Gemini não é async)
-            response = self.client.generate_content(full_prompt)
+            # Fazer chamada assíncrona à API
+            response = await self.client.generate_content_async(full_prompt)
 
             return response.text
 
@@ -178,6 +229,7 @@ class GeminiLLMService(BaseLLMService):
             logger.error(f"Gemini API call failed: {exc}")
             raise
 
+    @staticmethod
     @staticmethod
     def _extract_json(response: str) -> dict:
         """
@@ -194,13 +246,19 @@ class GeminiLLMService(BaseLLMService):
         Raises:
             ValueError: Se JSON não for encontrado ou inválido.
         """
+        if not response or not response.strip():
+            raise ValueError("Empty response from Gemini")
+
         # Tentar extrair JSON entre ```json e ```
         if "```json" in response:
             start = response.find("```json") + 7
             end = response.find("```", start)
             if end > start:
                 json_str = response[start:end].strip()
-                return json.loads(json_str)
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"Invalid JSON in ```json block: {exc}")
 
         # Tentar extrair JSON entre ``` e ```
         if "```" in response:
@@ -208,10 +266,13 @@ class GeminiLLMService(BaseLLMService):
             end = response.find("```", start)
             if end > start:
                 json_str = response[start:end].strip()
-                return json.loads(json_str)
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"Invalid JSON in ``` block: {exc}")
 
         # Tentar parse direto
         try:
             return json.loads(response)
-        except json.JSONDecodeError:
-            raise ValueError("Could not extract valid JSON from Gemini response")
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Could not parse response as JSON: {exc}. Response preview: {response[:200]}")

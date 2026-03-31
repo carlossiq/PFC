@@ -1,13 +1,19 @@
 """
-Query builder for Lens Patent API.
+Query builder para Lens Patent API com sintaxe query_string.
+
+Gera queries Elasticsearch com:
+- Sintaxe booleana (AND/OR/NOT) em query_string
+- Support para campos textuais com grupos
+- Campos simples como termos
+- Paginação e sorting
+- Include específico de campos
 """
 
-import json
-from pathlib import Path
 from typing import Any, Optional
 
+from core.config import settings
 from core.logging import get_logger
-from schemas.llm import LLMOutput, SimpleFieldQuery, TermGroup, TextualFieldQuery
+from schemas.llm import LLMOutput, SimpleFieldQuery, TextualFieldQuery
 from services.query_builders.base import BaseQueryBuilder
 
 logger = get_logger(__name__)
@@ -15,262 +21,226 @@ logger = get_logger(__name__)
 
 class LensPatentQueryBuilder(BaseQueryBuilder):
     """
-    Construtor de consultas para Lens Patent API.
+    Construtor de queries para Lens Patent API.
 
-    Transforma saída normalizada do LLM em JSON payload específico
-    da Lens Patent API, aplicando sintaxe e regras de busca booleana.
+    Transforma LLMOutput em query Elasticsearch com sintaxe booleana.
     """
 
-    # Configurações da API
-    _MAX_QUERY_LENGTH = 50000
-    _FIELD_MAP_FILE = Path(__file__).parent.parent.parent / "schemas_config" / "lens_patent_fields.json"
+    _DEFAULT_INCLUDE = [
+        "lens_id",
+        "title",
+        "abstract",
+        "publication_date",
+        "jurisdiction",
+        "doc_key",
+        "inventor",
+        "applicant",
+        "cpc_classifications",
+        "ipc_classifications",
+    ]
 
     def __init__(self, api_name: str = "lens_patent", search_mode: str = "general") -> None:
         """
-        Inicializa o construtor Lens Patent.
+        Inicializa o builder Lens Patent.
 
         Args:
             api_name: Nome da API.
-            search_mode: Modo de busca (probe ou general).
+            search_mode: 'probe' ou 'general'.
         """
         super().__init__(api_name, search_mode)
-        self.field_map = self._load_field_map()
 
     @property
     def api_identifier(self) -> str:
-        """
-        Identificador da Lens Patent API.
-        """
+        """Identificador Lens Patent."""
         return "lens.org/patent"
 
     @property
     def max_query_length(self) -> int:
-        """
-        Comprimento máximo de consulta Lens Patent.
-        """
-        return self._MAX_QUERY_LENGTH
+        """Comprimento máximo de query para Lens Patent API."""
+        return 50000
 
     def build_query(
         self,
         llm_output: LLMOutput,
-        year_from: int,
-        year_to: int,
+        year_from: int = 0,
+        year_to: int = 0,
     ) -> dict[str, Any]:
         """
-        Constrói payload JSON para Lens Patent API.
+        Constrói query para Lens Patent API.
 
         Args:
             llm_output: Saída normalizada do LLM.
-            year_from: Ano inicial (SEARCH_YEAR_FROM).
-            year_to: Ano final (SEARCH_YEAR_TO).
+            year_from: Ano inicial (0 = não usar).
+            year_to: Ano final (0 = não usar).
 
         Returns:
-            Dicionário com payload para Lens API.
+            Query payload para Lens API.
         """
-        # Iniciar payload
         payload = {
-            "query": {
-                "bool": {
-                    "must": [],
-                }
-            }
+            "query": {"bool": {"must": []}},
         }
 
-        # Construir consultas booleanas para campos textuais
-        for field_name in ["title", "abstract", "claims", "description", "full_text"]:
-            field_value = getattr(llm_output, field_name)
+        # Construir query_string com sintaxe booleana
+        query_parts = self._build_query_string_parts(llm_output)
 
-            if not field_value.is_empty():
-                lens_field = self.field_map.get("textual", {}).get(field_name)
-
-                if lens_field:
-                    query_clause = self._build_textual_query(field_value, lens_field)
-                    payload["query"]["bool"]["must"].append(query_clause)
-
-        # Construir consultas para campos simples
-        for field_name in [
-            "ipc",
-            "cpc",
-            "authors",
-            "affiliation",
-            "applicant",
-            "inventor",
-            "field_of_study",
-            "keywords",
-            "source_title",
-            "year",
-        ]:
-            field_value = getattr(llm_output, field_name)
-
-            if not field_value.is_empty():
-                lens_field = self.field_map.get("simple", {}).get(field_name)
-
-                if lens_field:
-                    query_clause = self._build_simple_query(field_value, lens_field)
-                    payload["query"]["bool"]["must"].append(query_clause)
-
-        # Injetar intervalo de anos
-        date_query = self._build_date_query(year_from, year_to)
-        if date_query:
-            payload["query"]["bool"]["must"].append(date_query)
-
-        # Validar comprimento
-        query_str = json.dumps(payload)
-        if len(query_str) > self.max_query_length:
-            logger.warning(
-                "query_exceeds_max_length",
-                api=self.api_name,
-                length=len(query_str),
-                max=self.max_query_length,
+        if query_parts:
+            query_string = " AND ".join(query_parts)
+            payload["query"]["bool"]["must"].append(
+                {"query_string": {"query": query_string}}
             )
+
+        # Adicionar range de anos se válido
+        if year_from > 0 and year_to > 0 and year_from <= year_to:
+            payload["query"]["bool"]["must"].append(
+                {
+                    "range": {
+                        "publication_date": {
+                            "gte": f"{year_from}-01-01",
+                            "lte": f"{year_to}-12-31",
+                        }
+                    }
+                }
+            )
+
+        # Adicionar tamanho baseado em search_mode
+        if self.search_mode == "probe":
+            payload["size"] = getattr(settings, "probe_top_k", 10)
+        else:
+            payload["size"] = getattr(settings, "final_top_k", 100)
+
+        payload["from"] = 0
+
+        # Adicionar sorting
+        payload["sort"] = [{"publication_date": {"order": "desc"}}]
+
+        # Adicionar include de campos
+        payload["include"] = self._DEFAULT_INCLUDE
 
         logger.info(
             "lens_patent_query_built",
             search_mode=self.search_mode,
-            query_length=len(query_str),
+            size=payload["size"],
+            has_must_clauses=len(payload["query"]["bool"]["must"]),
         )
 
         return payload
 
-    def _build_textual_query(
-        self,
-        field: TextualFieldQuery,
-        lens_field: str,
-    ) -> dict[str, Any]:
+    def _build_query_string_parts(self, llm_output: LLMOutput) -> list[str]:
         """
-        Constrói cláusula booleana para campo textual.
+        Constrói partes da query_string com sintaxe booleana.
 
         Args:
-            field: Campo textual estruturado.
-            lens_field: Nome do campo na Lens API.
+            llm_output: Saída do LLM.
 
         Returns:
-            Cláusula de consulta booleana.
+            Lista de partes que serão combinadas com AND.
         """
-        # Construir grupos de termos
-        group_queries = []
+        parts = []
+
+        # Processar campos textuais (usar nomes da Lens Patent API)
+        textual_fields = [
+            ("title", "title"),
+            ("abstract", "abstract"),
+            ("claims", "claim"),  # Lens Patent usa "claim" (singular)
+            ("description", "description"),
+            ("full_text", "full_text"),
+        ]
+
+        for field_attr, field_name in textual_fields:
+            field_value = getattr(llm_output, field_attr)
+
+            if not field_value.is_empty():
+                field_query = self._build_textual_field_query(field_value, field_name)
+                if field_query:
+                    parts.append(field_query)
+
+        # Processar campos simples (usar nomes da Lens Patent API)
+        simple_fields = [
+            ("ipc", "class_ipcr.symbol"),
+            ("cpc", "class_cpc.symbol"),
+            ("applicant", "applicant.name"),
+            ("inventor", "inventor.name"),
+        ]
+
+        for field_attr, field_name in simple_fields:
+            field_value = getattr(llm_output, field_attr)
+
+            if not field_value.is_empty():
+                field_query = self._build_simple_field_query(field_value, field_name)
+                if field_query:
+                    parts.append(field_query)
+
+        return parts
+
+    def _build_textual_field_query(
+        self,
+        field: TextualFieldQuery,
+        field_name: str,
+    ) -> Optional[str]:
+        """
+        Constrói parte de query_string para campo textual.
+
+        Formato: field:(term1 OR term2) AND (term3 OR term4)
+
+        Args:
+            field: Campo textual com grupos.
+            field_name: Nome do campo.
+
+        Returns:
+            String com sintaxe booleana ou None.
+        """
+        if not field.groups:
+            return None
+
+        group_parts = []
 
         for group in field.groups:
             if not group.terms:
                 continue
 
-            # Combinar termos do grupo com operador
-            if group.operator.value == "OR":
-                term_query = {
-                    "multi_match": {
-                        "query": " OR ".join(group.terms),
-                        "fields": [lens_field],
-                    }
-                }
-            else:  # AND
-                term_query = {
-                    "multi_match": {
-                        "query": " AND ".join(group.terms),
-                        "fields": [lens_field],
-                    }
-                }
+            # Construir grupo com OR
+            terms_str = " OR ".join(f'"{term}"' if " " in term else term for term in group.terms)
 
-            group_queries.append(term_query)
+            if len(group.terms) > 1:
+                group_part = f"({terms_str})"
+            else:
+                group_part = terms_str
 
-        # Combinar grupos com group_operator
-        if len(group_queries) == 1:
-            return group_queries[0]
-        elif field.group_operator.value == "AND":
-            return {"bool": {"must": group_queries}}
-        else:  # OR
-            return {"bool": {"should": group_queries, "minimum_should_match": 1}}
+            group_parts.append(group_part)
 
-    def _build_simple_query(
-        self,
-        field: SimpleFieldQuery,
-        lens_field: str,
-    ) -> dict[str, Any]:
-        """
-        Constrói cláusula booleana para campo simples.
-
-        Args:
-            field: Campo simples com lista de valores.
-            lens_field: Nome do campo na Lens API.
-
-        Returns:
-            Cláusula de consulta.
-        """
-        # TODO: Definir estratégia final para campos simples (term vs match)
-        # Opções: 'terms' para busca exata, 'match' para busca fuzzy
-
-        if len(field.values) == 1:
-            return {"term": {lens_field: field.values[0]}}
-        else:
-            return {"terms": {lens_field: field.values}}
-
-    def _build_date_query(self, year_from: int, year_to: int) -> Optional[dict[str, Any]]:
-        """
-        Constrói cláusula de intervalo de anos.
-
-        Args:
-            year_from: Ano inicial.
-            year_to: Ano final.
-
-        Returns:
-            Cláusula de range ou None se inválido.
-        """
-        if year_from <= 0 or year_to <= 0 or year_from > year_to:
+        if not group_parts:
             return None
 
-        # TODO: Confirmar nome do campo de data na Lens API (publication_date, filing_date)
-        return {
-            "range": {
-                "publication_date": {
-                    "gte": f"{year_from}-01-01",
-                    "lte": f"{year_to}-12-31",
-                }
-            }
-        }
+        # Combinar grupos com AND (ou OR baseado em group_operator)
+        if field.group_operator.value == "AND":
+            return f"{field_name}:({' AND '.join(group_parts)})"
+        else:  # OR
+            return f"{field_name}:({' OR '.join(group_parts)})"
 
-    def _load_field_map(self) -> dict[str, dict[str, str]]:
+    def _build_simple_field_query(
+        self,
+        field: SimpleFieldQuery,
+        field_name: str,
+    ) -> Optional[str]:
         """
-        Carrega mapa de campos da Lens Patent API.
+        Constrói parte de query_string para campo simples.
+
+        Formato: field:(value1 OR value2)
+
+        Args:
+            field: Campo simples com valores.
+            field_name: Nome do campo.
 
         Returns:
-            Dicionário com mapeamento de campos.
+            String com sintaxe booleana ou None.
         """
-        if not self._FIELD_MAP_FILE.exists():
-            logger.warning(f"Field map file not found: {self._FIELD_MAP_FILE}")
-            return self._get_default_field_map()
+        if not field.values:
+            return None
 
-        try:
-            with open(self._FIELD_MAP_FILE, "r") as f:
-                return json.load(f)
-        except Exception as exc:
-            logger.error(f"Failed to load field map: {exc}")
-            return self._get_default_field_map()
+        # Combinar valores com OR
+        values_str = " OR ".join(f'"{v}"' if " " in v else v for v in field.values)
 
-    @staticmethod
-    def _get_default_field_map() -> dict[str, dict[str, str]]:
-        """
-        Retorna mapa de campos padrão.
-
-        Returns:
-            Mapa padrão com campos conhecidos.
-        """
-        return {
-            "textual": {
-                "title": "publication.title",
-                "abstract": "publication.abstract",
-                "claims": "claims.text",
-                "description": "description",
-                "full_text": "full_text",
-            },
-            "simple": {
-                "ipc": "classifications.ipc_code",
-                "cpc": "classifications.cpc_code",
-                "authors": "publication.authors",
-                "affiliation": "publication.author_affiliations",
-                "applicant": "applicant",
-                "inventor": "inventor",
-                "field_of_study": "technology_field",
-                "keywords": "keywords",
-                "source_title": "publication.source",
-                "year": "publication_year",
-            },
-        }
+        if len(field.values) > 1:
+            return f"{field_name}:({values_str})"
+        else:
+            return f"{field_name}:{values_str}"

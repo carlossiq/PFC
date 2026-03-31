@@ -1,13 +1,16 @@
 """
 Field schema service for managing LLM field configurations.
+
+Gerencia esquemas de campos dinâmicos baseados em:
+- Campos globais (disponíveis em todas as APIs)
+- Campos específicos de API (apenas em certas APIs)
 """
 
 import json
 from pathlib import Path
-from typing import Optional
 
+from core.config import settings
 from core.logging import get_logger
-from schemas.llm import LLMOutput
 
 logger = get_logger(__name__)
 
@@ -16,106 +19,265 @@ class FieldSchemaService:
     """
     Gerencia esquemas de campos para diferentes APIs e modos de busca.
 
-    Carrega configurações de campos de arquivos JSON e fornece
-    esquemas estruturados para o LLM e validação de output.
+    Carrega configurações de campos de llm.fields.json e fornece
+    listas de campos disponíveis com base em:
+    - PROBE_API configurada (busca inicial)
+    - PROBE_API_EXT (busca secundária inicial, opcional)
+    - Todas as APIs habilitadas (busca final/exploratória)
+
+    A classificação de campos (textual vs simple) é responsabilidade
+    do QueryBuilder, não deste serviço. Aqui apenas retornamos a lista
+    de campos disponíveis que a LLM deve preencher.
     """
 
-    # Diretório de esquemas (relativo ao raiz do projeto)
+    # Diretório de esquemas
     SCHEMA_DIR = Path(__file__).parent.parent.parent / "schemas_config"
 
     def __init__(self) -> None:
         """
-        Inicializa o serviço de esquema de campos.
-
-        Tenta carregar arquivo de campos geral se existir.
+        Inicializa o serviço e carrega esquema de campos.
         """
-        self.fields_cache: dict[str, dict] = {}
-        self.api_maps: dict[str, dict] = {}
+        self.schema: dict = {}
+        self.cache: dict[str, dict] = {}
 
         # Criar diretório se não existir
         self.SCHEMA_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Carregar campos gerais se existirem
+        # Carregar esquema de campos
+        self._load_schema()
+
+    def _load_schema(self) -> None:
+        """
+        Carrega llm.fields.json com estrutura:
+        {
+            "global_fields": {...},
+            "api_specific_fields": {...}
+        }
+        """
+        schema_file = self.SCHEMA_DIR / "llm.fields.json"
+
+        if not schema_file.exists():
+            logger.warning(f"Schema file not found: {schema_file}, using defaults")
+            self.schema = self._get_default_schema()
+            return
+
         try:
-            self._load_general_fields()
-        except FileNotFoundError:
-            logger.warning("General fields file not found, using defaults")
+            with open(schema_file, "r") as f:
+                self.schema = json.load(f)
+            logger.info("schema_loaded", file=str(schema_file))
+        except Exception as exc:
+            logger.error(f"Failed to load schema: {exc}, using defaults")
+            self.schema = self._get_default_schema()
 
-    def _load_general_fields(self) -> None:
+    def get_fields_for_probe(self) -> list[str]:
         """
-        Carrega arquivo geral de campos.
+        Retorna lista de campos para busca PROBE.
 
-        Raises:
-            FileNotFoundError: Se arquivo não existir.
-        """
-        fields_file = self.SCHEMA_DIR / "llm.fields.json"
-
-        if not fields_file.exists():
-            raise FileNotFoundError(f"Fields file not found: {fields_file}")
-
-        with open(fields_file, "r") as f:
-            self.fields_cache["general"] = json.load(f)
-
-        logger.info("general_fields_loaded", file=str(fields_file))
-
-    def get_llm_fields_for_api(
-        self,
-        api_name: str,
-        search_mode: str,
-        source_type: str,
-    ) -> dict[str, dict]:
-        """
-        Obtém campos LLM para uma API específica.
-
-        Carrega mapa de campos específico da API se disponível,
-        caso contrário usa campos gerais.
-
-        Args:
-            api_name: Nome da API (e.g., 'uspto', 'wipo', 'scopus').
-            search_mode: Modo de busca ('probe' ou 'full').
-            source_type: Tipo de fonte ('patent' ou 'publication').
+        Inclui campos que contêm:
+        - PROBE_API (ex: lens_patent)
+        - PROBE_API_EXT (ex: lens_scholarly) se configurado
 
         Returns:
-            Dicionário com esquema de campos para a API.
+            Lista de nomes de campos disponíveis para a busca probe.
+            Ex: ["TITLE", "ABSTRACT", "CLAIMS", "IPC", "APPLICANT"]
         """
-        cache_key = f"{api_name}_{search_mode}_{source_type}"
+        cache_key = "probe"
+        if cache_key in self.cache:
+            return self.cache[cache_key]
 
-        # Verificar cache
-        if cache_key in self.fields_cache:
-            return self.fields_cache[cache_key]
+        probe_api = getattr(settings, "probe_api", "lens_patent")
+        probe_api_ext = getattr(settings, "probe_api_ext", "")
 
-        # Tentar carregar arquivo específico da API
-        api_file = self.SCHEMA_DIR / f"llm.fields.{api_name}.json"
+        # APIs para incluir na busca probe
+        probe_apis = {probe_api}
+        if probe_api_ext and probe_api_ext.strip():  # Verificar se não está vazio
+            probe_apis.add(probe_api_ext)
 
-        if api_file.exists():
-            try:
-                with open(api_file, "r") as f:
-                    api_fields = json.load(f)
+        fields = self._filter_fields_by_apis(probe_apis)
+        self.cache[cache_key] = fields
 
-                # Filtrar por search_mode e source_type se estruturado assim
-                if isinstance(api_fields, dict):
-                    fields = api_fields.get(search_mode, {}).get(source_type, api_fields)
-                else:
-                    fields = api_fields
+        logger.info(
+            "probe_fields_resolved",
+            probe_apis=list(probe_apis),
+            field_count=len(fields),
+        )
 
-                self.fields_cache[cache_key] = fields
-                logger.info(
-                    "api_fields_loaded",
-                    api=api_name,
-                    search_mode=search_mode,
-                    source_type=source_type,
-                )
-                return fields
+        return fields
 
-            except Exception as exc:
-                logger.warning(f"Failed to load API-specific fields: {exc}, using general")
+    def get_fields_with_types_for_probe(self) -> dict[str, str]:
+        """
+        Retorna dicionário {field_name: field_type} para busca PROBE.
 
-        # Fallback para campos gerais
-        if "general" in self.fields_cache:
-            return self.fields_cache["general"]
+        Returns:
+            Dict com campos e seus tipos. Ex: {"TITLE": "textual", "IPC": "simple"}
+        """
+        cache_key = "probe_with_types"
+        if cache_key in self.cache:
+            return self.cache[cache_key]
 
-        # Retornar schema padrão se nada estiver disponível
-        return self._get_default_schema()
+        probe_api = getattr(settings, "probe_api", "lens_patent")
+        probe_api_ext = getattr(settings, "probe_api_ext", None)
+
+        probe_apis = {probe_api}
+        if probe_api_ext:
+            probe_apis.add(probe_api_ext)
+
+        fields_with_types = self._filter_fields_by_apis_with_types(probe_apis)
+        self.cache[cache_key] = fields_with_types
+
+        return fields_with_types
+
+    def get_fields_for_final(self) -> list[str]:
+        """
+        Retorna lista de campos para busca final/exploratória.
+
+        Inclui campos de TODAS as APIs habilitadas:
+        - lens_patent (se lens_patent_enabled)
+        - lens_scholarly (se lens_scholarly_enabled)
+        - ops (se ops_enabled)
+        - scopus (se scopus_enabled)
+
+        Returns:
+            Lista de nomes de campos disponíveis para a busca final.
+            Ex: ["TITLE", "ABSTRACT", "KEYWORDS", "IPC", "CPC", "AUTHORS", ...]
+        """
+        cache_key = "final"
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
+        # Determinar quais APIs estão habilitadas
+        enabled_apis = set()
+
+        # Verificar flags individuais (novos) com fallback para lens_enabled (antigo)
+        if getattr(settings, "lens_patent_enabled", None) is not None:
+            if settings.lens_patent_enabled:
+                enabled_apis.add("lens_patent")
+        elif getattr(settings, "lens_enabled", True):
+            enabled_apis.add("lens_patent")
+
+        if getattr(settings, "lens_scholarly_enabled", None) is not None:
+            if settings.lens_scholarly_enabled:
+                enabled_apis.add("lens_scholarly")
+        elif getattr(settings, "lens_enabled", True):
+            enabled_apis.add("lens_scholarly")
+
+        if getattr(settings, "ops_enabled", True):
+            enabled_apis.add("ops")
+
+        if getattr(settings, "scopus_enabled", True):
+            enabled_apis.add("scopus")
+
+        fields = self._filter_fields_by_apis(enabled_apis)
+        self.cache[cache_key] = fields
+
+        logger.info(
+            "final_fields_resolved",
+            enabled_apis=list(enabled_apis),
+            field_count=len(fields),
+        )
+
+        return fields
+
+    def get_fields_with_types_for_final(self) -> dict[str, str]:
+        """
+        Retorna dicionário {field_name: field_type} para busca FINAL.
+
+        Returns:
+            Dict com campos e seus tipos. Ex: {"TITLE": "textual", "IPC": "simple"}
+        """
+        cache_key = "final_with_types"
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
+        # Determinar quais APIs estão habilitadas (mesmo que get_fields_for_final)
+        enabled_apis = set()
+
+        if getattr(settings, "lens_patent_enabled", None) is not None:
+            if settings.lens_patent_enabled:
+                enabled_apis.add("lens_patent")
+        elif getattr(settings, "lens_enabled", True):
+            enabled_apis.add("lens_patent")
+
+        if getattr(settings, "lens_scholarly_enabled", None) is not None:
+            if settings.lens_scholarly_enabled:
+                enabled_apis.add("lens_scholarly")
+        elif getattr(settings, "lens_enabled", True):
+            enabled_apis.add("lens_scholarly")
+
+        if getattr(settings, "ops_enabled", True):
+            enabled_apis.add("ops")
+
+        if getattr(settings, "scopus_enabled", True):
+            enabled_apis.add("scopus")
+
+        fields_with_types = self._filter_fields_by_apis_with_types(enabled_apis)
+        self.cache[cache_key] = fields_with_types
+
+        return fields_with_types
+
+    def _filter_fields_by_apis(self, api_names: set[str]) -> list[str]:
+        """
+        Filtra campos que contêm alguma das APIs especificadas.
+
+        Retorna a lista de nomes de campos disponíveis para as APIs fornecidas.
+        A classificação em textual vs simple é responsabilidade do QueryBuilder.
+
+        Args:
+            api_names: Conjunto de nomes de API (ex: {"lens_patent", "lens_scholarly"})
+
+        Returns:
+            Lista de nomes de campos disponíveis. Ex: ["TITLE", "ABSTRACT", "IPC", ...]
+        """
+        fields = set()
+
+        # Processar global_fields
+        global_fields = self.schema.get("global_fields", {})
+        for field_name, field_config in global_fields.items():
+            field_apis = set(field_config.get("api", []))
+            if field_apis & api_names:  # Interseção: campo está em alguma API selecionada
+                fields.add(field_name)
+
+        # Processar api_specific_fields
+        api_specific = self.schema.get("api_specific_fields", {})
+        for field_name, field_config in api_specific.items():
+            field_apis = set(field_config.get("api", []))
+            if field_apis & api_names:  # Interseção
+                fields.add(field_name)
+
+        return sorted(list(fields))
+
+    def _filter_fields_by_apis_with_types(self, api_names: set[str]) -> dict[str, str]:
+        """
+        Filtra campos com seus tipos (textual/simple).
+
+        Retorna dicionário {field_name: field_type} para as APIs fornecidas.
+
+        Args:
+            api_names: Conjunto de nomes de API (ex: {"lens_patent", "lens_scholarly"})
+
+        Returns:
+            Dict como {"TITLE": "textual", "IPC": "simple", ...}
+        """
+        fields_dict = {}
+
+        # Processar global_fields
+        global_fields = self.schema.get("global_fields", {})
+        for field_name, field_config in global_fields.items():
+            field_apis = set(field_config.get("api", []))
+            if field_apis & api_names:
+                field_type = field_config.get("field_type", "textual")
+                fields_dict[field_name] = field_type
+
+        # Processar api_specific_fields
+        api_specific = self.schema.get("api_specific_fields", {})
+        for field_name, field_config in api_specific.items():
+            field_apis = set(field_config.get("api", []))
+            if field_apis & api_names:
+                field_type = field_config.get("field_type", "simple")
+                fields_dict[field_name] = field_type
+
+        # Retornar ordenado por nome
+        return dict(sorted(fields_dict.items()))
 
     def build_llm_output_contract(
         self,
@@ -126,145 +288,92 @@ class FieldSchemaService:
         """
         Constrói contrato LLM output para uma API específica.
 
-        Gera estrutura JSON que descreve quais campos devem ser
-        preenchidos pelo LLM para uma dada API e modo de busca.
+        DEPRECADO: Use get_fields_for_probe() ou get_fields_for_final() ao invés.
 
         Args:
             api_name: Nome da API.
-            search_mode: Modo de busca ('probe' ou 'full').
-            source_type: Tipo de fonte.
+            search_mode: Modo de busca ('probe' ou 'general').
+            source_type: Tipo de fonte (deprecated).
 
         Returns:
-            Dicionário descrevendo o contrato esperado.
+            Dicionário com campos esperados.
         """
-        fields = self.get_llm_fields_for_api(api_name, search_mode, source_type)
+        if search_mode == "probe":
+            fields = self.get_fields_for_probe()
+        else:
+            fields = self.get_fields_for_final()
 
-        contract = {
+        return {
             "api": api_name,
             "search_mode": search_mode,
             "source_type": source_type,
-            "textual_fields": [
-                field
-                for field in fields.get("textual_fields", [])
-                if field in self._get_default_textual_fields()
-            ],
-            "simple_fields": [
-                field
-                for field in fields.get("simple_fields", [])
-                if field in self._get_default_simple_fields()
-            ],
-            "required_fields": fields.get("required_fields", []),
-            "optional_fields": fields.get("optional_fields", []),
+            "textual_fields": fields["textual_fields"],
+            "simple_fields": fields["simple_fields"],
         }
-
-        logger.info(
-            "llm_output_contract_built",
-            api=api_name,
-            textual_count=len(contract["textual_fields"]),
-            simple_count=len(contract["simple_fields"]),
-        )
-
-        return contract
 
     @staticmethod
     def _get_default_schema() -> dict:
         """
-        Retorna esquema padrão se nenhum arquivo estiver disponível.
+        Retorna esquema padrão.
 
         Returns:
             Dicionário com campos padrão.
         """
         return {
-            "textual_fields": [
-                "TITLE",
-                "ABSTRACT",
-                "CLAIMS",
-                "DESCRIPTION",
-                "FULL_TEXT",
-            ],
-            "simple_fields": [
-                "IPC",
-                "CPC",
-                "AUTHORS",
-                "AFFILIATION",
-                "APPLICANT",
-                "INVENTOR",
-                "FIELD_OF_STUDY",
-                "KEYWORDS",
-                "SOURCE_TITLE",
-                "YEAR",
-            ],
+            "global_fields": {
+                "TITLE": {
+                    "description": "Busca no título",
+                    "api": ["lens_patent", "lens_scholarly", "ops", "scopus"],
+                },
+                "ABSTRACT": {
+                    "description": "Busca no resumo",
+                    "api": ["lens_patent", "lens_scholarly", "ops", "scopus"],
+                },
+                "YEAR": {
+                    "description": "Filtro temporal",
+                    "api": ["lens_patent", "lens_scholarly", "ops", "scopus"],
+                },
+            },
+            "api_specific_fields": {
+                "KEYWORDS": {
+                    "description": "Palavras-chave",
+                    "api": ["lens_scholarly", "scopus"],
+                },
+                "AUTHORS": {"description": "Autores", "api": ["lens_scholarly", "scopus"]},
+                "AFFILIATION": {
+                    "description": "Afiliação",
+                    "api": ["lens_scholarly", "scopus"],
+                },
+                "SOURCE_TITLE": {
+                    "description": "Nome da fonte",
+                    "api": ["lens_scholarly", "scopus"],
+                },
+                "FIELD_OF_STUDY": {
+                    "description": "Área de estudo",
+                    "api": ["lens_scholarly", "scopus"],
+                },
+                "APPLICANT": {"description": "Depositante", "api": ["lens_patent", "ops"]},
+                "INVENTOR": {"description": "Inventor", "api": ["lens_patent", "ops"]},
+                "CLAIMS": {
+                    "description": "Reivindicações",
+                    "api": ["lens_patent", "ops"],
+                },
+                "DESCRIPTION": {
+                    "description": "Descrição",
+                    "api": ["lens_patent"],
+                },
+                "FULL_TEXT": {
+                    "description": "Texto completo",
+                    "api": ["lens_patent", "lens_scholarly", "ops"],
+                },
+                "IPC": {"description": "Classificação IPC", "api": ["lens_patent", "ops"]},
+                "CPC": {"description": "Classificação CPC", "api": ["lens_patent", "ops"]},
+            },
         }
 
-    @staticmethod
-    def _get_default_textual_fields() -> list[str]:
-        """
-        Retorna lista de campos textuais padrão.
-
-        Returns:
-            Lista de nomes de campos textuais.
-        """
-        return [
-            "TITLE",
-            "ABSTRACT",
-            "CLAIMS",
-            "DESCRIPTION",
-            "FULL_TEXT",
-        ]
-
-    @staticmethod
-    def _get_default_simple_fields() -> list[str]:
-        """
-        Retorna lista de campos simples padrão.
-
-        Returns:
-            Lista de nomes de campos simples.
-        """
-        return [
-            "IPC",
-            "CPC",
-            "AUTHORS",
-            "AFFILIATION",
-            "APPLICANT",
-            "INVENTOR",
-            "FIELD_OF_STUDY",
-            "KEYWORDS",
-            "SOURCE_TITLE",
-            "YEAR",
-        ]
-
-    def save_api_fields(self, api_name: str, fields: dict) -> None:
-        """
-        Salva configuração de campos para uma API.
-
-        Args:
-            api_name: Nome da API.
-            fields: Dicionário com configuração de campos.
-        """
-        api_file = self.SCHEMA_DIR / f"llm.fields.{api_name}.json"
-
-        try:
-            with open(api_file, "w") as f:
-                json.dump(fields, f, indent=2)
-
-            logger.info("api_fields_saved", api=api_name, file=str(api_file))
-
-        except Exception as exc:
-            logger.error(f"Failed to save API fields: {exc}")
-            raise
-
-    def invalidate_cache(self, api_name: Optional[str] = None) -> None:
+    def invalidate_cache(self) -> None:
         """
         Invalida cache de campos.
-
-        Args:
-            api_name: Nome da API. Se None, limpa cache completo.
         """
-        if api_name:
-            keys_to_remove = [k for k in self.fields_cache.keys() if k.startswith(api_name)]
-            for key in keys_to_remove:
-                del self.fields_cache[key]
-            logger.info("cache_invalidated_for_api", api=api_name)
-        else:
-            self.fields_cache.clear()
-            logger.info("cache_invalidated_complete")
+        self.cache.clear()
+        logger.info("fields_cache_invalidated")

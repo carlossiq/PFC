@@ -1,0 +1,17 @@
+{
+  "api": "scopus",
+  "query_container": "query",
+  "field_map": {
+    "TITLE": "TITLE",
+    "ABSTRACT": "ABS",
+    "YEAR": "PUBYEAR",
+    "KEYWORDS": "KEY",
+    "AUTHORS": "AUTH",
+    "AFFILIATION": "AFFIL",
+    "SOURCE_TITLE": "SRCTITLE",
+    "FIELD_OF_STUDY": "SUBJAREA"
+  },
+  "common_helpers": {
+    "title_abstract_keywords": "TITLE-ABS-KEY"
+  }
+}

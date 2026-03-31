@@ -1,79 +1,205 @@
 """
-LLM output normalization and validation.
-"""
+LLM output normalization with enabled field filtering.
 
-import re
-from typing import Optional
+Normalizes and validates LLM output while respecting:
+- Only enabled fields are kept in output
+- Textual fields maintain {group_operator, groups} structure
+- Simple fields are flat lists, never {"values": [...]}
+- Invalid terms and stopwords are removed
+"""
 
 from core.config import settings
 from core.logging import get_logger
 from schemas.llm import LLMOutput, OperatorEnum, SimpleFieldQuery, TermGroup, TextualFieldQuery
+from services.llm.validators import (
+    clean_terms,
+    filter_to_enabled_fields,
+    is_simple_field,
+    is_textual_field,
+    normalize_simple_field_structure,
+    normalize_textual_field_structure,
+)
 
 logger = get_logger(__name__)
+
+# All possible field names (internal attribute names in LLMOutput)
+ALL_FIELD_NAMES = {
+    "title",
+    "abstract",
+    "claims",
+    "description",
+    "full_text",
+    "ipc",
+    "cpc",
+    "authors",
+    "affiliation",
+    "applicant",
+    "inventor",
+    "field_of_study",
+    "keywords",
+    "source_title",
+    "year",
+}
 
 
 class LLMOutputNormalizer:
     """
-    Normaliza e valida saída do LLM aplicando regras de limpeza e validação.
+    Normalizes LLM output with filtering to enabled fields.
 
-    Aplica transformações para garantir qualidade e consistência dos dados:
-    - Lowercase de todos os termos
-    - Remoção de whitespace
-    - Remoção de duplicatas
-    - Remoção de strings vazias
-    - Remoção de termos com menos de 2 caracteres
-    - Validação de estrutura booleana
-    - Validação de operadores
-    - Injeção de YEAR se necessário
+    Rules:
+    - Only fields explicitly enabled are kept
+    - Textual fields use {group_operator, groups} structure
+    - Simple fields are flat lists
+    - Invalid terms and stopwords are removed
+    - Empty fields are preserved but with empty structure
     """
 
     MIN_TERM_LENGTH = 2
 
     @staticmethod
-    def normalize(llm_output: LLMOutput, inject_year: bool = True) -> LLMOutput:
+    def normalize(
+        llm_output: LLMOutput,
+        enabled_fields: list[str] = None,
+        inject_year: bool = True,
+    ) -> LLMOutput:
         """
-        Normaliza saída completa do LLM.
+        Normalizes LLM output filtering to enabled fields only.
 
         Args:
-            llm_output: Saída do LLM a normalizar.
-            inject_year: Se True, injeta YEAR do config após normalização.
+            llm_output: Raw LLM output
+            enabled_fields: List of uppercase field names to keep.
+                          If None, keeps all fields (legacy behavior).
+            inject_year: If True, injects YEAR from config
 
         Returns:
-            LLMOutput normalizado.
+            Normalized LLMOutput with only enabled fields populated
         """
-        # Normalizar campos textuais
-        llm_output.title = LLMOutputNormalizer._normalize_textual_field(llm_output.title)
-        llm_output.abstract = LLMOutputNormalizer._normalize_textual_field(llm_output.abstract)
-        llm_output.claims = LLMOutputNormalizer._normalize_textual_field(llm_output.claims)
-        llm_output.description = LLMOutputNormalizer._normalize_textual_field(
-            llm_output.description
-        )
-        llm_output.full_text = LLMOutputNormalizer._normalize_textual_field(llm_output.full_text)
+        # If no enabled_fields specified, normalize all (backward compatible)
+        if enabled_fields is None:
+            enabled_fields = list(ALL_FIELD_NAMES)
 
-        # Normalizar campos simples
-        llm_output.ipc = LLMOutputNormalizer._normalize_simple_field(llm_output.ipc)
-        llm_output.cpc = LLMOutputNormalizer._normalize_simple_field(llm_output.cpc)
-        llm_output.authors = LLMOutputNormalizer._normalize_simple_field(llm_output.authors)
-        llm_output.affiliation = LLMOutputNormalizer._normalize_simple_field(
-            llm_output.affiliation
-        )
-        llm_output.applicant = LLMOutputNormalizer._normalize_simple_field(llm_output.applicant)
-        llm_output.inventor = LLMOutputNormalizer._normalize_simple_field(llm_output.inventor)
-        llm_output.field_of_study = LLMOutputNormalizer._normalize_simple_field(
-            llm_output.field_of_study
-        )
-        llm_output.keywords = LLMOutputNormalizer._normalize_simple_field(llm_output.keywords)
-        llm_output.source_title = LLMOutputNormalizer._normalize_simple_field(
-            llm_output.source_title
-        )
-        llm_output.year = LLMOutputNormalizer._normalize_simple_field(llm_output.year)
+        enabled_upper = {f.upper() for f in enabled_fields}
 
-        # Injetar YEAR se necessário
-        if inject_year:
+        logger.info(
+            "normalizer_enabled_fields_debug",
+            enabled_fields_list=list(enabled_upper),
+            enabled_fields_count=len(enabled_upper),
+        )
+
+        # Log raw LLM output BEFORE normalization
+        logger.info(
+            "llm_output_before_normalization",
+            title_groups=len(llm_output.title.groups) if llm_output.title.groups else 0,
+            abstract_groups=len(llm_output.abstract.groups) if llm_output.abstract.groups else 0,
+            claims_groups=len(llm_output.claims.groups) if llm_output.claims.groups else 0,
+            description_groups=len(llm_output.description.groups) if llm_output.description.groups else 0,
+            full_text_groups=len(llm_output.full_text.groups) if llm_output.full_text.groups else 0,
+            title_preview=str(llm_output.title.groups[0].terms[:2]) if llm_output.title.groups else "EMPTY",
+            abstract_preview=str(llm_output.abstract.groups[0].terms[:2]) if llm_output.abstract.groups else "EMPTY",
+        )
+
+        # Normalize only enabled textual fields
+        if "TITLE" in enabled_upper:
+            llm_output.title = LLMOutputNormalizer._normalize_textual_field(llm_output.title)
+        else:
+            llm_output.title = TextualFieldQuery()
+
+        if "ABSTRACT" in enabled_upper:
+            llm_output.abstract = LLMOutputNormalizer._normalize_textual_field(
+                llm_output.abstract
+            )
+        else:
+            llm_output.abstract = TextualFieldQuery()
+
+        if "CLAIMS" in enabled_upper:
+            llm_output.claims = LLMOutputNormalizer._normalize_textual_field(llm_output.claims)
+        else:
+            llm_output.claims = TextualFieldQuery()
+
+        if "DESCRIPTION" in enabled_upper:
+            llm_output.description = LLMOutputNormalizer._normalize_textual_field(
+                llm_output.description
+            )
+        else:
+            llm_output.description = TextualFieldQuery()
+
+        if "FULL_TEXT" in enabled_upper:
+            llm_output.full_text = LLMOutputNormalizer._normalize_textual_field(
+                llm_output.full_text
+            )
+        else:
+            llm_output.full_text = TextualFieldQuery()
+
+        if "KEYWORDS" in enabled_upper:
+            llm_output.keywords = LLMOutputNormalizer._normalize_simple_field(
+                llm_output.keywords
+            )
+        else:
+            llm_output.keywords = SimpleFieldQuery()
+
+        # Normalize only enabled simple fields
+        if "IPC" in enabled_upper:
+            llm_output.ipc = LLMOutputNormalizer._normalize_simple_field(llm_output.ipc)
+        else:
+            llm_output.ipc = SimpleFieldQuery()
+
+        if "CPC" in enabled_upper:
+            llm_output.cpc = LLMOutputNormalizer._normalize_simple_field(llm_output.cpc)
+        else:
+            llm_output.cpc = SimpleFieldQuery()
+
+        if "AUTHORS" in enabled_upper:
+            llm_output.authors = LLMOutputNormalizer._normalize_simple_field(llm_output.authors)
+        else:
+            llm_output.authors = SimpleFieldQuery()
+
+        if "AFFILIATION" in enabled_upper:
+            llm_output.affiliation = LLMOutputNormalizer._normalize_simple_field(
+                llm_output.affiliation
+            )
+        else:
+            llm_output.affiliation = SimpleFieldQuery()
+
+        if "APPLICANT" in enabled_upper:
+            llm_output.applicant = LLMOutputNormalizer._normalize_simple_field(
+                llm_output.applicant
+            )
+        else:
+            llm_output.applicant = SimpleFieldQuery()
+
+        if "INVENTOR" in enabled_upper:
+            llm_output.inventor = LLMOutputNormalizer._normalize_simple_field(
+                llm_output.inventor
+            )
+        else:
+            llm_output.inventor = SimpleFieldQuery()
+
+        if "FIELD_OF_STUDY" in enabled_upper:
+            llm_output.field_of_study = LLMOutputNormalizer._normalize_simple_field(
+                llm_output.field_of_study
+            )
+        else:
+            llm_output.field_of_study = SimpleFieldQuery()
+
+        if "SOURCE_TITLE" in enabled_upper:
+            llm_output.source_title = LLMOutputNormalizer._normalize_simple_field(
+                llm_output.source_title
+            )
+        else:
+            llm_output.source_title = SimpleFieldQuery()
+
+        if "YEAR" in enabled_upper:
+            llm_output.year = LLMOutputNormalizer._normalize_simple_field(llm_output.year)
+        else:
+            llm_output.year = SimpleFieldQuery()
+
+        # Inject YEAR if enabled
+        if inject_year and "YEAR" in enabled_upper:
             llm_output = LLMOutputNormalizer._inject_year(llm_output)
 
         logger.info(
             "llm_output_normalized",
+            enabled_fields_count=len(enabled_upper),
             has_queries=llm_output.has_any_queries(),
             active_fields_count=sum(llm_output.get_active_fields().values()),
         )
@@ -83,24 +209,35 @@ class LLMOutputNormalizer:
     @staticmethod
     def _normalize_textual_field(field: TextualFieldQuery) -> TextualFieldQuery:
         """
-        Normaliza um campo textual.
+        Normalizes a textual field.
+
+        Ensures structure is {group_operator, groups} with clean terms.
 
         Args:
-            field: Campo textual a normalizar.
+            field: Textual field to normalize
 
         Returns:
-            Campo normalizado.
+            Normalized textual field
         """
-        if not field.groups:
-            return field
+        if not field or not field.groups:
+            return TextualFieldQuery(group_operator=OperatorEnum.AND, groups=[])
 
         normalized_groups = []
 
         for group in field.groups:
-            # Normalizar termos
-            normalized_terms = LLMOutputNormalizer._normalize_terms(group.terms)
+            # Clean terms: remove stopwords, invalid, etc.
+            original_terms = group.terms if group.terms else []
+            normalized_terms = clean_terms(original_terms)
 
-            # Criar grupo normalizado se houver termos
+            # Log se todos os termos foram rejeitados
+            if original_terms and not normalized_terms:
+                logger.info(
+                    "textual_field_all_terms_rejected",
+                    original_terms=original_terms,
+                    normalized_terms=normalized_terms,
+                )
+
+            # Keep group only if it has valid terms
             if normalized_terms:
                 normalized_groups.append(
                     TermGroup(
@@ -109,81 +246,50 @@ class LLMOutputNormalizer:
                     )
                 )
 
-        # Validar operador
+        # Validate and default group_operator
         try:
             LLMOutputNormalizer._validate_operator(field.group_operator.value)
-        except ValueError:
-            field.group_operator = OperatorEnum.AND
+            group_op = field.group_operator
+        except (ValueError, AttributeError):
+            group_op = OperatorEnum.AND
 
         return TextualFieldQuery(
-            group_operator=field.group_operator,
+            group_operator=group_op,
             groups=normalized_groups,
         )
 
     @staticmethod
     def _normalize_simple_field(field: SimpleFieldQuery) -> SimpleFieldQuery:
         """
-        Normaliza um campo simples.
+        Normalizes a simple field to flat list structure.
+
+        Handles various input shapes (list, dict with values, etc.)
+        and returns SimpleFieldQuery with clean values.
 
         Args:
-            field: Campo simples a normalizar.
+            field: Simple field to normalize
 
         Returns:
-            Campo normalizado.
+            Normalized simple field (flat list)
         """
-        normalized_values = LLMOutputNormalizer._normalize_terms(field.values)
+        if not field or not field.values:
+            return SimpleFieldQuery(values=[])
+
+        # Clean and deduplicate values
+        normalized_values = clean_terms(field.values if field.values else [])
 
         return SimpleFieldQuery(values=normalized_values)
 
     @staticmethod
-    def _normalize_terms(terms: list[str]) -> list[str]:
-        """
-        Normaliza lista de termos.
-
-        Aplica:
-        - Lowercase
-        - Trim whitespace
-        - Remove duplicatas
-        - Remove vazios
-        - Remove com menos de 2 caracteres
-
-        Args:
-            terms: Lista de termos a normalizar.
-
-        Returns:
-            Lista normalizada.
-        """
-        normalized = set()
-
-        for term in terms:
-            if not isinstance(term, str):
-                continue
-
-            # Lowercase e trim
-            normalized_term = term.lower().strip()
-
-            # Remover vazios
-            if not normalized_term:
-                continue
-
-            # Remover muito curtos
-            if len(normalized_term) < LLMOutputNormalizer.MIN_TERM_LENGTH:
-                continue
-
-            normalized.add(normalized_term)
-
-        return sorted(list(normalized))
-
-    @staticmethod
     def _validate_operator(operator: str) -> None:
         """
-        Valida que operador é AND ou OR.
+        Validates operator is AND or OR.
 
         Args:
-            operator: Operador a validar.
+            operator: Operator string
 
         Raises:
-            ValueError: Se operador inválido.
+            ValueError: If invalid
         """
         valid_operators = {op.value for op in OperatorEnum}
 
@@ -193,28 +299,20 @@ class LLMOutputNormalizer:
     @staticmethod
     def _inject_year(llm_output: LLMOutput) -> LLMOutput:
         """
-        Injeta YEAR do config se disponível.
-
-        Procura por campo YEAR_RANGE na config e injeta
-        como valor no campo year da saída.
+        Injects YEAR from config if available.
 
         Args:
-            llm_output: Saída do LLM.
+            llm_output: Output to inject into
 
         Returns:
-            Saída com YEAR injetado se disponível.
+            Output with YEAR populated if config available
         """
-        # Tentar obter YEAR_RANGE da config (campo customizado)
         year_range = getattr(settings, "year_range", None)
 
         if year_range:
-            # Se for string, converter para lista
-            if isinstance(year_range, str):
-                years = [year_range]
-            elif isinstance(year_range, list):
-                years = year_range
-            else:
-                years = []
+            years = [year_range] if isinstance(year_range, str) else (
+                year_range if isinstance(year_range, list) else []
+            )
 
             if years:
                 llm_output.year = SimpleFieldQuery(values=years)
@@ -225,21 +323,18 @@ class LLMOutputNormalizer:
     @staticmethod
     def validate_structure(llm_output: LLMOutput) -> bool:
         """
-        Valida estrutura booleana completa de LLMOutput.
+        Validates structure of LLMOutput.
 
-        Verifica:
-        - Todos os operadores são válidos
-        - Nenhum campo tem valores null
-        - Estrutura de grupos está correta
+        Checks operators, group structure, etc.
 
         Args:
-            llm_output: Saída do LLM a validar.
+            llm_output: Output to validate
 
         Returns:
-            True se válida, False caso contrário.
+            True if valid
         """
         try:
-            # Validar campos textuais
+            # Validate textual fields
             for field in [
                 llm_output.title,
                 llm_output.abstract,
@@ -251,8 +346,6 @@ class LLMOutputNormalizer:
 
                 for group in field.groups:
                     LLMOutputNormalizer._validate_operator(group.operator.value)
-
-            # Campos simples não precisam validação além do que Pydantic faz
 
             return True
 

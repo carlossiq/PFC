@@ -31,6 +31,7 @@ from services.dedup import DedupService
 from services.llm import (
     LLMOutputNormalizer,
     LLMServiceFactory,
+    FieldSchemaService,
 )
 from services.nlp import (
     EmbeddingService,
@@ -145,7 +146,9 @@ class PipelineResult:
         """
         result = self.to_dict()
         result["detailed_outputs"] = {
-            "initial_strategy": self.initial_strategy.model_dump() if self.initial_strategy else None,
+            "initial_strategy": (
+                self.initial_strategy.model_dump() if self.initial_strategy else None
+            ),
             "probe_search_results": self.probe_search_results,
             "extracted_keywords": self.extracted_keywords,
             "final_strategy": {
@@ -176,11 +179,19 @@ class PipelineOrchestrator:
         self.result: Optional[PipelineResult] = None
 
         # Serviços
+        # Serviço de LLM (singleton recomendado para produção)
         self.llm_service = LLMServiceFactory.get_instance()
+        # Serviço de esquema de campos (para passar informações dinâmicas à LLM)
+        self.field_schema_service = FieldSchemaService()
+        # Serviços de NLP: keyword extraction, embeddings, relevância
         self.keyword_service = KeywordService()
+        # Serviços de processamento: deduplicação, normalização
         self.embedding_service = EmbeddingService()
+        # RelevanceService depende de embeddings, então é inicializado depois
         self.relevance_service = RelevanceService(self.embedding_service)
+        # Serviços de duplicação para remover documentos redundantes
         self.dedup_service = DedupService()
+        # NormalizationService para padronizar metadados antes da persistência
         self.normalization_service = NormalizationService()
 
         # APIs de busca
@@ -290,9 +301,13 @@ class PipelineOrchestrator:
 
     async def _stage_initial_strategy(self) -> None:
         """
-        Etapa 2: Gera estratégia inicial via LLM.
+        Etapa 2: Gera estratégia inicial via LLM para probe search.
 
-        Processa tema e objetivo para gerar consultas estruturadas.
+        Processa tema e objetivo para gerar consultas estruturadas
+        otimizadas para a busca de sondagem (probe search).
+
+        Os campos esperados variam dinamicamente de acordo com a PROBE_API configurada
+        e PROBE_API_EXT (se habilitada).
         """
         stage_start = time.time()
         stage_name = "initial_strategy"
@@ -300,17 +315,38 @@ class PipelineOrchestrator:
         try:
             logger.info(f"stage_{stage_name}_started", run_id=self.run_id)
 
-            # Carregar prompt
-            system_prompt = PromptLoader.load_general_system_prompt()
+            # Carregar prompt otimizado para probe search
+            system_prompt = PromptLoader.load_probe_system_prompt()
 
-            # Processar com LLM
-            llm_output = await self.llm_service.process_intake(
-                intake=self.result.intake,
+            # Obter campos dinâmicos para PROBE (inclui PROBE_API e PROBE_API_EXT)
+            probe_fields = self.field_schema_service.get_fields_for_probe()
+
+            probe_api = getattr(settings, "probe_api", "lens_patent")
+            probe_api_ext = getattr(settings, "probe_api_ext", None)
+
+            # Enriquecer prompt com informação dinâmica dos campos esperados
+            enriched_prompt = self._enrich_prompt_with_fields(
                 system_prompt=system_prompt,
+                available_fields=probe_fields,
+                api_name=probe_api,
             )
 
-            # Normalizar saída
-            normalized = LLMOutputNormalizer.normalize(llm_output)
+            logger.info(
+                "initial_strategy_context",
+                probe_api=probe_api,
+                probe_api_ext=probe_api_ext,
+                available_fields_count=len(probe_fields),
+                run_id=self.run_id,
+            )
+
+            # Processar com LLM usando prompt enriquecido
+            llm_output = await self.llm_service.process_intake(
+                intake=self.result.intake,
+                system_prompt=enriched_prompt,
+            )
+
+            # Normalizar saída, filtrando apenas para campos habilitados da probe
+            normalized = LLMOutputNormalizer.normalize(llm_output, enabled_fields=probe_fields)
 
             self.result.initial_strategy = normalized
             self.result.stages.append(
@@ -494,9 +530,10 @@ class PipelineOrchestrator:
 
     async def _stage_final_strategy(self) -> None:
         """
-        Etapa 6: Gera estratégia final para patent e scholarly.
+        Etapa 6: Gera estratégia final refinada com keywords da expansão semântica.
 
-        Usa termos expandidos para refinar queries.
+        Usa termos expandidos (extraídos da probe) para gerar queries mais
+        abrangentes para a busca final/exploratória, otimizadas para TODAS as APIs habilitadas.
         """
         stage_start = time.time()
         stage_name = "final_strategy"
@@ -504,16 +541,48 @@ class PipelineOrchestrator:
         try:
             logger.info(f"stage_{stage_name}_started", run_id=self.run_id)
 
-            # TODO: Implementar refinamento de estratégia com termos expandidos
-            # - Incorporar keywords extraídos na estratégia final
-            # - Gerar strategy separada para patent
-            # - Gerar strategy separada para scholarly
-            # - Validar que estratégias finais herdam de inicial
+            # Carregar prompt otimizado para busca geral/final
+            system_prompt = PromptLoader.load_general_system_prompt()
 
-            # Por agora, usar estratégia inicial para ambos
+            # Obter keywords extraídos na etapa anterior
+            expanded_keywords = self.result.extracted_keywords.get("top_keywords", [])
+
+            # TODO: Integrar keywords expandidos no contexto do LLM
+            # Por enquanto, processa novamente com o intake original usando o prompt geral
+            # Melhorias futuras: passar keywords como contexto adicional ao LLM
+
+            # Obter campos dinâmicos para busca final (todas as APIs habilitadas)
+            final_fields = self.field_schema_service.get_fields_for_final()
+
+            # Enriquecer prompt com campos de todas as APIs habilitadas
+            enriched_prompt = self._enrich_prompt_with_final_fields(
+                system_prompt=system_prompt,
+                available_fields=final_fields,
+            )
+
+            logger.info(
+                "final_strategy_context",
+                available_fields_count=len(final_fields),
+                expanded_keywords_count=len(expanded_keywords),
+                run_id=self.run_id,
+            )
+
+            # Processar com LLM para gerar estratégia refinada (mais abrangente)
+            refined_output = await self.llm_service.process_intake(
+                intake=self.result.intake,
+                system_prompt=enriched_prompt,
+            )
+
+            # Normalizar saída, filtrando apenas para campos habilitados da busca final
+            normalized_refined = LLMOutputNormalizer.normalize(refined_output, enabled_fields=final_fields)
+
+            # Armazenar estratégia final (igual para ambos por enquanto)
+            # TODO: Gerar strategies separadas otimizadas para patent e scholarly
+            # - Patent: ênfase em IPC, CPC, CLAIMS, APPLICANT, INVENTOR
+            # - Scholarly: ênfase em KEYWORDS, FIELD_OF_STUDY, AUTHORS, AFFILIATION
             self.result.final_strategy = {
-                "patent": self.result.initial_strategy,
-                "scholarly": self.result.initial_strategy,
+                "patent": normalized_refined,
+                "scholarly": normalized_refined,
             }
 
             self.result.stages.append(
@@ -524,6 +593,15 @@ class PipelineOrchestrator:
                     output={
                         "patent_strategy_ready": True,
                         "scholarly_strategy_ready": True,
+                        "expanded_keywords_used": len(expanded_keywords),
+                    },
+                    details={
+                        "active_fields_patent": sum(
+                            normalized_refined.get_active_fields().values()
+                        ),
+                        "active_fields_scholarly": sum(
+                            normalized_refined.get_active_fields().values()
+                        ),
                     },
                 )
             )
@@ -569,7 +647,9 @@ class PipelineOrchestrator:
                         year_from=getattr(settings, "search_year_from", 2015),
                         year_to=getattr(settings, "search_year_to", 2024),
                     )
-                    result = await self.lens_service.search_scholarly(query, self.run_id)
+                    result = await self.lens_service.search_scholarly(
+                        query, self.run_id
+                    )
                     results_by_api["lens_scholarly"] = result
                     if result.success:
                         all_documents.extend(result.results)
@@ -986,6 +1066,110 @@ class PipelineOrchestrator:
         """
         # TODO: Implementar detecção automática baseada em campos
         return doc.get("document_type") == "patent" or "publication_number" in doc
+
+    def _enrich_prompt_with_fields(
+        self,
+        system_prompt: str,
+        available_fields: list[str],
+        api_name: str,
+    ) -> str:
+        """
+        Enriquece prompt com especificação dinâmica de campos para busca PROBE.
+
+        Adiciona ao sistema prompt informação sobre quais campos a LLM deve
+        retornar baseado na API de PROBE configurada.
+
+        Args:
+            system_prompt: Prompt base do sistema (probe_system_prompt.txt).
+            available_fields: Lista de nomes de campos disponíveis na API.
+            api_name: Nome da API de PROBE (lens_patent, lens_scholarly, etc).
+
+        Returns:
+            Prompt enriquecido com especificação dinâmica dos campos esperados.
+        """
+        fields_section = f"""
+
+## DYNAMIC FIELD SPECIFICATION FOR THIS PROBE SEARCH
+
+**Probe API: {api_name.upper()}**
+
+Return ONLY these fields in your JSON response. Do not include any other fields.
+
+### Available Fields for this API:
+{', '.join(available_fields) if available_fields else 'NONE — API configuration error'}
+
+### CRITICAL RULES FOR THIS RESPONSE:
+1. Return ONLY a valid JSON object
+2. Include ONLY the fields listed above — do not add extra fields
+3. For each field, return the appropriate structure:
+   - Textual fields (TITLE, ABSTRACT, CLAIMS, DESCRIPTION, FULL_TEXT, KEYWORDS):
+     Use structure: {{"group_operator":"AND", "groups":[{{"operator":"OR","terms":["term1","term2"]}}]}}
+   - Simple fields (IPC, CPC, AUTHORS, AFFILIATION, APPLICANT, INVENTOR, FIELD_OF_STUDY, SOURCE_TITLE, YEAR):
+     Use flat list: ["value1", "value2"]
+4. Use EXACT field names (uppercase, matching the list above)
+5. Do not include fields NOT listed above
+"""
+
+        enriched = system_prompt + fields_section
+
+        logger.debug(
+            "prompt_enriched_for_probe",
+            api=api_name,
+            field_count=len(available_fields),
+            run_id=self.run_id,
+        )
+
+        return enriched
+
+    def _enrich_prompt_with_final_fields(
+        self,
+        system_prompt: str,
+        available_fields: list[str],
+    ) -> str:
+        """
+        Enriquece prompt com especificação dinâmica de campos para busca FINAL.
+
+        A busca final usa TODAS as APIs habilitadas, então o prompt
+        inclui a union de todos os campos suportados pelas APIs ativas.
+
+        Args:
+            system_prompt: Prompt base do sistema (general_system_prompt.txt).
+            available_fields: Lista de nomes de campos disponíveis nas APIs habilitadas.
+
+        Returns:
+            Prompt enriquecido com especificação dinâmica dos campos esperados.
+        """
+        fields_section = f"""
+
+## DYNAMIC FIELD SPECIFICATION FOR THIS FINAL SEARCH
+
+This is the comprehensive/final search across all enabled APIs.
+Return results using ONLY the following fields:
+
+### Available Fields for all enabled APIs:
+{', '.join(sorted(available_fields)) if available_fields else 'NONE — API configuration error'}
+
+### CRITICAL RULES FOR THIS RESPONSE:
+1. Return ONLY a valid JSON object
+2. Include ONLY the fields listed above — do not add extra fields
+3. For each field, return the appropriate structure:
+   - Textual fields (TITLE, ABSTRACT, CLAIMS, DESCRIPTION, FULL_TEXT, KEYWORDS):
+     Use structure: {{"group_operator":"AND", "groups":[{{"operator":"OR","terms":["term1","term2"]}}]}}
+   - Simple fields (IPC, CPC, AUTHORS, AFFILIATION, APPLICANT, INVENTOR, FIELD_OF_STUDY, SOURCE_TITLE, YEAR):
+     Use flat list: ["value1", "value2"]
+4. Use EXACT field names (uppercase, matching the list above)
+5. Optimize for maximum coverage and recall across all enabled sources
+"""
+
+        enriched = system_prompt + fields_section
+
+        logger.debug(
+            "prompt_enriched_for_final",
+            field_count=len(available_fields),
+            run_id=self.run_id,
+        )
+
+        return enriched
 
     @staticmethod
     def _is_scholarly(doc: dict) -> bool:

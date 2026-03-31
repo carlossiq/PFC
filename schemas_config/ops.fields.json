@@ -1,0 +1,21 @@
+{
+  "api": "ops",
+  "query_container": "q",
+  "field_map": {
+    "TITLE": "ti",
+    "ABSTRACT": "ab",
+    "YEAR": "pd",
+    "APPLICANT": "pa",
+    "INVENTOR": "in",
+    "CLAIMS": "claims",
+    "FULL_TEXT": "ftxt",
+    "IPC": "ipc",
+    "CPC": "cpc"
+  },
+  "composite_helpers": {
+    "inventor_or_applicant": "ia",
+    "title_or_abstract": "ta",
+    "title_abstract_or_claims": "ctxt",
+    "classification_any": "cl"
+  }
+}
