@@ -123,6 +123,10 @@ class LensPatentQueryBuilder(BaseQueryBuilder):
         """
         Constrói partes da query_string com sintaxe booleana.
 
+        Estratégia:
+        - Title e Abstract: combinados com OR (buscar em um ou outro)
+        - Outros campos: combinados com AND
+
         Args:
             llm_output: Saída do LLM.
 
@@ -131,16 +135,34 @@ class LensPatentQueryBuilder(BaseQueryBuilder):
         """
         parts = []
 
-        # Processar campos textuais (usar nomes da Lens Patent API)
-        textual_fields = [
-            ("title", "title"),
-            ("abstract", "abstract"),
+        # Processar title e abstract com OR (estratégia especial)
+        title_query = None
+        abstract_query = None
+
+        title_value = getattr(llm_output, "title")
+        if not title_value.is_empty():
+            title_query = self._build_textual_field_query(title_value, "title")
+
+        abstract_value = getattr(llm_output, "abstract")
+        if not abstract_value.is_empty():
+            abstract_query = self._build_textual_field_query(abstract_value, "abstract")
+
+        # Combinar title e abstract com OR se ambos existem
+        if title_query and abstract_query:
+            parts.append(f"({title_query} OR {abstract_query})")
+        elif title_query:
+            parts.append(title_query)
+        elif abstract_query:
+            parts.append(abstract_query)
+
+        # Processar outros campos textuais com AND
+        other_textual_fields = [
             ("claims", "claim"),  # Lens Patent usa "claim" (singular)
             ("description", "description"),
             ("full_text", "full_text"),
         ]
 
-        for field_attr, field_name in textual_fields:
+        for field_attr, field_name in other_textual_fields:
             field_value = getattr(llm_output, field_attr)
 
             if not field_value.is_empty():
@@ -148,7 +170,7 @@ class LensPatentQueryBuilder(BaseQueryBuilder):
                 if field_query:
                     parts.append(field_query)
 
-        # Processar campos simples (usar nomes da Lens Patent API)
+        # Processar campos simples com AND
         simple_fields = [
             ("ipc", "class_ipcr.symbol"),
             ("cpc", "class_cpc.symbol"),

@@ -86,8 +86,33 @@ class OPSQueryBuilder(BaseQueryBuilder):
         """
         cql_clauses = []
 
-        # Processar campos textuais
-        for attr_name in self._TEXTUAL_ATTRS:
+        # Estratégia especial: title e abstract combinados com OR
+        title_cql = None
+        abstract_cql = None
+
+        title_value = getattr(llm_output, "title")
+        if not title_value.is_empty():
+            ops_field = self.field_map.get("TITLE")
+            if ops_field:
+                title_cql = self._build_textual_cql(title_value, ops_field)
+
+        abstract_value = getattr(llm_output, "abstract")
+        if not abstract_value.is_empty():
+            ops_field = self.field_map.get("ABSTRACT")
+            if ops_field:
+                abstract_cql = self._build_textual_cql(abstract_value, ops_field)
+
+        # Combinar title e abstract com OR
+        if title_cql and abstract_cql:
+            cql_clauses.append(f"({title_cql} OR {abstract_cql})")
+        elif title_cql:
+            cql_clauses.append(title_cql)
+        elif abstract_cql:
+            cql_clauses.append(abstract_cql)
+
+        # Processar outros campos textuais com AND
+        other_textual_fields = ["claims", "full_text"]
+        for attr_name in other_textual_fields:
             field_value = getattr(llm_output, attr_name)
             if not field_value.is_empty():
                 ops_field = self.field_map.get(attr_name.upper())
@@ -96,7 +121,7 @@ class OPSQueryBuilder(BaseQueryBuilder):
                     if cql_clause:
                         cql_clauses.append(cql_clause)
 
-        # Processar campos simples (não incluindo "year" por enquanto)
+        # Processar campos simples com AND
         for attr_name in self._SIMPLE_ATTRS:
             if attr_name == "year":
                 # Year é tratado especialmente com data range
