@@ -84,8 +84,8 @@ class OPSService:
     """
 
     # Configurações
-    _OPS_API_URL = "https://ops.epo.org/3.2/rest-services"
-    _OPS_TOKEN_URL = "https://ops.epo.org/3.2/auth/accesstoken"
+    _OPS_API_URL = "https://ops.epo.org/rest-services"
+    _OPS_TOKEN_URL = "https://ops.epo.org/auth/accesstoken"
     _MAX_RETRIES = 3
     _RETRY_DELAY_SECONDS = 2
     _TIMEOUT_SECONDS = 30
