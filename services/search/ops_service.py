@@ -2,7 +2,10 @@
 Search service for European Patent Office (OPS) API with OAuth2.
 """
 
+import asyncio
+import json
 import time
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
@@ -81,8 +84,8 @@ class OPSService:
     """
 
     # Configurações
-    _OPS_API_URL = "https://ops.espacenet.com/3.2/rest-services"
-    _OPS_TOKEN_URL = "https://ops.espacenet.com/3.2/auth/accesstoken"
+    _OPS_API_URL = "https://ops.epo.org/3.2/rest-services"
+    _OPS_TOKEN_URL = "https://ops.epo.org/3.2/auth/accesstoken"
     _MAX_RETRIES = 3
     _RETRY_DELAY_SECONDS = 2
     _TIMEOUT_SECONDS = 30
@@ -102,7 +105,8 @@ class OPSService:
         self.consumer_key = consumer_key or getattr(settings, "ops_consumer_key", None)
         self.consumer_secret = consumer_secret or getattr(settings, "ops_consumer_secret", None)
         self.token: Optional[OPSToken] = None
-        self.client = httpx.Client(timeout=self._TIMEOUT_SECONDS)
+        self.async_client = httpx.AsyncClient(timeout=self._TIMEOUT_SECONDS)
+        self.sync_client = httpx.Client(timeout=self._TIMEOUT_SECONDS)
 
     async def search(
         self,
@@ -183,6 +187,8 @@ class OPSService:
         """
         Obtém novo token OAuth2 do OPS.
 
+        Usa grant_type=client_credentials com autenticação Basic Auth.
+
         Args:
             run_id: ID único da requisição para logging.
 
@@ -193,30 +199,34 @@ class OPSService:
             raise ValueError("OPS consumer key and secret are required")
 
         try:
-            response = self.client.post(
+            # OPS espera application/x-www-form-urlencoded com grant_type=client_credentials
+            response = await self.async_client.post(
                 self._OPS_TOKEN_URL,
                 auth=(self.consumer_key, self.consumer_secret),
+                data={"grant_type": "client_credentials"},
                 timeout=self._TIMEOUT_SECONDS,
             )
 
             response.raise_for_status()
 
-            # Extrair token (formato: "access_token=<token>")
-            token_text = response.text.strip()
-            if token_text.startswith("access_token="):
-                access_token = token_text.replace("access_token=", "")
-                # OPS tokens normalmente duram 1 hora
-                expires_in = 3600
+            # Extrair token (resposta é JSON)
+            data = response.json()
+
+            if "access_token" in data:
+                access_token = data["access_token"]
+                # Usar expires_in da resposta (em segundos) ou fallback para 1 hora
+                expires_in = int(data.get("expires_in", 3600))
 
                 self.token = OPSToken(access_token, expires_in)
 
                 logger.info(
                     "ops_token_obtained",
                     expires_at=self.token.expiration_time.isoformat(),
+                    token_type=data.get("token_type"),
                     run_id=run_id,
                 )
             else:
-                raise ValueError(f"Unexpected token format: {token_text}")
+                raise ValueError(f"No access_token in response: {data}")
 
         except Exception as exc:
             logger.error(
@@ -259,25 +269,56 @@ class OPSService:
                 cql_query = query.get("query", "")
 
                 # Fazer requisição
-                response = self.client.get(
+                # OPS bibliographic search: enviar CQL via parâmetro 'q'
+                # Usar Accept header para negociar formato, não enviar "format" como parâmetro
+                response = await self.async_client.get(
                     url,
-                    params={
-                        "q": cql_query,
-                        "range": query.get("range", "1-100"),
-                        "format": query.get("format", "json"),
-                    },
+                    params={"q": cql_query},
                     headers=self._get_headers(),
                     timeout=self._TIMEOUT_SECONDS,
                 )
 
                 response.raise_for_status()
 
-                data = response.json()
-                duration = time.time() - start_time
+                # Parsear resposta (pode ser JSON ou XML)
+                # Tentar como JSON primeiro
+                try:
+                    data = response.json()
+                    # Extrair do formato JSON-converted-from-XML
+                    world_patent_data = data.get("ops:world-patent-data", {})
+                    biblio_search = world_patent_data.get("ops:biblio-search", {})
+                    total_count = biblio_search.get("@total-result-count")
+                    if isinstance(total_count, str):
+                        total_count = int(total_count)
 
-                # Extrair dados (estrutura OPS)
-                results = data.get("published-data", [])
-                total_count = data.get("biblio-search", {}).get("@total-result-count")
+                    # Extrair resultados
+                    search_result = world_patent_data.get("ops:biblio-search", {}).get("ops:search-result", [])
+                    if not isinstance(search_result, list):
+                        search_result = [search_result] if search_result else []
+
+                    # Retornar como dicionários (não strings JSON)
+                    results = search_result
+                except (json.JSONDecodeError, ValueError):
+                    # Se não for JSON, tentar XML
+                    root = ET.fromstring(response.text)
+
+                    biblio_search = root.find(
+                        ".//{http://ops.epo.org}biblio-search"
+                    )
+                    total_count_str = biblio_search.get("total-result-count") if biblio_search is not None else None
+                    total_count = int(total_count_str) if total_count_str else None
+
+                    results = []
+                    search_result = root.find(
+                        ".//{http://ops.epo.org}search-result"
+                    )
+                    if search_result is not None:
+                        for pub_ref in search_result.findall(
+                            ".//{http://ops.epo.org}publication-reference"
+                        ):
+                            results.append(ET.tostring(pub_ref, encoding="unicode"))
+
+                duration = time.time() - start_time
 
                 logger.info(
                     "ops_search_success",
@@ -292,17 +333,12 @@ class OPSService:
                     success=True,
                     query=cql_query,
                     results=results,
-                    total_count=int(total_count) if total_count else None,
+                    total_count=total_count,
                     results_returned=len(results),
                     retry_count=retry_count,
                     duration_seconds=duration,
                     run_id=run_id,
                 )
-
-                # TODO: Implementar estágio de recuperação de metadados complementares
-                # - Buscar detalhes completos de cada patente encontrada
-                # - Recuperar family information
-                # - Buscar dados de citações
 
             except httpx.HTTPStatusError as exc:
                 retry_count = attempt
@@ -315,6 +351,7 @@ class OPSService:
                     status_code=exc.response.status_code,
                     attempt=attempt + 1,
                     is_retryable=is_retryable,
+                    response_text=exc.response.text[:200],
                     run_id=run_id,
                 )
 
@@ -330,7 +367,7 @@ class OPSService:
                         run_id=run_id,
                     )
 
-                time.sleep(self._RETRY_DELAY_SECONDS * (attempt + 1))
+                await asyncio.sleep(self._RETRY_DELAY_SECONDS * (attempt + 1))
 
             except Exception as exc:
                 duration = time.time() - start_time
@@ -339,6 +376,7 @@ class OPSService:
                     "ops_search_error",
                     error=str(exc),
                     error_type=type(exc).__name__,
+                    response_text=response.text[:200] if 'response' in locals() else "N/A",
                     run_id=run_id,
                 )
 
@@ -369,6 +407,9 @@ class OPSService:
         """
         Constrói headers para requisição OPS.
 
+        OPS espera: Authorization: Bearer <token>
+        Accept: application/json (API responde com JSON corretamente)
+
         Returns:
             Dicionário com headers HTTP.
         """
@@ -377,11 +418,12 @@ class OPSService:
             "Accept": "application/json",
         }
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """
-        Fecha cliente httpx.
+        Fecha clientes httpx (síncrono e assíncrono).
         """
-        self.client.close()
+        self.sync_client.close()
+        await self.async_client.aclose()
 
     async def __aenter__(self):
         """
@@ -393,4 +435,4 @@ class OPSService:
         """
         Context manager exit.
         """
-        self.close()
+        await self.close()

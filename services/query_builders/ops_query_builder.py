@@ -1,11 +1,15 @@
 """
 Query builder for European Patent Office (OPS) API.
+
+Gera queries CQL (Common Query Language) a partir de LLMOutput,
+usando o mapa de campos definido em ops.fields.json.
 """
 
 import json
 from pathlib import Path
 from typing import Any, Optional
 
+from core.config import settings
 from core.logging import get_logger
 from schemas.llm import LLMOutput, SimpleFieldQuery, TextualFieldQuery
 from services.query_builders.base import BaseQueryBuilder
@@ -18,36 +22,42 @@ class OPSQueryBuilder(BaseQueryBuilder):
     Construtor de consultas para OPS (European Patent Office) API.
 
     Transforma saída normalizada do LLM em CQL (Common Query Language)
-    e estrutura de requisição específica da OPS API.
+    usando o mapa de campos do arquivo ops.fields.json.
+
+    Campos mapeados:
+    - Textuais: title, abstract, claims, full_text
+    - Simples: ipc, cpc, applicant, inventor, year
+
+    Campos ignorados (não existem no OPS): description, authors, affiliation, etc.
     """
 
-    # Configurações da API
-    _MAX_QUERY_LENGTH = 10000  # CQL tem limite menor
-    _FIELD_MAP_FILE = Path(__file__).parent.parent.parent / "schemas_config" / "ops_fields.json"
+    # Configurações
+    _MAX_QUERY_LENGTH = 10000
+    _FIELD_MAP_FILE = Path(__file__).parent.parent.parent / "schemas_config" / "ops.fields.json"
+
+    # Mapeamento de atributos LLMOutput para tipos
+    _TEXTUAL_ATTRS = ["title", "abstract", "claims", "full_text"]
+    _SIMPLE_ATTRS = ["ipc", "cpc", "applicant", "inventor", "year"]
 
     def __init__(self, api_name: str = "ops", search_mode: str = "general") -> None:
         """
         Inicializa o construtor OPS.
 
         Args:
-            api_name: Nome da API.
-            search_mode: Modo de busca (probe ou general).
+            api_name: Nome da API (padrão: "ops").
+            search_mode: Modo de busca ("probe" ou "general").
         """
         super().__init__(api_name, search_mode)
         self.field_map = self._load_field_map()
 
     @property
     def api_identifier(self) -> str:
-        """
-        Identificador da OPS API.
-        """
+        """Identificador único da OPS API."""
         return "espacenet.com/ops"
 
     @property
     def max_query_length(self) -> int:
-        """
-        Comprimento máximo de consulta CQL OPS.
-        """
+        """Comprimento máximo de consulta CQL."""
         return self._MAX_QUERY_LENGTH
 
     def build_query(
@@ -57,84 +67,87 @@ class OPSQueryBuilder(BaseQueryBuilder):
         year_to: int,
     ) -> dict[str, Any]:
         """
-        Constrói estrutura de requisição para OPS API.
+        Constrói query CQL para OPS API a partir de LLMOutput.
 
-        Returns CQL query e parâmetros de requisição.
+        O range de resultados varia conforme search_mode:
+        - probe: retorna até `probe_top_k` resultados (padrão: 10)
+        - general: retorna até `final_top_k` resultados (padrão: 100)
 
         Args:
-            llm_output: Saída normalizada do LLM.
-            year_from: Ano inicial (SEARCH_YEAR_FROM).
-            year_to: Ano final (SEARCH_YEAR_TO).
+            llm_output: Saída normalizada do LLM com campos estruturados.
+            year_from: Ano inicial de publicação.
+            year_to: Ano final de publicação.
 
         Returns:
-            Dicionário com CQL query e parâmetros OPS.
+            Dicionário com chaves:
+            - query: string CQL pronta para OPS
+            - range: intervalo de resultados (ex: "1-10" para probe, "1-100" para general)
+            - format: formato de resposta (padrão "json")
         """
-        # Construir cláusulas CQL
         cql_clauses = []
 
-        # Campos textuais
-        for field_name in ["title", "abstract", "claims", "description", "full_text"]:
-            field_value = getattr(llm_output, field_name)
-
+        # Processar campos textuais
+        for attr_name in self._TEXTUAL_ATTRS:
+            field_value = getattr(llm_output, attr_name)
             if not field_value.is_empty():
-                ops_field = self.field_map.get("textual", {}).get(field_name)
-
+                ops_field = self.field_map.get(attr_name.upper())
                 if ops_field:
                     cql_clause = self._build_textual_cql(field_value, ops_field)
                     if cql_clause:
                         cql_clauses.append(cql_clause)
 
-        # Campos simples
-        for field_name in [
-            "ipc",
-            "cpc",
-            "authors",
-            "applicant",
-            "inventor",
-            "year",
-        ]:
-            field_value = getattr(llm_output, field_name)
+        # Processar campos simples (não incluindo "year" por enquanto)
+        for attr_name in self._SIMPLE_ATTRS:
+            if attr_name == "year":
+                # Year é tratado especialmente com data range
+                continue
 
+            field_value = getattr(llm_output, attr_name)
             if not field_value.is_empty():
-                ops_field = self.field_map.get("simple", {}).get(field_name)
-
+                ops_field = self.field_map.get(attr_name.upper())
                 if ops_field:
                     cql_clause = self._build_simple_cql(field_value, ops_field)
                     if cql_clause:
                         cql_clauses.append(cql_clause)
 
-        # Adicionar intervalo de anos
+        # Processar data (year)
         date_cql = self._build_date_cql(year_from, year_to)
         if date_cql:
             cql_clauses.append(date_cql)
 
-        # Combinar cláusulas com AND (diferentes campos por padrão)
+        # Combinar cláusulas com AND, cada uma entre parênteses
         cql_query = " AND ".join([f"({clause})" for clause in cql_clauses])
 
-        # Validar comprimento
+        # Log de warning se query muito longa
         if len(cql_query) > self.max_query_length:
             logger.warning(
-                "query_exceeds_max_length",
-                api=self.api_name,
+                "ops_query_exceeds_max_length",
                 length=len(cql_query),
                 max=self.max_query_length,
+                search_mode=self.search_mode,
             )
 
-        # Construir requisição OPS
-        ops_request = {
-            "query": cql_query,
-            "range": "1-100",  # TODO: Fazer configurável
-            "format": "json",
-            "inputs": "DOCDB",  # TODO: Fazer configurável
-        }
+        # Definir range baseado em search_mode
+        if self.search_mode == "probe":
+            top_k = getattr(settings, "probe_top_k", 10)
+        else:
+            top_k = getattr(settings, "final_top_k", 100)
+
+        range_str = f"1-{top_k}"
 
         logger.info(
             "ops_query_built",
             search_mode=self.search_mode,
+            clauses_count=len(cql_clauses),
             query_length=len(cql_query),
+            top_k=top_k,
         )
 
-        return ops_request
+        return {
+            "query": cql_query,
+            "range": range_str,
+            "format": "json",
+        }
 
     def _build_textual_cql(
         self,
@@ -144,9 +157,13 @@ class OPSQueryBuilder(BaseQueryBuilder):
         """
         Constrói cláusula CQL para campo textual.
 
+        Exemplo com group_operator=AND e 2 grupos:
+        Input:  groups=[["machine learning", "deep learning"], ["healthcare"]]
+        Output: ti = (("machine learning" OR "deep learning") AND ("healthcare"))
+
         Args:
-            field: Campo textual estruturado.
-            ops_field: Nome do campo na OPS API.
+            field: Estrutura TextualFieldQuery com grupos de termos.
+            ops_field: Nome do campo na CQL (ex: "ti", "ab").
 
         Returns:
             String CQL ou None se vazio.
@@ -160,27 +177,21 @@ class OPSQueryBuilder(BaseQueryBuilder):
             if not group.terms:
                 continue
 
-            # Escapar termos para CQL
+            # Escapar e combinar termos do grupo
             escaped_terms = [self._escape_cql_term(term) for term in group.terms]
-
-            # Combinar com operador
-            if group.operator.value == "OR":
-                term_clause = f" OR ".join(escaped_terms)
-            else:  # AND
-                term_clause = f" AND ".join(escaped_terms)
-
+            operator = " OR " if group.operator.value == "OR" else " AND "
+            term_clause = operator.join(escaped_terms)
             group_clauses.append(f"({term_clause})")
 
         if not group_clauses:
             return None
 
-        # Combinar grupos
+        # Combinar grupos entre si
         if len(group_clauses) == 1:
-            return f'{ops_field} = ({group_clauses[0]})'
-        elif field.group_operator.value == "AND":
-            combined = " AND ".join(group_clauses)
-        else:  # OR
-            combined = " OR ".join(group_clauses)
+            combined = group_clauses[0]
+        else:
+            group_op = " AND " if field.group_operator.value == "AND" else " OR "
+            combined = group_op.join(group_clauses)
 
         return f'{ops_field} = ({combined})'
 
@@ -192,17 +203,22 @@ class OPSQueryBuilder(BaseQueryBuilder):
         """
         Constrói cláusula CQL para campo simples.
 
+        Exemplo com múltiplos valores:
+        Input:  values=["Samsung", "Apple"]
+        Output: pa = ("Samsung" OR "Apple")
+
+        Valor único:
+        Output: pa = Samsung
+
         Args:
-            field: Campo simples com lista de valores.
-            ops_field: Nome do campo na OPS API.
+            field: Estrutura SimpleFieldQuery com lista de valores.
+            ops_field: Nome do campo na CQL (ex: "pa", "ipc").
 
         Returns:
             String CQL ou None se vazio.
         """
         if not field.values:
             return None
-
-        # TODO: Definir estratégia final para campos simples (= vs exact)
 
         escaped_values = [self._escape_cql_term(val) for val in field.values]
 
@@ -214,77 +230,108 @@ class OPSQueryBuilder(BaseQueryBuilder):
 
     def _build_date_cql(self, year_from: int, year_to: int) -> Optional[str]:
         """
-        Constrói cláusula CQL de intervalo de anos.
+        Constrói cláusula CQL para range de anos.
+
+        Usa o campo "pd" (publication date) do OPS.
+        Formato: pd within "YYYYMMDD YYYYMMDD" (com espaço, não vírgula)
 
         Args:
-            year_from: Ano inicial.
-            year_to: Ano final.
+            year_from: Ano inicial (ex: 2020).
+            year_to: Ano final (ex: 2024).
 
         Returns:
-            String CQL ou None se inválido.
+            String CQL no formato "pd within \"YYYYMMDD YYYYMMDD\"" ou None.
         """
         if year_from <= 0 or year_to <= 0 or year_from > year_to:
             return None
 
-        # TODO: Confirmar campo de data na OPS (publication.date, filing.date)
-        return f"publication.date >= {year_from}0101 AND publication.date <= {year_to}1231"
+        # OPS usa formato YYYYMMDD para datas com operador within
+        date_from = f"{year_from}0101"
+        date_to = f"{year_to}1231"
+
+        return f'pd within "{date_from} {date_to}"'
 
     @staticmethod
     def _escape_cql_term(term: str) -> str:
         """
         Escapa termo para CQL.
 
+        Se contém espaços ou caracteres especiais, envolve com aspas duplas.
+
         Args:
-            term: Termo a escapar.
+            term: Termo original.
 
         Returns:
             Termo escapado para CQL.
         """
-        # Em CQL, aspas duplas escapam caracteres especiais
-        if any(char in term for char in ['"', "'", "*", "?", " "]):
-            return f'"{term}"'
+        # Caracteres que requerem escaping
+        special_chars = ['"', "'", "*", "?", " ", "(", ")"]
+        if any(char in term for char in special_chars):
+            # Escapar aspas duplas dentro do termo
+            escaped = term.replace('"', '\\"')
+            return f'"{escaped}"'
         return term
 
-    def _load_field_map(self) -> dict[str, dict[str, str]]:
+    def _load_field_map(self) -> dict[str, str]:
         """
-        Carrega mapa de campos da OPS API.
+        Carrega mapa de campos OPS do arquivo JSON.
+
+        Espera estrutura: {"field_map": {"TITLE": "ti", "ABSTRACT": "ab", ...}}
+        Retorna dicionário flat: {"TITLE": "ti", "ABSTRACT": "ab", ...}
 
         Returns:
-            Dicionário com mapeamento de campos.
+            Dicionário mapeando nomes de campos (UPPERCASE) para siglas OPS.
         """
         if not self._FIELD_MAP_FILE.exists():
-            logger.warning(f"Field map file not found: {self._FIELD_MAP_FILE}")
+            logger.warning(
+                "ops_field_map_file_not_found",
+                path=str(self._FIELD_MAP_FILE),
+            )
             return self._get_default_field_map()
 
         try:
-            with open(self._FIELD_MAP_FILE, "r") as f:
-                return json.load(f)
+            with open(self._FIELD_MAP_FILE, "r", encoding="utf-8") as f:
+                config = json.load(f)
+                # Extrair field_map do arquivo
+                field_map = config.get("field_map", {})
+                if not field_map:
+                    logger.warning("ops_field_map_empty_in_file")
+                    return self._get_default_field_map()
+                return field_map
+        except json.JSONDecodeError as exc:
+            logger.error(
+                "ops_field_map_json_error",
+                error=str(exc),
+                path=str(self._FIELD_MAP_FILE),
+            )
+            return self._get_default_field_map()
         except Exception as exc:
-            logger.error(f"Failed to load field map: {exc}")
+            logger.error(
+                "ops_field_map_load_error",
+                error=str(exc),
+                path=str(self._FIELD_MAP_FILE),
+            )
             return self._get_default_field_map()
 
     @staticmethod
-    def _get_default_field_map() -> dict[str, dict[str, str]]:
+    def _get_default_field_map() -> dict[str, str]:
         """
-        Retorna mapa de campos padrão OPS.
+        Retorna mapa de campos padrão (fallback).
+
+        Baseado em documentação OPS CQL:
+        https://www.epo.org/searching-for-patents/technical/espacenet/cql/cql-syntax.html
 
         Returns:
-            Mapa padrão com campos conhecidos.
+            Dicionário mapeando nomes de campos para siglas OPS.
         """
         return {
-            "textual": {
-                "title": "title",
-                "abstract": "abstract",
-                "claims": "claims",
-                "description": "description",
-                "full_text": "text",
-            },
-            "simple": {
-                "ipc": "ipc",
-                "cpc": "cpc",
-                "authors": "inventor",
-                "applicant": "applicant",
-                "inventor": "inventor",
-                "year": "publication.date",
-            },
+            "TITLE": "ti",
+            "ABSTRACT": "ab",
+            "CLAIMS": "claims",
+            "FULL_TEXT": "ftxt",
+            "IPC": "ipc",
+            "CPC": "cpc",
+            "APPLICANT": "pa",
+            "INVENTOR": "in",
+            "YEAR": "pd",
         }

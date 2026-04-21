@@ -754,29 +754,38 @@ async def test_probe_search(
 
         # Etapa 2: Construir query
         builder = QueryBuilderFactory.create(probe_api, search_mode="probe")
+        logger.info("probe_search_builder_created", run_id=run_id, builder_type=type(builder).__name__, api=probe_api)
+
         query = builder.build_query(
             llm_output=normalized_output,
             year_from=getattr(settings, "search_year_from", 2015),
             year_to=getattr(settings, "search_year_to", 2026),
         )
 
+        logger.info("probe_search_query_built_debug", run_id=run_id, query_type=type(query).__name__, query_keys=list(query.keys()) if isinstance(query, dict) else "not_dict")
+
         logger.info(
             "probe_search_query_built",
             run_id=run_id,
-            query_size=query.get("size"),
+            query_size=query.get("size") or query.get("range") if isinstance(query, dict) else "unknown",
         )
 
-        # Etapa 3: Executar busca na API Lens Patent
-        lens_service = LensService()
+        # Etapa 3: Executar busca na API configurada (Lens ou OPS)
+        logger.info("probe_search_api_started", run_id=run_id, api=probe_api)
 
-        logger.info("probe_search_api_started", run_id=run_id)
-
-        search_result = await lens_service.search_patent(
-            query=query,
-            run_id=run_id,
-        )
-
-        lens_service.close()
+        if probe_api == "ops":
+            from services.search import OPSService
+            ops_service = OPSService()
+            search_result = await ops_service.search(query, run_id=run_id)
+            await ops_service.close()
+        else:
+            # Lens Patent é o padrão
+            lens_service = LensService()
+            search_result = await lens_service.search_patent(
+                query=query,
+                run_id=run_id,
+            )
+            lens_service.close()
 
         logger.info(
             "probe_search_api_completed",
@@ -789,19 +798,46 @@ async def test_probe_search(
         # Etapa 4: Extrair dados dos documentos
         documents_sample = []
         if search_result.success and search_result.results:
-            for doc in search_result.results:
-                doc_data = {
-                    "lens_id": doc.get("lens_id"),
-                    "title": _extract_title_from_doc(doc),
-                    "abstract": doc.get("abstract"),
-                    "publication_date": doc.get("date_published"),
-                    "jurisdiction": doc.get("jurisdiction"),
-                    "applicant": _extract_applicant_from_doc(doc),
-                    "inventor": _extract_inventor_from_doc(doc),
-                    "ipc_classifications": _extract_ipc_from_doc(doc),
-                    "cpc_classifications": _extract_cpc_from_doc(doc),
-                }
-                documents_sample.append(doc_data)
+            for i, doc in enumerate(search_result.results):
+                try:
+                    logger.info(f"Processing document {i}, type: {type(doc)}, is_dict: {isinstance(doc, dict)}")
+
+                    # Tratamento diferenciado por API
+                    if probe_api == "ops":
+                        # OPS retorna estrutura JSON-converted-from-XML
+                        doc_data = {
+                            "api": "ops",
+                            "doc_type": str(type(doc)),
+                            "title": "OPS document (raw JSON structure)",
+                            "raw": doc if isinstance(doc, dict) else str(doc)[:200],
+                        }
+                    elif isinstance(doc, dict):
+                        # Lens Patent tem estrutura conhecida
+                        doc_data = {
+                            "lens_id": doc.get("lens_id"),
+                            "title": _extract_title_from_doc(doc),
+                            "abstract": doc.get("abstract"),
+                            "publication_date": doc.get("date_published"),
+                            "jurisdiction": doc.get("jurisdiction"),
+                            "applicant": _extract_applicant_from_doc(doc),
+                            "inventor": _extract_inventor_from_doc(doc),
+                            "ipc_classifications": _extract_ipc_from_doc(doc),
+                            "cpc_classifications": _extract_cpc_from_doc(doc),
+                        }
+                    else:
+                        # Fallback para tipo desconhecido
+                        doc_data = {
+                            "error": f"Unknown document type: {type(doc)}",
+                            "raw": str(doc)[:200]
+                        }
+
+                    documents_sample.append(doc_data)
+                except Exception as doc_error:
+                    logger.error(f"Error processing document {i}: {doc_error}", exc_info=True)
+                    documents_sample.append({
+                        "error": str(doc_error),
+                        "doc_type": str(type(doc))
+                    })
 
         # Preparar resposta
         response_data = {
@@ -824,14 +860,15 @@ async def test_probe_search(
             "query_generated": {
                 "api": probe_api,
                 "search_mode": "probe",
-                "size": query.get("size"),
-                "from": query.get("from"),
-                "has_query_bool": "query" in query and "bool" in query.get("query", {}),
-                "must_clauses_count": len(query.get("query", {}).get("bool", {}).get("must", [])),
+                "size": query.get("size") if probe_api != "ops" else query.get("range"),
+                "from": query.get("from") if probe_api != "ops" else "1",
+                "has_query_bool": "query" in query and "bool" in query.get("query", {}) if probe_api != "ops" else False,
+                "cql_query": query.get("query") if probe_api == "ops" else None,
+                "must_clauses_count": len(query.get("query", {}).get("bool", {}).get("must", [])) if probe_api != "ops" else 0,
                 "full_query": query,
             },
             "api_results": {
-                "api": "lens_patent",
+                "api": probe_api,
                 "success": search_result.success,
                 "total_available": search_result.total_count,
                 "results_returned": search_result.results_returned,
@@ -859,17 +896,19 @@ async def test_probe_search(
         )
 
     except Exception as exc:
+        import traceback
         logger.error(
             "probe_search_test_error",
             error=str(exc),
             error_type=type(exc).__name__,
             run_id=run_id,
             exc_info=True,
+            traceback=traceback.format_exc(),
         )
 
         return SuccessResponse(
             success=False,
-            data={"error": str(exc), "error_type": type(exc).__name__},
+            data={"error": str(exc), "error_type": type(exc).__name__, "traceback": traceback.format_exc()},
             message=f"Probe search test failed: {str(exc)}",
             run_id=run_id,
         )
