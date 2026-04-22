@@ -11,6 +11,7 @@ from services.llm.anthropic_service import AnthropicLLMService
 from services.llm.base import BaseLLMService
 from services.llm.gemini_service import GeminiLLMService
 from services.llm.mock_service import MockLLMService
+from services.llm.qwen3_service import Qwen3LLMService
 
 logger = get_logger(__name__)
 
@@ -62,6 +63,8 @@ class LLMServiceFactory:
             return LLMServiceFactory._create_gemini(api_key)
         elif provider == "anthropic":
             return LLMServiceFactory._create_anthropic(api_key)
+        elif provider == "qwen3":
+            return LLMServiceFactory._create_qwen3(api_key)
         elif provider == "mock":
             return MockLLMService()
         else:
@@ -131,6 +134,39 @@ class LLMServiceFactory:
                 return MockLLMService()
         except Exception as exc:
             logger.warning(f"Failed to create Anthropic service: {exc}, falling back to mock")
+            return MockLLMService()
+
+    @staticmethod
+    def _create_qwen3(api_key: Optional[str] = None) -> Qwen3LLMService:
+        """
+        Cria serviço Qwen3 (Alibaba Cloud).
+
+        Args:
+            api_key: Chave de API (se None, tenta obter de settings).
+
+        Returns:
+            Instância de Qwen3LLMService.
+
+        Raises:
+            ValueError: Se API key não estiver disponível.
+        """
+        api_key = api_key or settings.llm_qwen3_api_key
+        model = settings.llm_qwen3_model
+
+        if not api_key:
+            logger.warning("Qwen3 API key not found, falling back to mock")
+            return MockLLMService()
+
+        try:
+            service = Qwen3LLMService(api_key=api_key, model=model)
+            if service.is_available():
+                logger.info("LLM factory: Qwen3 service created successfully")
+                return service
+            else:
+                logger.warning("Qwen3 service not available, falling back to mock")
+                return MockLLMService()
+        except Exception as exc:
+            logger.warning(f"Failed to create Qwen3 service: {exc}, falling back to mock")
             return MockLLMService()
 
     @staticmethod

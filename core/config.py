@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     llm_gemini_model: str = "gemini-2.0-flash-exp"
     llm_anthropic_api_key: Optional[str] = None
     llm_anthropic_model: str = "claude-3-5-sonnet-20241022"
+    llm_qwen3_api_key: Optional[str] = None
+    llm_qwen3_model: str = "qwen-max"
 
     # External APIs
     lens_api_token: Optional[str] = None
