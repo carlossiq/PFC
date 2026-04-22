@@ -1,0 +1,25 @@
+{
+  "api": "lens_scholarly",
+  "query_container": "query",
+  "field_map": {
+    "textual": {
+      "title": "title",
+      "abstract": "abstract",
+      "description": "abstract",
+      "claims": null,
+      "full_text": "full_text"
+    },
+    "simple": {
+      "authors": "authors.name",
+      "affiliation": "authors.affiliations",
+      "field_of_study": "field_of_study",
+      "keywords": "keywords",
+      "source_title": "source.title",
+      "year": "year_published"
+    }
+  },
+  "composite_helpers": {
+    "title_or_abstract": ["title", "abstract"],
+    "author_or_affiliation": ["authors.name", "authors.affiliations"]
+  }
+}
