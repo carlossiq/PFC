@@ -1,5 +1,12 @@
 """
 Query builder for Scopus API.
+
+Gera queries Scopus a partir de LLMOutput usando sintaxe de campos específica:
+- TITLE() para título
+- ABS() para abstract
+- AUTH() para autores
+- KEY() para keywords
+- etc.
 """
 
 import json
@@ -7,6 +14,7 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlencode
 
+from core.config import settings
 from core.logging import get_logger
 from schemas.llm import LLMOutput, SimpleFieldQuery, TextualFieldQuery
 from services.query_builders.base import BaseQueryBuilder
@@ -60,10 +68,14 @@ class ScopusQueryBuilder(BaseQueryBuilder):
         """
         Constrói parâmetros de requisição para Scopus API.
 
+        Estratégia:
+        - Title e Abstract: combinados com OR (buscar em um ou outro)
+        - Outros campos: combinados com AND
+
         Args:
             llm_output: Saída normalizada do LLM.
-            year_from: Ano inicial (SEARCH_YEAR_FROM).
-            year_to: Ano final (SEARCH_YEAR_TO).
+            year_from: Ano inicial.
+            year_to: Ano final.
 
         Returns:
             Dicionário com parâmetros para Scopus API.
@@ -71,32 +83,45 @@ class ScopusQueryBuilder(BaseQueryBuilder):
         # Construir partes da query
         query_parts = []
 
-        # Campos textuais
-        for field_name in ["title", "abstract", "description", "full_text"]:
-            field_value = getattr(llm_output, field_name)
+        # Estratégia especial: title e abstract combinados com OR
+        title_query = None
+        abstract_query = None
 
+        title_value = getattr(llm_output, "title")
+        if not title_value.is_empty():
+            scopus_field = self.field_map.get("textual", {}).get("title")
+            if scopus_field:
+                title_query = self._build_textual_query(title_value, scopus_field)
+
+        abstract_value = getattr(llm_output, "abstract")
+        if not abstract_value.is_empty():
+            scopus_field = self.field_map.get("textual", {}).get("abstract")
+            if scopus_field:
+                abstract_query = self._build_textual_query(abstract_value, scopus_field)
+
+        # Combinar title e abstract com OR
+        if title_query and abstract_query:
+            query_parts.append(f"({title_query} OR {abstract_query})")
+        elif title_query:
+            query_parts.append(title_query)
+        elif abstract_query:
+            query_parts.append(abstract_query)
+
+        # Processar outros campos textuais com AND
+        for field_name in ["description", "full_text"]:
+            field_value = getattr(llm_output, field_name)
             if not field_value.is_empty():
                 scopus_field = self.field_map.get("textual", {}).get(field_name)
-
                 if scopus_field:
                     query_part = self._build_textual_query(field_value, scopus_field)
                     if query_part:
                         query_parts.append(query_part)
 
-        # Campos simples
-        for field_name in [
-            "authors",
-            "affiliation",
-            "field_of_study",
-            "keywords",
-            "source_title",
-            "year",
-        ]:
+        # Processar campos simples com AND
+        for field_name in ["authors", "affiliation", "field_of_study", "keywords", "source_title"]:
             field_value = getattr(llm_output, field_name)
-
             if not field_value.is_empty():
                 scopus_field = self.field_map.get("simple", {}).get(field_name)
-
                 if scopus_field:
                     query_part = self._build_simple_query(field_value, scopus_field)
                     if query_part:
@@ -113,25 +138,32 @@ class ScopusQueryBuilder(BaseQueryBuilder):
         # Validar comprimento
         if len(scopus_query) > self.max_query_length:
             logger.warning(
-                "query_exceeds_max_length",
-                api=self.api_name,
+                "scopus_query_exceeds_max_length",
                 length=len(scopus_query),
                 max=self.max_query_length,
+                search_mode=self.search_mode,
             )
+
+        # Definir count baseado em search_mode
+        if self.search_mode == "probe":
+            count = getattr(settings, "probe_top_k", 10)
+        else:
+            count = getattr(settings, "final_top_k", 100)
 
         # Construir parâmetros da requisição
         params = {
             "query": scopus_query,
-            "sort": "citedby-count,pubdate",  # TODO: Fazer configurável
-            "count": 25,  # TODO: Fazer configurável
+            "count": count,
             "start": 0,
-            "view": "COMPLETE",  # TODO: Fazer configurável
+            "sort": "citedby-count",
+            "view": "COMPLETE",
         }
 
         logger.info(
             "scopus_query_built",
             search_mode=self.search_mode,
             query_length=len(scopus_query),
+            count=count,
         )
 
         return params

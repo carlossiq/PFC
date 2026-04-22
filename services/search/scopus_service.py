@@ -37,7 +37,8 @@ class ScopusService:
             api_key: API key do Scopus (se None, tenta config).
         """
         self.api_key = api_key or getattr(settings, "scopus_api_key", None)
-        self.client = httpx.Client(timeout=self._TIMEOUT_SECONDS)
+        self.async_client = httpx.AsyncClient(timeout=self._TIMEOUT_SECONDS)
+        self.sync_client = httpx.Client(timeout=self._TIMEOUT_SECONDS)
 
     async def search(
         self,
@@ -231,7 +232,7 @@ class ScopusService:
                 # Preparar parâmetros
                 params = query_params.copy()
                 params["start"] = start
-                params["count"] = self._DEFAULT_RESULTS_PER_PAGE
+                # Não sobrescrever count - usar o que vem do query builder (probe_top_k ou final_top_k)
 
                 logger.info(
                     "scopus_page_attempt",
@@ -241,7 +242,7 @@ class ScopusService:
                 )
 
                 # Fazer requisição
-                response = self.client.get(
+                response = await self.async_client.get(
                     self._SCOPUS_API_URL,
                     params=params,
                     headers=self._get_headers(),
@@ -361,11 +362,12 @@ class ScopusService:
 
         return headers
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """
-        Fecha cliente httpx.
+        Fecha clientes httpx (síncrono e assíncrono).
         """
-        self.client.close()
+        self.sync_client.close()
+        await self.async_client.aclose()
 
     async def __aenter__(self):
         """
@@ -377,4 +379,4 @@ class ScopusService:
         """
         Context manager exit.
         """
-        self.close()
+        await self.close()
