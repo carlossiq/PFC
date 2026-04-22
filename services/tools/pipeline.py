@@ -11,8 +11,9 @@ from core.config import settings
 from core.logging import get_logger
 from schemas.intake import InputIntake
 from schemas.llm import LLMOutput
-from services.llm import FieldSchemaService, LLMOutputNormalizer, LLMServiceFactory, PromptLoader
+from services.llm import FieldSchemaService, LLMOutputNormalizer, LLMServiceFactory
 from services.nlp import KeywordService
+from services.prompt import PromptLoader
 from services.query_builders import QueryBuilderFactory
 from services.search import LensService, OPSService, ScopusService
 
