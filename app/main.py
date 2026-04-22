@@ -5,7 +5,7 @@ Main FastAPI application initialization and startup configuration.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import health, intake, test
+from api.routes import chat, health, intake, test
 from core.config import settings
 from core.logging import configure_logging, get_logger
 from db.session import db_session
@@ -52,6 +52,7 @@ def create_app() -> FastAPI:
     # Incluir rotas
     app.include_router(health.router, prefix=settings.api_prefix)
     app.include_router(intake.router, prefix=settings.api_prefix)
+    app.include_router(chat.router, prefix=settings.api_prefix)
     app.include_router(test.router, prefix=settings.api_prefix)
 
     # Event handlers
