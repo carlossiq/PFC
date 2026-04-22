@@ -1,11 +1,16 @@
 """
 Query builder for Lens Scholarly API.
+
+Gera queries Elasticsearch com:
+- Title e Abstract combinados com OR (buscar em um ou outro)
+- Outros campos com AND (obrigatório)
 """
 
 import json
 from pathlib import Path
 from typing import Any, Optional
 
+from core.config import settings
 from core.logging import get_logger
 from schemas.llm import LLMOutput, SimpleFieldQuery, TermGroup, TextualFieldQuery
 from services.query_builders.base import BaseQueryBuilder
@@ -59,10 +64,14 @@ class LensScholarlyQueryBuilder(BaseQueryBuilder):
         """
         Constrói payload JSON para Lens Scholarly API.
 
+        Estratégia:
+        - Title e Abstract: combinados com OR (buscar em um ou outro)
+        - Outros campos: combinados com AND
+
         Args:
             llm_output: Saída normalizada do LLM.
-            year_from: Ano inicial (SEARCH_YEAR_FROM).
-            year_to: Ano final (SEARCH_YEAR_TO).
+            year_from: Ano inicial.
+            year_to: Ano final.
 
         Returns:
             Dicionário com payload para Lens Scholarly.
@@ -72,12 +81,39 @@ class LensScholarlyQueryBuilder(BaseQueryBuilder):
             "query": {
                 "bool": {
                     "must": [],
+                    "should": [],  # Para title/abstract com OR
                 }
             }
         }
 
-        # Construir consultas booleanas para campos textuais
-        for field_name in ["title", "abstract", "claims", "description", "full_text"]:
+        # Estratégia especial: title e abstract combinados com OR (should clause)
+        title_query = None
+        abstract_query = None
+
+        title_value = getattr(llm_output, "title")
+        if not title_value.is_empty():
+            lens_field = self.field_map.get("textual", {}).get("title")
+            if lens_field:
+                title_query = self._build_textual_query(title_value, lens_field)
+
+        abstract_value = getattr(llm_output, "abstract")
+        if not abstract_value.is_empty():
+            lens_field = self.field_map.get("textual", {}).get("abstract")
+            if lens_field:
+                abstract_query = self._build_textual_query(abstract_value, lens_field)
+
+        # Adicionar title e abstract ao should (OR)
+        if title_query:
+            payload["query"]["bool"]["should"].append(title_query)
+        if abstract_query:
+            payload["query"]["bool"]["should"].append(abstract_query)
+
+        # Se há should clauses, definir minimum_should_match = 1 (pelo menos um deve bater)
+        if payload["query"]["bool"]["should"]:
+            payload["query"]["bool"]["minimum_should_match"] = 1
+
+        # Construir consultas para outros campos textuais com AND
+        for field_name in ["claims", "description", "full_text"]:
             field_value = getattr(llm_output, field_name)
 
             if not field_value.is_empty():
@@ -87,14 +123,13 @@ class LensScholarlyQueryBuilder(BaseQueryBuilder):
                     query_clause = self._build_textual_query(field_value, lens_field)
                     payload["query"]["bool"]["must"].append(query_clause)
 
-        # Construir consultas para campos simples
+        # Construir consultas para campos simples com AND
         for field_name in [
             "authors",
             "affiliation",
             "field_of_study",
             "keywords",
             "source_title",
-            "year",
         ]:
             field_value = getattr(llm_output, field_name)
 
@@ -110,20 +145,29 @@ class LensScholarlyQueryBuilder(BaseQueryBuilder):
         if date_query:
             payload["query"]["bool"]["must"].append(date_query)
 
+        # Adicionar size baseado em search_mode
+        if self.search_mode == "probe":
+            payload["size"] = getattr(settings, "probe_top_k", 10)
+        else:
+            payload["size"] = getattr(settings, "final_top_k", 100)
+
+        payload["from"] = 0
+
         # Validar comprimento
         query_str = json.dumps(payload)
         if len(query_str) > self.max_query_length:
             logger.warning(
-                "query_exceeds_max_length",
-                api=self.api_name,
+                "lens_scholarly_query_exceeds_max_length",
                 length=len(query_str),
                 max=self.max_query_length,
+                search_mode=self.search_mode,
             )
 
         logger.info(
             "lens_scholarly_query_built",
             search_mode=self.search_mode,
             query_length=len(query_str),
+            size=payload.get("size"),
         )
 
         return payload
