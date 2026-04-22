@@ -1,0 +1,26 @@
+{
+  "api": "scopus",
+  "query_container": "query",
+  "field_map": {
+    "textual": {
+      "title": "TITLE",
+      "abstract": "ABS",
+      "description": "ABS",
+      "full_text": null,
+      "claims": null
+    },
+    "simple": {
+      "authors": "AUTH",
+      "affiliation": "AFFILORG",
+      "field_of_study": "SUBJAREA",
+      "keywords": "KEY",
+      "source_title": "SRCTITLE",
+      "year": "PUBYEAR"
+    }
+  },
+  "composite_helpers": {
+    "title_or_abstract": "TITLE-ABS-KEY",
+    "author_or_affiliation": "AUTH-ORG",
+    "title_abstract_keywords": "TITLE-ABS-KEY"
+  }
+}
