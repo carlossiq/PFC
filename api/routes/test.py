@@ -26,7 +26,7 @@ from services.nlp import (
 )
 from services.prompt import PromptLoader
 from services.query_builders import QueryBuilderFactory
-from services.search import LensService
+from services.search import LensService, ScopusService
 
 logger = get_logger(__name__)
 
@@ -770,7 +770,7 @@ async def test_probe_search(
             query_size=query.get("size") or query.get("range") if isinstance(query, dict) else "unknown",
         )
 
-        # Etapa 3: Executar busca na API configurada (Lens ou OPS)
+        # Etapa 3: Executar busca na API configurada (OPS, Scopus, ou Lens)
         logger.info("probe_search_api_started", run_id=run_id, api=probe_api)
 
         if probe_api == "ops":
@@ -778,8 +778,27 @@ async def test_probe_search(
             ops_service = OPSService()
             search_result = await ops_service.search(query, run_id=run_id)
             await ops_service.close()
+        elif probe_api == "scopus":
+            from services.search import ScopusService
+            scopus_service = ScopusService()
+            search_result = await scopus_service.search(query, run_id=run_id)
+            await scopus_service.close()
+        elif probe_api in ["lens_patent", "lens_scholarly"]:
+            # Lens Patent ou Lens Scholarly
+            lens_service = LensService()
+            if probe_api == "lens_patent":
+                search_result = await lens_service.search_patent(
+                    query=query,
+                    run_id=run_id,
+                )
+            else:
+                search_result = await lens_service.search_scholarly(
+                    query=query,
+                    run_id=run_id,
+                )
+            lens_service.close()
         else:
-            # Lens Patent é o padrão
+            # Fallback para Lens Patent
             lens_service = LensService()
             search_result = await lens_service.search_patent(
                 query=query,
