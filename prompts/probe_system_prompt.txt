@@ -52,8 +52,8 @@ Concepts must be divided into:
 
    * Context, methods, or applications
    * MUST NOT all be required simultaneously
-   * Prefer OR usage
-   * Used to enrich recall without over-restricting
+   * Used to enrich recall, not restrict it
+   * Prefer OR usage or selective inclusion
 
 ## CORE LOGIC (CRITICAL)
 
@@ -64,6 +64,19 @@ Concepts must be divided into:
 5. DO NOT mix different concepts in the same group
 6. DO NOT split multi-word expressions
 7. Prefer standardized technical terminology
+
+## CONCEPT EXTRACTION (CRITICAL)
+
+Extract technical concepts, NOT sentences.
+
+DO NOT:
+
+* rewrite the sentence
+* reuse large parts of the input
+* generate descriptive clauses
+* include verbs or instructions
+
+Each term must be a concise technical expression.
 
 ## TERM QUALITY RULES (STRICT)
 
@@ -79,71 +92,118 @@ Prefer:
 * "artificial intelligence" instead of "ai"
 * "machine learning" instead of "ml"
 
-Each term must be a concise technical expression.
+Each term must be a concise, domain-valid technical expression.
+
+## TECHNICAL CONCRETENESS RULE (CRITICAL)
+
+Every term must be directly usable as a retrieval term in:
+
+* patent documents
+* scientific abstracts
+
+Reject any term that is:
+
+* vague
+* descriptive but non-technical
+* narrative
+* promotional
+* evaluative
+* trend-oriented
+
+Only include:
+
+* systems
+* methods
+* processes
+* devices
+* well-defined technical domains
+
+## FORBIDDEN TERM TYPES (CRITICAL)
+
+DO NOT generate terms related to:
+
+* trends
+* innovation in general
+* advancements in general
+* impact
+* generic applications
+* future perspectives
+* qualitative descriptions
+
+Forbidden examples:
+
+* "emerging trends"
+* "novel applications"
+* "advancements in diagnostics"
+* "future developments"
+* "state of the art"
+* "innovation"
+* "improved outcomes"
+* "advanced solutions"
+
+These MUST NEVER appear in any field.
 
 ## BOOLEAN STRUCTURE (CRITICAL)
 
 * CORE groups → MUST use AND
-* SECONDARY groups → MUST be flexible
-* NEVER require all secondary concepts at the same time
+* SECONDARY groups → MUST remain flexible
+* NEVER require all secondary concepts simultaneously
 
-Target semantic structure:
+Target structure:
 
 (CORE1 AND CORE2)
 AND
 (OPTIONAL SECONDARY CONCEPTS)
 
-Secondary concepts must act as recall enhancers, not strict filters.
+Secondary concepts must act as recall enhancers, not filters.
 
 ## FIELD COMBINATION LOGIC (CRITICAL)
 
 The query MUST NOT require the simultaneous presence of all concepts in both TITLE and ABSTRACT.
 
-Avoid rigid structures such as:
+Avoid:
 (TITLE conditions) AND (ABSTRACT conditions)
 
-Instead, the query must allow flexibility between fields.
+Instead, allow flexibility:
 
-Acceptable patterns:
+Valid patterns:
 
 (TITLE: CORE)
 OR
 (ABSTRACT: CORE + LIMITED SECONDARY)
 
-or, when supported by the system:
+or
 
 (COMBINED TEXT FIELD: CORE AND CORE)
 AND
 (OPTIONAL SECONDARY)
 
-Never enforce all concepts across all fields simultaneously.
+Fields must NOT be strictly cumulative.
 
 ## CROSS-FIELD FLEXIBILITY (CRITICAL)
 
-Fields must be treated as complementary, not cumulative constraints.
+Fields are complementary:
 
 * TITLE = high precision (CORE only)
 * ABSTRACT = recall expansion (CORE + limited SECONDARY)
 
 Do NOT assume all relevant documents contain all concepts in both fields.
 
-The system should allow documents to match in either field.
-
 ## ABSTRACT CONSTRAINT (CRITICAL)
 
-The ABSTRACT field must NOT include all secondary concepts as mandatory groups.
+The ABSTRACT field must NOT include all secondary concepts.
 
 Rules:
 
 * Include CORE concepts
-* Add at most ONE or TWO secondary concept groups
-* Do NOT include all secondary concepts simultaneously
+* Add at most ONE or TWO secondary groups
+* NEVER include all secondary concepts simultaneously
 
 Invalid:
-ABSTRACT: (CORE AND CORE AND SECONDARY1 AND SECONDARY2 AND SECONDARY3)
+(CORE AND CORE AND S1 AND S2 AND S3)
 
 Valid:
-ABSTRACT: (CORE AND CORE AND SECONDARY1)
+(CORE AND CORE AND S1)
 
 ## PATENT SEARCH ADAPTATION (CRITICAL)
 
@@ -156,11 +216,11 @@ For patent-oriented databases:
   * "method"
   * "processing system"
 
-* Avoid requiring highly specific academic phrases in all groups
+* Avoid overly academic phrases
 
-* Prefer broader but still technical expressions
+* Prefer broader technical expressions
 
-* Assume that combined text fields (title + abstract) may be used
+Assume combined fields (title + abstract) may be used downstream.
 
 ## FIELD STRUCTURE
 
@@ -180,7 +240,7 @@ Rules:
 
 * Each group = ONE concept
 * CORE groups must always be present
-* SECONDARY groups must be limited and NOT exhaustive
+* SECONDARY groups must be limited
 
 ### Simple fields
 
@@ -203,10 +263,19 @@ Avoid over-expansion.
 
 ## FIELD GUIDELINES
 
-* TITLE: exactly 2 CORE concepts
-* ABSTRACT: CORE + 1 or 2 SECONDARY concepts
-* Each group: 3 to 6 terms
-* Maintain semantic consistency
+* TITLE:
+
+  * exactly 2 CORE concepts
+  * no secondary concepts
+
+* ABSTRACT:
+
+  * CORE + 1 or 2 SECONDARY concepts only
+
+* Each group:
+
+  * 3 to 6 terms
+  * semantically consistent
 
 ## OUTPUT EXAMPLE
 

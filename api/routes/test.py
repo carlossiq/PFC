@@ -811,22 +811,48 @@ async def test_probe_search(
                             "title": "OPS document (raw JSON structure)",
                             "raw": doc if isinstance(doc, dict) else str(doc)[:200],
                         }
-                    elif isinstance(doc, dict):
-                        # Lens Patent tem estrutura conhecida
-                        doc_data = {
-                            "lens_id": doc.get("lens_id"),
-                            "title": _extract_title_from_doc(doc),
-                            "abstract": doc.get("abstract"),
-                            "publication_date": doc.get("date_published"),
-                            "jurisdiction": doc.get("jurisdiction"),
-                            "applicant": _extract_applicant_from_doc(doc),
-                            "inventor": _extract_inventor_from_doc(doc),
-                            "ipc_classifications": _extract_ipc_from_doc(doc),
-                            "cpc_classifications": _extract_cpc_from_doc(doc),
-                        }
+                    elif probe_api == "scopus":
+                        # Scopus retorna estrutura Elsevier XML
+                        if isinstance(doc, dict):
+                            doc_data = {
+                                "api": "scopus",
+                                "eid": doc.get("eid"),
+                                "title": doc.get("dc:title"),
+                                "authors": doc.get("dc:creator"),
+                                "publication_date": doc.get("prism:publicationDate"),
+                                "source": doc.get("prism:publicationName"),
+                                "raw": str(doc)[:300],
+                            }
+                        else:
+                            doc_data = {
+                                "api": "scopus",
+                                "doc_type": str(type(doc)),
+                                "raw": str(doc)[:200],
+                            }
+                    elif probe_api in ["lens_patent", "lens_scholarly"]:
+                        # Lens (Patent ou Scholarly) tem estrutura conhecida
+                        if isinstance(doc, dict):
+                            doc_data = {
+                                "lens_id": doc.get("lens_id"),
+                                "title": _extract_title_from_doc(doc) if probe_api == "lens_patent" else doc.get("title"),
+                                "abstract": doc.get("abstract"),
+                                "publication_date": doc.get("date_published") if probe_api == "lens_patent" else doc.get("year_published"),
+                                "source": doc.get("source") or doc.get("source_title"),
+                                "applicant": _extract_applicant_from_doc(doc) if probe_api == "lens_patent" else None,
+                                "inventor": _extract_inventor_from_doc(doc) if probe_api == "lens_patent" else None,
+                                "ipc_classifications": _extract_ipc_from_doc(doc) if probe_api == "lens_patent" else None,
+                                "cpc_classifications": _extract_cpc_from_doc(doc) if probe_api == "lens_patent" else None,
+                            }
+                        else:
+                            doc_data = {
+                                "api": probe_api,
+                                "doc_type": str(type(doc)),
+                                "raw": str(doc)[:200],
+                            }
                     else:
                         # Fallback para tipo desconhecido
                         doc_data = {
+                            "api": probe_api,
                             "error": f"Unknown document type: {type(doc)}",
                             "raw": str(doc)[:200]
                         }
@@ -860,11 +886,31 @@ async def test_probe_search(
             "query_generated": {
                 "api": probe_api,
                 "search_mode": "probe",
-                "size": query.get("size") if probe_api != "ops" else query.get("range"),
-                "from": query.get("from") if probe_api != "ops" else "1",
-                "has_query_bool": "query" in query and "bool" in query.get("query", {}) if probe_api != "ops" else False,
+                "size": (
+                    query.get("range") if probe_api == "ops"
+                    else query.get("size") if probe_api in ["lens_patent", "lens_scholarly"]
+                    else query.get("count") if probe_api == "scopus"
+                    else None
+                ),
+                "from": (
+                    "1" if probe_api == "ops"
+                    else query.get("from") if probe_api in ["lens_patent", "lens_scholarly"]
+                    else query.get("start") if probe_api == "scopus"
+                    else None
+                ),
+                "has_query_bool": (
+                    False if probe_api == "ops"
+                    else (isinstance(query.get("query"), dict) and "bool" in query.get("query", {})) if probe_api in ["lens_patent", "lens_scholarly"]
+                    else False if probe_api == "scopus"
+                    else False
+                ),
                 "cql_query": query.get("query") if probe_api == "ops" else None,
-                "must_clauses_count": len(query.get("query", {}).get("bool", {}).get("must", [])) if probe_api != "ops" else 0,
+                "scopus_query": query.get("query") if probe_api == "scopus" else None,
+                "must_clauses_count": (
+                    0 if probe_api == "ops"
+                    else len(query.get("query", {}).get("bool", {}).get("must", [])) if isinstance(query.get("query"), dict) and "bool" in query.get("query", {})
+                    else 0
+                ),
                 "full_query": query,
             },
             "api_results": {
