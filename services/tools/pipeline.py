@@ -134,29 +134,8 @@ async def generate_candidate_topics(
         if keywords:
             user_input += f"\nPalavras-chave: {', '.join(keywords)}"
 
-        system_prompt = """Você é um especialista em prospecção tecnológica.
-Dado um tema genérico fornecido pelo usuário, seu trabalho é refinar e especificar esse tema em 4 variações mais focadas e específicas.
-
-Para cada variação, preencha TODOS os campos:
-- theme: Tema mais específico e focado
-- description: Descrição detalhada desta variação
-- area_of_study: Área de estudo mais específica
-- keywords: Lista de palavras-chave relevantes (mínimo 5)
-
-Retorne APENAS um JSON válido, sem explicações:
-{
-  "candidates": [
-    {
-      "theme": "...",
-      "description": "...",
-      "area_of_study": "...",
-      "keywords": ["...", "...", ...]
-    },
-    ...
-  ]
-}
-
-Certifique-se de que cada variação é substancialmente diferente das outras."""
+        # Carregar prompt do sistema
+        system_prompt = PromptLoader.load_refine_topic_system_prompt()
 
         # Chamar LLM
         intake = InputIntake(

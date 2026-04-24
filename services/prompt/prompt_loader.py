@@ -57,6 +57,22 @@ class PromptLoader:
         return PromptLoader._load_prompt("probe_system_prompt.txt")
 
     @staticmethod
+    def load_refine_topic_system_prompt() -> str:
+        """
+        Carrega prompt do sistema para refinamento de tópicos.
+
+        Lê arquivo refine_topic_system_prompt.txt que contém instruções
+        para o LLM refinar tópicos genéricos em variações mais específicas.
+
+        Returns:
+            Conteúdo do prompt do sistema.
+
+        Raises:
+            FileNotFoundError: Se arquivo não existir.
+        """
+        return PromptLoader._load_prompt("refine_topic_system_prompt.txt")
+
+    @staticmethod
     def load_prompt(filename: str) -> str:
         """
         Carrega um prompt customizado pelo nome de arquivo.
