@@ -3,7 +3,7 @@ Base abstract class for LLM service providers.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Any, Optional
 
 from schemas.intake import InputIntake
 from schemas.llm import LLMOutput
@@ -44,6 +44,30 @@ class BaseLLMService(ABC):
 
         Raises:
             Exception: Se o processamento falhar.
+        """
+        pass
+
+    @abstractmethod
+    async def call_raw_json(
+        self,
+        prompt: str,
+        user_input: str,
+    ) -> dict[str, Any]:
+        """
+        Chama LLM e retorna JSON bruto parseado.
+
+        Diferente de process_intake que retorna LLMOutput estruturado,
+        este método retorna exatamente o JSON que a LLM gerou.
+
+        Args:
+            prompt: Prompt do sistema com instruções.
+            user_input: Entrada do usuário.
+
+        Returns:
+            Dicionário com resposta JSON bruta da LLM.
+
+        Raises:
+            Exception: Se a chamada LLM falhar ou JSON for inválido.
         """
         pass
 

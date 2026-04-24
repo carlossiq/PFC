@@ -3,7 +3,7 @@ Google Gemini LLM service implementation.
 """
 
 import json
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import ValidationError
 
@@ -175,6 +175,54 @@ class GeminiLLMService(BaseLLMService):
             )
             raise
 
+    async def call_raw_json(
+        self,
+        prompt: str,
+        user_input: str,
+    ) -> dict[str, Any]:
+        """
+        Chama Gemini e retorna JSON bruto parseado.
+
+        Diferente de process_intake que retorna LLMOutput estruturado,
+        este método retorna exatamente o JSON que a Gemini gerou.
+
+        Args:
+            prompt: Prompt do sistema com instruções.
+            user_input: Entrada do usuário.
+
+        Returns:
+            Dicionário com resposta JSON bruta da Gemini.
+
+        Raises:
+            Exception: Se a chamada Gemini falhar ou JSON for inválido.
+        """
+        if not self.is_available():
+            raise RuntimeError("Gemini service is not available")
+
+        try:
+            response = await self._call_gemini(prompt, user_input)
+
+            logger.info(
+                "gemini_raw_json_response",
+                response_length=len(response),
+            )
+
+            json_output = self._extract_json(response)
+
+            logger.info(
+                "gemini_raw_json_extracted",
+                json_keys=list(json_output.keys()),
+            )
+
+            return json_output
+
+        except Exception as exc:
+            logger.error(
+                "gemini_raw_json_error",
+                error=str(exc),
+            )
+            raise
+
     def _build_user_message(self, intake: InputIntake) -> str:
         """
         Constrói mensagem do usuário para Gemini.
@@ -229,7 +277,6 @@ class GeminiLLMService(BaseLLMService):
             logger.error(f"Gemini API call failed: {exc}")
             raise
 
-    @staticmethod
     @staticmethod
     def _extract_json(response: str) -> dict:
         """

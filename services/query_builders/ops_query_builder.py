@@ -136,7 +136,8 @@ class OPSQueryBuilder(BaseQueryBuilder):
                         cql_clauses.append(cql_clause)
 
         # Processar data (year)
-        date_cql = self._build_date_cql(year_from, year_to)
+        year_values = llm_output.year.values if llm_output.year and not llm_output.year.is_empty() else None
+        date_cql = self._build_date_cql(year_from, year_to, year_values=year_values)
         if date_cql:
             cql_clauses.append(date_cql)
 
@@ -253,20 +254,35 @@ class OPSQueryBuilder(BaseQueryBuilder):
             value_clause = " OR ".join(escaped_values)
             return f'{ops_field} = ({value_clause})'
 
-    def _build_date_cql(self, year_from: int, year_to: int) -> Optional[str]:
+    def _build_date_cql(self, year_from: int, year_to: int, year_values: Optional[list[str]] = None) -> Optional[str]:
         """
         Constrói cláusula CQL para range de anos.
 
         Usa o campo "pd" (publication date) do OPS.
         Formato: pd within "YYYYMMDD YYYYMMDD" (com espaço, não vírgula)
 
+        Se year_values for fornecido e não vazio, usa o primeiro valor como ano base.
+        Caso contrário, usa year_from e year_to.
+
         Args:
             year_from: Ano inicial (ex: 2020).
             year_to: Ano final (ex: 2024).
+            year_values: Valores de ano do LLMOutput (opcional).
 
         Returns:
             String CQL no formato "pd within \"YYYYMMDD YYYYMMDD\"" ou None.
         """
+        # Se year_values foi fornecido, tenta usar o primeiro valor
+        if year_values:
+            try:
+                year_base = int(year_values[0])
+                # Usar esse ano como ponto de partida
+                year_from = year_base
+                year_to = year_base
+            except (ValueError, IndexError):
+                # Se houver erro na conversão, fallback para os parâmetros
+                pass
+
         if year_from <= 0 or year_to <= 0 or year_from > year_to:
             return None
 

@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     # Relevance Configuration
     relevance_threshold: float = 0.5
 
+    # Query Complexity Configuration
+    llm_max_query_complexity: float = 0.6
+
     # Feature flags - APIs habilitadas (busca final)
     lens_patent_enabled: bool = True
     lens_scholarly_enabled: bool = True

@@ -3,7 +3,7 @@ Anthropic Claude LLM service implementation.
 """
 
 import json
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import ValidationError
 
@@ -171,6 +171,54 @@ class AnthropicLLMService(BaseLLMService):
             )
             raise
 
+    async def call_raw_json(
+        self,
+        prompt: str,
+        user_input: str,
+    ) -> dict[str, Any]:
+        """
+        Chama Claude e retorna JSON bruto parseado.
+
+        Diferente de process_intake que retorna LLMOutput estruturado,
+        este método retorna exatamente o JSON que o Claude gerou.
+
+        Args:
+            prompt: Prompt do sistema com instruções.
+            user_input: Entrada do usuário.
+
+        Returns:
+            Dicionário com resposta JSON bruta do Claude.
+
+        Raises:
+            Exception: Se a chamada Claude falhar ou JSON for inválido.
+        """
+        if not self.is_available():
+            raise RuntimeError("Anthropic service is not available")
+
+        try:
+            response = await self._call_claude(prompt, user_input)
+
+            logger.info(
+                "anthropic_raw_json_response",
+                response_length=len(response),
+            )
+
+            json_output = self._extract_json(response)
+
+            logger.info(
+                "anthropic_raw_json_extracted",
+                json_keys=list(json_output.keys()),
+            )
+
+            return json_output
+
+        except Exception as exc:
+            logger.error(
+                "anthropic_raw_json_error",
+                error=str(exc),
+            )
+            raise
+
     def _build_user_message(self, intake: InputIntake) -> str:
         """
         Constrói mensagem do usuário para Claude.
@@ -231,7 +279,6 @@ class AnthropicLLMService(BaseLLMService):
             logger.error(f"Claude API call failed: {exc}")
             raise
 
-    @staticmethod
     @staticmethod
     def _extract_json(response: str) -> dict:
         """

@@ -261,6 +261,32 @@ Include BOTH:
 
 Avoid over-expansion.
 
+## QUERY COMPLEXITY CONSTRAINT (CRITICAL)
+
+The generated query must NOT exceed a complexity score of 0.6 (on a 0-1 scale).
+
+Complexity is measured by:
+* Number of boolean operators (AND, OR, NOT)
+* Nesting depth of parentheses
+* Number of terms in groups
+* Overall query string length
+
+To keep complexity LOW:
+* Use maximum 2-3 CORE concepts
+* Limit secondary concepts to 1-2 only
+* Keep term groups to 3-5 terms maximum
+* Prefer broader terms over many specific variants
+* Avoid excessive OR operators
+* Avoid deep nesting of parentheses
+
+If your generated query would exceed 0.6 complexity:
+1. Reduce the number of terms per group
+2. Remove secondary concepts
+3. Use only the most essential terms
+4. Combine similar terms into single broader expressions
+
+Target: Complexity score between 0.2-0.5 (simple to moderate queries).
+
 ## FIELD GUIDELINES
 
 * TITLE:

@@ -5,11 +5,12 @@ Exposes tools as HTTP endpoints. Later, ChatService will sit in between
 to add LLM coordination and multi-turn conversation management.
 """
 
-from typing import Any, Optional
+from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Body, Request
 
 from core.logging import get_logger
+from schemas.intake import InputIntake
 from schemas.response import SuccessResponse
 from services.tools import pipeline
 
@@ -80,13 +81,135 @@ async def get_available_models(request: Request) -> SuccessResponse[dict[str, An
         )
 
 
+@router.get("/current-provider", response_model=SuccessResponse[dict[str, Any]])
+async def get_current_provider(request: Request) -> SuccessResponse[dict[str, Any]]:
+    """
+    Retorna o provider e model LLM atualmente em uso.
+
+    Returns:
+        Provider (gemini, anthropic, mock), model (versão), e disponibilidade.
+        Ex: {
+            "provider": "gemini",
+            "model": "gemini-2.0-flash-exp",
+            "available": true
+        }
+    """
+    run_id = getattr(request.state, "run_id", None)
+
+    try:
+        result = await pipeline.get_current_llm_provider()
+
+        return SuccessResponse(
+            success=result.get("success", False),
+            data=result,
+            message=f"Current LLM provider: {result.get('provider', 'unknown')}" if result.get("success") else f"Error: {result.get('error')}",
+            run_id=run_id,
+        )
+    except Exception as exc:
+        logger.error("get_current_provider_error", error=str(exc), run_id=run_id)
+        return SuccessResponse(
+            success=False,
+            data={"error": str(exc)},
+            message=f"Error retrieving current provider: {str(exc)}",
+            run_id=run_id,
+        )
+
+
+@router.post("/analyze-query", response_model=SuccessResponse[dict[str, Any]])
+async def analyze_query_complexity_endpoint(
+    request: Request,
+    query: str = Body(..., embed=True),
+) -> SuccessResponse[dict[str, Any]]:
+    """
+    Analisa complexidade de uma query booleana.
+
+    Util para entender por que queries estao falhando.
+    Score alto (>70) geralmente significa que a query eh muito complexa para o OPS.
+
+    Args:
+        query: Query string a analisar (CQL, SQL, ou expressao booleana).
+
+    Returns:
+        Metricas de complexidade com warnings e recomendacoes.
+    """
+    run_id = getattr(request.state, "run_id", None)
+
+    try:
+        result = await pipeline.analyze_query_complexity(query)
+
+        status_msg = (
+            f"Query complexity: {result.get('complexity_level')} (Score: {result.get('complexity_score')}/100)"
+            if result.get("success")
+            else f"Error: {result.get('error')}"
+        )
+
+        return SuccessResponse(
+            success=result.get("success", False),
+            data=result,
+            message=status_msg,
+            run_id=run_id,
+        )
+    except Exception as exc:
+        logger.error("analyze_query_complexity_error", error=str(exc), run_id=run_id)
+        return SuccessResponse(
+            success=False,
+            data={"error": str(exc)},
+            message=f"Error analyzing query: {str(exc)}",
+            run_id=run_id,
+        )
+
+
+@router.get("/ops-token-status", response_model=SuccessResponse[dict[str, Any]])
+async def check_ops_token(request: Request) -> SuccessResponse[dict[str, Any]]:
+    """
+    Verifica o status do token OAuth2 do OPS.
+
+    Útil para debug: mostra se o token é válido, quando expira, etc.
+    Tenta renovar automaticamente se expirado.
+
+    Returns:
+        Status do token com campos:
+        - is_valid: Token é válido
+        - is_expired: Token expirou
+        - access_token: Token (truncado por segurança)
+        - created_at: Data/hora de criação
+        - expiration_time: Data/hora de expiração
+        - time_until_expiration_seconds: Segundos até expiração
+        - expires_in_seconds: Duração total do token em segundos
+    """
+    run_id = getattr(request.state, "run_id", None)
+
+    try:
+        result = await pipeline.check_ops_token_status()
+
+        status_msg = (
+            "OPS token is valid"
+            if result.get("success") and result.get("is_valid")
+            else "OPS token is expired or invalid"
+            if result.get("success")
+            else f"Error: {result.get('error')}"
+        )
+
+        return SuccessResponse(
+            success=result.get("success", False),
+            data=result,
+            message=status_msg,
+            run_id=run_id,
+        )
+    except Exception as exc:
+        logger.error("check_ops_token_error", error=str(exc), run_id=run_id)
+        return SuccessResponse(
+            success=False,
+            data={"error": str(exc)},
+            message=f"Error checking OPS token: {str(exc)}",
+            run_id=run_id,
+        )
+
+
 @router.post("/refine-topic", response_model=SuccessResponse[dict[str, Any]])
 async def refine_topic(
     request: Request,
-    theme: str,
-    description: Optional[str] = None,
-    area_of_study: Optional[str] = None,
-    keywords: Optional[list[str]] = None,
+    intake: InputIntake,
 ) -> SuccessResponse[dict[str, Any]]:
     """
     Refina e especifica o tema fornecido em 4 variações mais focadas.
@@ -96,20 +219,19 @@ async def refine_topic(
     para cada variação.
 
     Args:
-        theme: Tema principal (obrigatório).
-        description: Descrição detalhada (opcional).
-        area_of_study: Área de estudo (opcional).
-        keywords: Palavras-chave iniciais (opcional).
+        intake: Objeto com theme (obrigatório), description, area_of_study, keywords.
 
     Returns:
         Lista de 4 tópicos refinados, cada um com campos completos.
+        Os campos fornecidos pelo usuário são incluídos em cada candidato.
         Ex: {
             "candidates": [
                 {
                     "theme": "Deep Learning for Medical Image Analysis",
                     "description": "...",
                     "area_of_study": "...",
-                    "keywords": [...]
+                    "keywords": [...],
+                    "user_input": { campos originais do usuário }
                 },
                 ...
             ]
@@ -118,12 +240,7 @@ async def refine_topic(
     run_id = getattr(request.state, "run_id", None)
 
     try:
-        result = await pipeline.generate_candidate_topics(
-            theme=theme,
-            description=description,
-            area_of_study=area_of_study,
-            keywords=keywords,
-        )
+        result = await pipeline.generate_candidate_topics(intake)
 
         return SuccessResponse(
             success=result.get("success", False),
@@ -144,17 +261,15 @@ async def refine_topic(
 @router.post("/probe/query", response_model=SuccessResponse[dict[str, Any]])
 async def build_probe_query_endpoint(
     request: Request,
-    theme: str,
-    keywords: Optional[list[str]] = None,
-    api: Optional[str] = None,
+    intake: InputIntake,
+    api: str = "ops",
 ) -> SuccessResponse[dict[str, Any]]:
     """
     Constrói query de probe search.
 
     Args:
-        theme: Tema de busca.
-        keywords: Palavras-chave (opcional).
-        api: API específica (opcional, usa default se não fornecido).
+        intake: Objeto com theme (obrigatório), description, area_of_study, keywords.
+        api: API específica (default: ops).
 
     Returns:
         Query construída pronta para busca.
@@ -162,11 +277,7 @@ async def build_probe_query_endpoint(
     run_id = getattr(request.state, "run_id", None)
 
     try:
-        result = await pipeline.build_probe_query(
-            theme=theme,
-            keywords=keywords,
-            api=api,
-        )
+        result = await pipeline.build_probe_query(intake, api)
 
         return SuccessResponse(
             success=result.get("success", False),
@@ -187,8 +298,8 @@ async def build_probe_query_endpoint(
 @router.post("/probe/search", response_model=SuccessResponse[dict[str, Any]])
 async def run_probe_search_endpoint(
     request: Request,
-    query: dict[str, Any],
-    api: str,
+    query: dict[str, Any] = Body(...),
+    api: str = Body(...),
 ) -> SuccessResponse[dict[str, Any]]:
     """
     Executa probe search.
@@ -224,7 +335,7 @@ async def run_probe_search_endpoint(
 @router.post("/extract-terms", response_model=SuccessResponse[dict[str, Any]])
 async def extract_terms_endpoint(
     request: Request,
-    documents: list[dict[str, Any]],
+    documents: list[dict[str, Any]] = Body(...),
     top_k: int = 20,
 ) -> SuccessResponse[dict[str, Any]]:
     """
@@ -261,17 +372,15 @@ async def extract_terms_endpoint(
 @router.post("/final/query", response_model=SuccessResponse[dict[str, Any]])
 async def build_final_query_endpoint(
     request: Request,
-    theme: str,
-    expanded_keywords: Optional[list[str]] = None,
-    api: Optional[str] = None,
+    intake: InputIntake,
+    api: str = "ops",
 ) -> SuccessResponse[dict[str, Any]]:
     """
     Constrói query final usando termos expandidos.
 
     Args:
-        theme: Tema original.
-        expanded_keywords: Keywords expandidas (opcional).
-        api: API específica (opcional).
+        intake: Objeto com theme (obrigatório), description, area_of_study, keywords.
+        api: API específica (default: ops).
 
     Returns:
         Query final pronta para busca de produção.
@@ -279,11 +388,7 @@ async def build_final_query_endpoint(
     run_id = getattr(request.state, "run_id", None)
 
     try:
-        result = await pipeline.build_final_query(
-            theme=theme,
-            expanded_keywords=expanded_keywords,
-            api=api,
-        )
+        result = await pipeline.build_final_query(intake, api)
 
         return SuccessResponse(
             success=result.get("success", False),
@@ -304,8 +409,8 @@ async def build_final_query_endpoint(
 @router.post("/final/search", response_model=SuccessResponse[dict[str, Any]])
 async def run_final_search_endpoint(
     request: Request,
-    query: dict[str, Any],
-    api: str,
+    query: dict[str, Any] = Body(...),
+    api: str = Body(...),
     max_results: int = 500,
 ) -> SuccessResponse[dict[str, Any]]:
     """
