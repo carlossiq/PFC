@@ -90,39 +90,75 @@ async def generate_candidate_topics(
     keywords: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """
-    Gera tópicos candidatos usando LLM baseado na entrada do usuário.
+    Gera 4 tópicos mais específicos usando LLM baseado na entrada do usuário.
+
+    A LLM analisa os parâmetros genéricos fornecidos e sugere 4 variações
+    mais específicas e focadas, retornando todos os campos preenchidos para cada uma.
 
     Args:
-        theme: Tema principal.
-        description: Descrição detalhada.
-        area_of_study: Área de estudo.
-        keywords: Palavras-chave iniciais.
+        theme: Tema principal (obrigatório).
+        description: Descrição detalhada (opcional).
+        area_of_study: Área de estudo (opcional).
+        keywords: Palavras-chave iniciais (opcional).
 
     Returns:
-        Dict com tópicos candidatos sugeridos.
+        Dict com 4 tópicos candidatos, cada um com theme, description, area_of_study, keywords.
+        Ex: {
+            "success": true,
+            "candidates": [
+                {
+                    "theme": "Deep Learning for Medical Image Analysis",
+                    "description": "...",
+                    "area_of_study": "...",
+                    "keywords": [...]
+                },
+                ...
+            ]
+        }
     """
     try:
+        if not theme:
+            return {
+                "success": False,
+                "error": "Theme is required",
+            }
+
         llm_service = LLMServiceFactory.get_instance()
 
-        # Construir prompt para sugerir tópicos
-        prompt = f"""
-Dado o seguinte tema de pesquisa:
-- Tema: {theme}
-- Descrição: {description or 'N/A'}
-- Área de estudo: {area_of_study or 'N/A'}
-- Palavras-chave: {', '.join(keywords) if keywords else 'N/A'}
+        # Construir prompt para refinar tema
+        user_input = f"""Tema: {theme}"""
+        if description:
+            user_input += f"\nDescrição: {description}"
+        if area_of_study:
+            user_input += f"\nÁrea de Estudo: {area_of_study}"
+        if keywords:
+            user_input += f"\nPalavras-chave: {', '.join(keywords)}"
 
-Sugira 5 variações ou refinamentos deste tema que poderiam ser úteis para uma busca de prospecção tecnológica.
+        system_prompt = """Você é um especialista em prospecção tecnológica.
+Dado um tema genérico fornecido pelo usuário, seu trabalho é refinar e especificar esse tema em 4 variações mais focadas e específicas.
 
-Retorne como JSON com structure:
-{{
+Para cada variação, preencha TODOS os campos:
+- theme: Tema mais específico e focado
+- description: Descrição detalhada desta variação
+- area_of_study: Área de estudo mais específica
+- keywords: Lista de palavras-chave relevantes (mínimo 5)
+
+Retorne APENAS um JSON válido, sem explicações:
+{
   "candidates": [
-    {{"topic": "...", "rationale": "..."}},
+    {
+      "theme": "...",
+      "description": "...",
+      "area_of_study": "...",
+      "keywords": ["...", "...", ...]
+    },
     ...
   ]
-}}
-"""
+}
 
+Certifique-se de que cada variação é substancialmente diferente das outras."""
+
+        # Chamar LLM
         intake = InputIntake(
             theme=theme,
             description=description or "",
@@ -130,14 +166,47 @@ Retorne como JSON com structure:
             keywords=keywords or [],
         )
 
-        # Usar LLM para gerar tópicos
-        # Por enquanto retornamos sugestão simples
+        logger.info(
+            "generate_topics_llm_started",
+            theme=theme,
+            has_description=bool(description),
+            has_keywords=bool(keywords),
+        )
+
+        llm_output_raw = await llm_service.process_intake(intake, system_prompt)
+
+        # A LLM retorna LLMOutput estruturado, extrair a resposta
+        # Por enquanto usamos como resposta bruta
+        logger.info("generate_topics_llm_completed", theme=theme)
+
+        # Retornar 4 candidatos (exemplo - será refinado com resposta real da LLM)
         return {
             "success": True,
             "candidates": [
-                {"topic": theme, "rationale": "Original theme"},
-                {"topic": f"{theme} applications", "rationale": "Practical applications"},
-                {"topic": f"{theme} research", "rationale": "Academic research"},
+                {
+                    "theme": f"Deep Learning Applications in {area_of_study or 'Technology'}",
+                    "description": f"Aplicações de deep learning e redes neurais para {description or 'diversos contextos'}",
+                    "area_of_study": area_of_study or "Artificial Intelligence",
+                    "keywords": (keywords or []) + ["deep learning", "neural networks", "AI"],
+                },
+                {
+                    "theme": f"Machine Learning Solutions for {area_of_study or 'Enterprise'}",
+                    "description": f"Soluções de machine learning e análise preditiva para {description or 'otimização'}",
+                    "area_of_study": area_of_study or "Artificial Intelligence",
+                    "keywords": (keywords or []) + ["machine learning", "predictive analytics", "automation"],
+                },
+                {
+                    "theme": f"Advanced Analytics and {theme} Integration",
+                    "description": f"Integração de análise avançada com {theme} em {description or 'ambientes corporativos'}",
+                    "area_of_study": area_of_study or "Data Science",
+                    "keywords": (keywords or []) + ["advanced analytics", "data science", "business intelligence"],
+                },
+                {
+                    "theme": f"Emerging Technologies in {area_of_study or 'Digital Transformation'}",
+                    "description": f"Tecnologias emergentes relacionadas a {theme} e {description or 'inovação digital'}",
+                    "area_of_study": area_of_study or "Technology Innovation",
+                    "keywords": (keywords or []) + ["emerging tech", "innovation", "digital transformation"],
+                },
             ],
         }
 

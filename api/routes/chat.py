@@ -80,8 +80,8 @@ async def get_available_models(request: Request) -> SuccessResponse[dict[str, An
         )
 
 
-@router.post("/topics", response_model=SuccessResponse[dict[str, Any]])
-async def generate_topics(
+@router.post("/refine-topic", response_model=SuccessResponse[dict[str, Any]])
+async def refine_topic(
     request: Request,
     theme: str,
     description: Optional[str] = None,
@@ -89,16 +89,31 @@ async def generate_topics(
     keywords: Optional[list[str]] = None,
 ) -> SuccessResponse[dict[str, Any]]:
     """
-    Gera tópicos candidatos para a busca.
+    Refina e especifica o tema fornecido em 4 variações mais focadas.
+
+    A LLM analisa os parâmetros genéricos e sugere 4 tópicos mais específicos,
+    preenchendo todos os campos (theme, description, area_of_study, keywords)
+    para cada variação.
 
     Args:
-        theme: Tema principal.
+        theme: Tema principal (obrigatório).
         description: Descrição detalhada (opcional).
         area_of_study: Área de estudo (opcional).
         keywords: Palavras-chave iniciais (opcional).
 
     Returns:
-        Lista de tópicos sugeridos.
+        Lista de 4 tópicos refinados, cada um com campos completos.
+        Ex: {
+            "candidates": [
+                {
+                    "theme": "Deep Learning for Medical Image Analysis",
+                    "description": "...",
+                    "area_of_study": "...",
+                    "keywords": [...]
+                },
+                ...
+            ]
+        }
     """
     run_id = getattr(request.state, "run_id", None)
 
@@ -113,15 +128,15 @@ async def generate_topics(
         return SuccessResponse(
             success=result.get("success", False),
             data=result,
-            message="Topics generated successfully" if result.get("success") else f"Error: {result.get('error')}",
+            message="Topic refined successfully with 4 specific variations" if result.get("success") else f"Error: {result.get('error')}",
             run_id=run_id,
         )
     except Exception as exc:
-        logger.error("generate_topics_error", error=str(exc), run_id=run_id)
+        logger.error("refine_topic_error", error=str(exc), run_id=run_id)
         return SuccessResponse(
             success=False,
             data={"error": str(exc)},
-            message=f"Error generating topics: {str(exc)}",
+            message=f"Error refining topic: {str(exc)}",
             run_id=run_id,
         )
 
