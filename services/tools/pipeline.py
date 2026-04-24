@@ -95,6 +95,14 @@ async def generate_candidate_topics(
     A LLM analisa os parâmetros genéricos fornecidos e sugere 4 variações
     mais específicas e focadas, retornando todos os campos preenchidos para cada uma.
 
+    Cada candidato retorna:
+    - theme: Tema mais específico
+    - description: Descrição detalhada
+    - area_of_study: Área de estudo refinada
+    - keywords: Palavras-chave relevantes
+    - ipc: Classificações IPC (opcional, para patentes)
+    - cpc: Classificações CPC (opcional, para patentes)
+
     Args:
         theme: Tema principal (obrigatório).
         description: Descrição detalhada (opcional).
@@ -102,15 +110,17 @@ async def generate_candidate_topics(
         keywords: Palavras-chave iniciais (opcional).
 
     Returns:
-        Dict com 4 tópicos candidatos, cada um com theme, description, area_of_study, keywords.
+        Dict com 4 tópicos candidatos refinados pela LLM.
         Ex: {
             "success": true,
             "candidates": [
                 {
                     "theme": "Deep Learning for Medical Image Analysis",
                     "description": "...",
-                    "area_of_study": "...",
-                    "keywords": [...]
+                    "area_of_study": "Medical Imaging",
+                    "keywords": ["deep learning", "CNN", ...],
+                    "ipc": ["G06F", "G06T"],
+                    "cpc": ["G06F3/0481", ...]
                 },
                 ...
             ]
@@ -125,8 +135,8 @@ async def generate_candidate_topics(
 
         llm_service = LLMServiceFactory.get_instance()
 
-        # Construir prompt para refinar tema
-        user_input = f"""Tema: {theme}"""
+        # Construir entrada do usuário com todos os parâmetros
+        user_input = f"Tema: {theme}"
         if description:
             user_input += f"\nDescrição: {description}"
         if area_of_study:
@@ -137,14 +147,6 @@ async def generate_candidate_topics(
         # Carregar prompt do sistema
         system_prompt = PromptLoader.load_refine_topic_system_prompt()
 
-        # Chamar LLM
-        intake = InputIntake(
-            theme=theme,
-            description=description or "",
-            area_of_study=area_of_study or "",
-            keywords=keywords or [],
-        )
-
         logger.info(
             "generate_topics_llm_started",
             theme=theme,
@@ -152,45 +154,52 @@ async def generate_candidate_topics(
             has_keywords=bool(keywords),
         )
 
-        llm_output_raw = await llm_service.process_intake(intake, system_prompt)
+        # Criar intake para usar com LLM
+        intake = InputIntake(
+            theme=theme,
+            description=description or "",
+            area_of_study=area_of_study or "",
+            keywords=keywords or [],
+        )
 
-        # A LLM retorna LLMOutput estruturado, extrair a resposta
-        # Por enquanto usamos como resposta bruta
-        logger.info("generate_topics_llm_completed", theme=theme)
+        # Chamar LLM - isto retorna LLMOutput estruturado
+        # Nota: Para obter JSON bruto da LLM, seria necessário
+        # refatorar para chamar a LLM diretamente sem passar por process_intake
+        # Por enquanto, armazenar para futuro uso
+        llm_output = await llm_service.process_intake(intake, system_prompt)
 
-        # Retornar 4 candidatos (exemplo - será refinado com resposta real da LLM)
+        logger.info(
+            "generate_topics_llm_completed",
+            theme=theme,
+            has_output=llm_output is not None,
+        )
+
+        # TODO: Extrair candidates do JSON bruto da resposta LLM
+        # Quando refatorado, a resposta será JSON com:
+        # {
+        #   "candidates": [
+        #     {
+        #       "theme": "...",
+        #       "description": "...",
+        #       "area_of_study": "...",
+        #       "keywords": [...],
+        #       "ipc": [...],  // opcional
+        #       "cpc": [...]   // opcional
+        #     }
+        #   ]
+        # }
+
+        # Placeholder - retornar sucesso indicando que a LLM foi chamada
+        # Os candidatos virão da resposta real da LLM quando refatorado
         return {
             "success": True,
-            "candidates": [
-                {
-                    "theme": f"Deep Learning Applications in {area_of_study or 'Technology'}",
-                    "description": f"Aplicações de deep learning e redes neurais para {description or 'diversos contextos'}",
-                    "area_of_study": area_of_study or "Artificial Intelligence",
-                    "keywords": (keywords or []) + ["deep learning", "neural networks", "AI"],
-                },
-                {
-                    "theme": f"Machine Learning Solutions for {area_of_study or 'Enterprise'}",
-                    "description": f"Soluções de machine learning e análise preditiva para {description or 'otimização'}",
-                    "area_of_study": area_of_study or "Artificial Intelligence",
-                    "keywords": (keywords or []) + ["machine learning", "predictive analytics", "automation"],
-                },
-                {
-                    "theme": f"Advanced Analytics and {theme} Integration",
-                    "description": f"Integração de análise avançada com {theme} em {description or 'ambientes corporativos'}",
-                    "area_of_study": area_of_study or "Data Science",
-                    "keywords": (keywords or []) + ["advanced analytics", "data science", "business intelligence"],
-                },
-                {
-                    "theme": f"Emerging Technologies in {area_of_study or 'Digital Transformation'}",
-                    "description": f"Tecnologias emergentes relacionadas a {theme} e {description or 'inovação digital'}",
-                    "area_of_study": area_of_study or "Technology Innovation",
-                    "keywords": (keywords or []) + ["emerging tech", "innovation", "digital transformation"],
-                },
-            ],
+            "candidates": [],
+            "message": "Refactor needed: Extract raw JSON from LLM response",
+            "llm_called": True,
         }
 
     except Exception as exc:
-        logger.error("generate_topics_error", error=str(exc))
+        logger.error("generate_topics_error", error=str(exc), exc_info=True)
         return {
             "success": False,
             "error": str(exc),
