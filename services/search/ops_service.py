@@ -418,6 +418,192 @@ class OPSService:
             "Accept": "application/json",
         }
 
+    async def _fetch_biblio_data(
+        self,
+        country: str,
+        doc_number: str,
+        kind: str,
+        run_id: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        """
+        Fetch bibliographic data for a single patent using /biblio endpoint.
+
+        Args:
+            country: Country code (e.g., "US", "EP", "CN")
+            doc_number: Document number (e.g., "12548680")
+            kind: Kind code (e.g., "B1", "A1")
+            run_id: ID for logging
+
+        Returns:
+            Dict with bibliographic data or None if failed
+        """
+        try:
+            # Construct publication number: country.doc-number.kind
+            publication_number = f"{country}{doc_number}.{kind}"
+
+            # URL: /rest-services/published-data/publication/{publication-number}/biblio
+            url = f"{self._OPS_API_URL}/published-data/publication/{publication_number}/biblio"
+
+            logger.info(
+                "ops_fetch_biblio",
+                publication_number=publication_number,
+                run_id=run_id,
+            )
+
+            response = await self.async_client.get(
+                url,
+                headers=self._get_headers(),
+                timeout=self._TIMEOUT_SECONDS,
+            )
+
+            response.raise_for_status()
+
+            # Parse response
+            try:
+                data = response.json()
+                return data
+            except json.JSONDecodeError:
+                # Try XML parsing
+                root = ET.fromstring(response.text)
+                return {"xml_content": response.text, "parsed": False}
+
+        except Exception as exc:
+            logger.warning(
+                "ops_fetch_biblio_failed",
+                publication_number=f"{country}{doc_number}.{kind}",
+                error=str(exc),
+                run_id=run_id,
+            )
+            return None
+
+    async def enrich_results_with_biblio(
+        self,
+        results: list[dict[str, Any]],
+        max_results: int = 10,
+        run_id: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Enrich search results with structured publication reference data.
+
+        Extracts and structures publication identifiers from search results
+        for use in term extraction with KeyBERT/SBERT.
+
+        Note: Attempts to fetch full biblio data from OPS /biblio endpoint
+        if available, but enrichment succeeds with reference data even if
+        full biblio data is unavailable (e.g., for very recent applications).
+
+        Args:
+            results: List of publication-reference dicts from search
+            max_results: Maximum number of results to enrich (e.g., probe_top_k=10)
+            run_id: ID for logging
+
+        Returns:
+            List of enriched result dicts with publication reference data
+        """
+        enriched_results = []
+
+        # Only enrich up to max_results
+        results_to_process = results[:max_results]
+
+        logger.info(
+            "ops_enrich_results_start",
+            total_results=len(results),
+            to_enrich=len(results_to_process),
+            run_id=run_id,
+        )
+
+        for idx, result in enumerate(results_to_process, 1):
+            try:
+                # Extract publication identifiers
+                pub_ref = result.get("ops:publication-reference", result) if isinstance(result, dict) else result
+
+                # Handle list of publication references (take the first one)
+                if isinstance(pub_ref, list):
+                    if not pub_ref:
+                        enriched_results.append({
+                            "raw": result,
+                            "publication_number": None,
+                            "biblio": None,
+                        })
+                        continue
+                    pub_ref = pub_ref[0]
+
+                # Handle JSON dict format
+                if isinstance(pub_ref, dict):
+                    doc_id = pub_ref.get("document-id", {})
+                    if isinstance(doc_id, dict):
+                        country = doc_id.get("country", {}).get("$", "")
+                        doc_number = doc_id.get("doc-number", {}).get("$", "")
+                        kind = doc_id.get("kind", {}).get("$", "")
+                    else:
+                        enriched_results.append({
+                            "raw": result,
+                            "publication_number": None,
+                            "biblio": None,
+                        })
+                        continue
+                else:
+                    # Skip if cannot parse
+                    enriched_results.append({
+                        "raw": result,
+                        "publication_number": None,
+                        "biblio": None,
+                    })
+                    continue
+
+                if not all([country, doc_number, kind]):
+                    enriched_results.append({
+                        "raw": result,
+                        "publication_number": None,
+                        "biblio": None,
+                    })
+                    continue
+
+                publication_number = f"{country}{doc_number}.{kind}"
+
+                # Try to fetch full bibliographic data from OPS /biblio endpoint
+                # This may fail for very recent applications not yet published
+                biblio_data = await self._fetch_biblio_data(
+                    country, doc_number, kind, run_id
+                )
+
+                enriched_results.append({
+                    "raw": result,
+                    "publication_number": publication_number,
+                    "biblio": biblio_data,
+                })
+
+                logger.info(
+                    "ops_result_enriched",
+                    index=idx,
+                    publication_number=publication_number,
+                    has_biblio=biblio_data is not None,
+                    run_id=run_id,
+                )
+
+            except Exception as exc:
+                logger.warning(
+                    "ops_enrich_result_failed",
+                    index=idx,
+                    error=str(exc),
+                    run_id=run_id,
+                )
+                enriched_results.append({
+                    "raw": result,
+                    "publication_number": None,
+                    "biblio": None,
+                })
+
+        logger.info(
+            "ops_enrich_results_complete",
+            enriched_count=sum(1 for r in enriched_results if r.get("biblio")),
+            total_with_pub_number=sum(1 for r in enriched_results if r.get("publication_number")),
+            total=len(enriched_results),
+            run_id=run_id,
+        )
+
+        return enriched_results
+
     async def close(self) -> None:
         """
         Fecha clientes httpx (síncrono e assíncrono).

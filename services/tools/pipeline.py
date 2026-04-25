@@ -653,6 +653,25 @@ async def run_probe_search(
         if api == "ops":
             service = OPSService()
             result = await service.search(query)
+
+            # Enrich OPS results with bibliographic data for term extraction
+            if result.success and result.results:
+                enriched_results = await service.enrich_results_with_biblio(
+                    results=result.results,
+                    max_results=settings.probe_top_k,
+                )
+                await service.close()
+
+                return {
+                    "success": result.success,
+                    "api": api,
+                    "results_count": result.results_returned,
+                    "total_available": result.total_count,
+                    "results": enriched_results,
+                    "enriched": True,
+                    "error": None,
+                }
+
             await service.close()
         elif api == "scopus":
             service = ScopusService()
