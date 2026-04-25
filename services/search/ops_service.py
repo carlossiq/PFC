@@ -474,6 +474,86 @@ class OPSService:
             )
             return None
 
+    def _extract_from_biblio(self, biblio_data: dict) -> dict[str, Any]:
+        """
+        Extract useful bibliographic information from OPS biblio response.
+
+        Navigates nested structure to extract: title, abstract, inventors, applicants.
+
+        Args:
+            biblio_data: Full biblio data from _fetch_biblio_data
+
+        Returns:
+            Dict with extracted fields: title, abstract, inventors, applicants
+        """
+        result = {
+            "title": None,
+            "abstract": None,
+            "inventors": [],
+            "applicants": [],
+        }
+
+        try:
+            wpd = biblio_data.get("ops:world-patent-data", {})
+            ex_docs = wpd.get("exchange-documents", {})
+            ex_doc = ex_docs.get("exchange-document", {})
+
+            # Extract title
+            biblio_data_section = ex_doc.get("bibliographic-data", {})
+            invention_titles = biblio_data_section.get("invention-title", [])
+            if invention_titles:
+                # Take English title if available, otherwise first
+                for title_item in invention_titles:
+                    if title_item.get("@lang") == "en" or title_item.get("@lang", "").startswith("en"):
+                        result["title"] = title_item.get("$", "")
+                        break
+                if not result["title"] and invention_titles:
+                    result["title"] = invention_titles[0].get("$", "")
+
+            # Extract abstract
+            abstracts = ex_doc.get("abstract", [])
+            if abstracts:
+                abstract_text = ""
+                for abstract_item in abstracts:
+                    if abstract_item.get("@lang") == "en":
+                        # Extract paragraphs
+                        p_data = abstract_item.get("p")
+                        if isinstance(p_data, dict):
+                            abstract_text = p_data.get("$", "")
+                        elif isinstance(p_data, list):
+                            abstract_text = " ".join([p.get("$", "") if isinstance(p, dict) else str(p) for p in p_data])
+                        break
+                result["abstract"] = abstract_text if abstract_text else None
+
+            # Extract inventors
+            parties = biblio_data_section.get("parties", {})
+            inventors = parties.get("inventors", {}).get("inventor", [])
+            if inventors:
+                if not isinstance(inventors, list):
+                    inventors = [inventors]
+                for inventor in inventors:
+                    name = inventor.get("name", {}).get("$") if isinstance(inventor, dict) else str(inventor)
+                    if name:
+                        result["inventors"].append(name)
+
+            # Extract applicants
+            applicants = parties.get("applicants", {}).get("applicant", [])
+            if applicants:
+                if not isinstance(applicants, list):
+                    applicants = [applicants]
+                for applicant in applicants:
+                    name = applicant.get("name", {}).get("$") if isinstance(applicant, dict) else str(applicant)
+                    if name:
+                        result["applicants"].append(name)
+
+        except Exception as exc:
+            logger.debug(
+                "biblio_extraction_failed",
+                error=str(exc),
+            )
+
+        return result
+
     async def enrich_results_with_biblio(
         self,
         results: list[dict[str, Any]],
@@ -481,14 +561,10 @@ class OPSService:
         run_id: Optional[str] = None,
     ) -> list[dict[str, Any]]:
         """
-        Enrich search results with structured publication reference data.
+        Enrich search results with bibliographic data from OPS.
 
-        Extracts and structures publication identifiers from search results
-        for use in term extraction with KeyBERT/SBERT.
-
-        Note: Attempts to fetch full biblio data from OPS /biblio endpoint
-        if available, but enrichment succeeds with reference data even if
-        full biblio data is unavailable (e.g., for very recent applications).
+        Fetches full bibliographic data (title, abstract, inventors, applicants)
+        for each result to enable term extraction with KeyBERT/SBERT.
 
         Args:
             results: List of publication-reference dicts from search
@@ -496,7 +572,7 @@ class OPSService:
             run_id: ID for logging
 
         Returns:
-            List of enriched result dicts with publication reference data
+            List of enriched result dicts with bibliographic data
         """
         enriched_results = []
 
@@ -559,23 +635,29 @@ class OPSService:
 
                 publication_number = f"{country}{doc_number}.{kind}"
 
-                # Try to fetch full bibliographic data from OPS /biblio endpoint
-                # This may fail for very recent applications not yet published
+                # Fetch full bibliographic data from OPS /biblio endpoint
                 biblio_data = await self._fetch_biblio_data(
                     country, doc_number, kind, run_id
                 )
 
+                # Extract structured data from biblio
+                extracted_biblio = None
+                if biblio_data:
+                    extracted_biblio = self._extract_from_biblio(biblio_data)
+
                 enriched_results.append({
                     "raw": result,
                     "publication_number": publication_number,
-                    "biblio": biblio_data,
+                    "biblio": extracted_biblio,
                 })
 
                 logger.info(
                     "ops_result_enriched",
                     index=idx,
                     publication_number=publication_number,
-                    has_biblio=biblio_data is not None,
+                    has_biblio=extracted_biblio is not None,
+                    has_title=extracted_biblio.get("title") is not None if extracted_biblio else False,
+                    has_abstract=extracted_biblio.get("abstract") is not None if extracted_biblio else False,
                     run_id=run_id,
                 )
 
@@ -594,7 +676,9 @@ class OPSService:
 
         logger.info(
             "ops_enrich_results_complete",
-            enriched_count=sum(1 for r in enriched_results if r.get("biblio")),
+            total_with_biblio=sum(1 for r in enriched_results if r.get("biblio")),
+            total_with_abstracts=sum(1 for r in enriched_results if r.get("biblio", {}).get("abstract")),
+            total_with_titles=sum(1 for r in enriched_results if r.get("biblio", {}).get("title")),
             total_with_pub_number=sum(1 for r in enriched_results if r.get("publication_number")),
             total=len(enriched_results),
             run_id=run_id,
