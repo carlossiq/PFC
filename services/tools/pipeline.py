@@ -863,16 +863,26 @@ async def run_final_search(
         Dict com resultados da busca final.
     """
     try:
-        # Similar ao run_probe_search mas com max_results maior
-        if api == "scopus":
+        if api == "ops":
+            service = OPSService()
+            result = await service.search(query)
+            await service.close()
+        elif api == "scopus":
             service = ScopusService()
             result = await service.search(query, max_results=max_results)
             await service.close()
+        elif api == "lens_patent":
+            service = LensService()
+            result = await service.search_patent(query=query, max_results=max_results)
+            service.close()
+        elif api == "lens_scholarly":
+            service = LensService()
+            result = await service.search_scholarly(query=query, max_results=max_results)
+            service.close()
         else:
-            # Placeholder para outras APIs
             return {
                 "success": False,
-                "error": f"Final search for {api} not yet implemented",
+                "error": f"Unsupported API: {api}",
             }
 
         return {
@@ -881,10 +891,11 @@ async def run_final_search(
             "results_count": result.results_returned,
             "total_available": result.total_count,
             "results": result.results if result.success else [],
+            "error": result.error_message if not result.success else None,
         }
 
     except Exception as exc:
-        logger.error("run_final_search_error", error=str(exc))
+        logger.error("run_final_search_error", error=str(exc), api=api)
         return {
             "success": False,
             "api": api,

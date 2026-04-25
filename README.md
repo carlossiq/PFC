@@ -2,6 +2,87 @@
 
 A production-ready FastAPI application for technology prospecting and analysis.
 
+---
+
+## 🚀 Quick Start com Docker + Ollama + Open WebUI (Recomendado)
+
+O stack completo com LLM local está pronto para rodar em **um comando**:
+
+```bash
+bash setup.sh
+```
+
+Isso irá:
+1. ✅ Verificar Docker e recursos disponíveis
+2. 🐳 Subir 3 containers: API, Ollama, Open WebUI
+3. 📥 Fazer pull do modelo Qwen2.5 (~2-3GB, CPU-only)
+4. 🎯 Aguardar todos os serviços ficarem prontos
+5. 🌐 Exibir URLs de acesso
+
+**Resultado:** Acesse http://localhost:3000 e comece a buscar patentes com IA!
+
+### Pré-requisitos
+- **Docker** e **Docker Compose**
+- **RAM mínima**: 8GB (usa modelo 7b) ou 4GB (usa modelo 3b)
+- **Espaço em disco**: ~3-4GB para modelo + dados
+
+### Stack Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│         Open WebUI (Chat Interface)             │
+│            http://localhost:3000                │
+│   - Gerenciar modelos, tools e prompts          │
+│   - Chat com context e histórico                │
+│   - Função calling via tools                    │
+└────────────────────┬────────────────────────────┘
+                     │ HTTP (internal)
+     ┌───────────────┼───────────────┐
+     │               │               │
+┌────▼─────────┐ ┌──▼──────────┐ ┌──▼──────────┐
+│   Ollama      │ │ FastAPI     │ │ Docker Net  │
+│  (LLM Local)  │ │  (REST API) │ │  (Bridge)   │
+│:11434        │ │:8000        │ │             │
+│ Qwen2.5:7b  │ │ PFC Tools   │ │             │
+│ CPU-only    │ │ Endpoints   │ │             │
+└──────────────┘ └─────────────┘ └─────────────┘
+```
+
+### Arquivos Importantes
+- **docker-compose.yml** - Definição dos 3 containers
+- **Dockerfile** - Build da API FastAPI
+- **prompts/system_prompt.md** - Instruções para o modelo
+- **tools/** - Tools (function calling) para o Open WebUI
+  - `refine_topic.py` - Refinar temas em variações
+  - `probe_search.py` - Busca exploratória (10-25 docs)
+  - `final_search.py` - Busca final (até 500 docs)
+  - `analyze_complexity.py` - Analisar complexidade de queries
+
+### Troubleshooting Docker
+
+```bash
+# Ver logs
+docker logs pfc-ollama
+docker logs pfc-api
+docker logs pfc-open-webui
+
+# Parar containers
+docker-compose down
+
+# Limpar tudo (cuidado!)
+docker-compose down -v
+
+# Entrar em um container
+docker exec -it pfc-ollama bash
+docker exec -it pfc-api bash
+```
+
+---
+
+## 💻 Desenvolvimento Local (sem Docker)
+
+Se preferir rodar sem Docker:
+
 ## Project Structure
 
 ```

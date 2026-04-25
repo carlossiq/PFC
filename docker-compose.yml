@@ -1,0 +1,83 @@
+services:
+  # API FastAPI existente
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pfc-api
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - LLM_PROVIDER=mock
+      - OPS_ENABLED=false
+      - SCOPUS_ENABLED=false
+    networks:
+      - pfc-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - ./:/app
+
+  # Ollama - LLM local
+  ollama:
+    image: ollama/ollama:latest
+    container_name: pfc-ollama
+    ports:
+      - "127.0.0.1:11435:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_CONTEXT_LENGTH=1024  # Ultra-otimizado (1k tokens)
+      - OLLAMA_KEEP_ALIVE=1m        # Liberar RAM após 1 min
+      - OLLAMA_NUM_THREADS=10       # Máximo de threads disponíveis
+      - OLLAMA_NUM_GPU=0            # Desabilitar GPU (CPU-only)
+    networks:
+      - pfc-network
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Open WebUI - Interface para o Ollama
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:latest
+    container_name: pfc-open-webui
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434  # Porta interna (não muda)
+      - OPENAI_API_KEY=sk-local-key-not-used
+      - DEFAULT_MODELS=llama3.2:1b  # Modelo padrão
+    networks:
+      - pfc-network
+    volumes:
+      - webui_data:/app/backend/data
+      - ./tools:/app/backend/data/tools:ro
+    depends_on:
+      - ollama
+      # Note: ollama healthcheck may show as unhealthy despite working correctly
+      # Removed 'condition: service_healthy' to allow startup even if healthcheck fails
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+networks:
+  pfc-network:
+    driver: bridge
+
+volumes:
+  ollama_data:
+    driver: local
+  webui_data:
+    driver: local

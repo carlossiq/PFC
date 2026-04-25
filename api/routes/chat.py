@@ -5,6 +5,7 @@ Exposes tools as HTTP endpoints. Later, ChatService will sit in between
 to add LLM coordination and multi-turn conversation management.
 """
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Body, Request
@@ -402,6 +403,51 @@ async def build_final_query_endpoint(
             success=False,
             data={"error": str(exc)},
             message=f"Error building final query: {str(exc)}",
+            run_id=run_id,
+        )
+
+
+@router.get("/system-prompt", response_model=SuccessResponse[dict[str, Any]])
+async def get_system_prompt(request: Request) -> SuccessResponse[dict[str, Any]]:
+    """
+    Retorna o system prompt atual para copiar/colar no Open WebUI.
+
+    Returns:
+        Conteúdo completo do system prompt.
+    """
+    run_id = getattr(request.state, "run_id", None)
+
+    try:
+        prompt_path = Path(__file__).parent.parent.parent / "prompts" / "system_prompt.md"
+
+        if not prompt_path.exists():
+            return SuccessResponse(
+                success=False,
+                data={},
+                message="System prompt file not found",
+                run_id=run_id,
+            )
+
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            prompt_content = f.read()
+
+        return SuccessResponse(
+            success=True,
+            data={
+                "content": prompt_content,
+                "file": str(prompt_path),
+                "size_bytes": len(prompt_content),
+                "instructions": "Cole este conteúdo em: Open WebUI → Settings → System Prompt"
+            },
+            message="System prompt retrieved successfully",
+            run_id=run_id,
+        )
+    except Exception as exc:
+        logger.error("get_system_prompt_error", error=str(exc), run_id=run_id)
+        return SuccessResponse(
+            success=False,
+            data={"error": str(exc)},
+            message=f"Error retrieving system prompt: {str(exc)}",
             run_id=run_id,
         )
 
