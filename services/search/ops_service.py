@@ -428,6 +428,8 @@ class OPSService:
         """
         Fetch bibliographic data for a single patent using /biblio endpoint.
 
+        Uses OPS API v3.2 with epodoc format for reliable data retrieval.
+
         Args:
             country: Country code (e.g., "US", "EP", "CN")
             doc_number: Document number (e.g., "12548680")
@@ -441,8 +443,9 @@ class OPSService:
             # Construct publication number: country.doc-number.kind
             publication_number = f"{country}{doc_number}.{kind}"
 
-            # URL: /rest-services/published-data/publication/{publication-number}/biblio
-            url = f"{self._OPS_API_URL}/published-data/publication/{publication_number}/biblio"
+            # URL: Use API v3.2 with epodoc format
+            # Format: /3.2/rest-services/published-data/publication/epodoc/{publication-number}/biblio
+            url = f"https://ops.epo.org/3.2/rest-services/published-data/publication/epodoc/{publication_number}/biblio"
 
             logger.info(
                 "ops_fetch_biblio",
@@ -459,13 +462,8 @@ class OPSService:
             response.raise_for_status()
 
             # Parse response
-            try:
-                data = response.json()
-                return data
-            except json.JSONDecodeError:
-                # Try XML parsing
-                root = ET.fromstring(response.text)
-                return {"xml_content": response.text, "parsed": False}
+            data = response.json()
+            return data
 
         except Exception as exc:
             logger.warning(
