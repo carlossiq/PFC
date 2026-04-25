@@ -677,8 +677,8 @@ class OPSService:
         logger.info(
             "ops_enrich_results_complete",
             total_with_biblio=sum(1 for r in enriched_results if r.get("biblio")),
-            total_with_abstracts=sum(1 for r in enriched_results if r.get("biblio", {}).get("abstract")),
-            total_with_titles=sum(1 for r in enriched_results if r.get("biblio", {}).get("title")),
+            total_with_abstracts=sum(1 for r in enriched_results if (r.get("biblio") or {}).get("abstract")),
+            total_with_titles=sum(1 for r in enriched_results if (r.get("biblio") or {}).get("title")),
             total_with_pub_number=sum(1 for r in enriched_results if r.get("publication_number")),
             total=len(enriched_results),
             run_id=run_id,

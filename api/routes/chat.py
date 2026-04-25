@@ -336,23 +336,43 @@ async def run_probe_search_endpoint(
 @router.post("/extract-terms", response_model=SuccessResponse[dict[str, Any]])
 async def extract_terms_endpoint(
     request: Request,
-    documents: list[dict[str, Any]] = Body(...),
-    top_k: int = 20,
+    enriched_results: list[dict[str, Any]] = Body(..., description="Resultados enriquecidos do probe search"),
+    original_params: dict[str, Any] = Body(default={}, description="Parâmetros originais da busca para filtrar termos"),
+    top_k: int = Body(default=20, description="Número de termos a extrair"),
 ) -> SuccessResponse[dict[str, Any]]:
     """
-    Extrai termos relevantes de documentos.
+    Extrai termos relevantes de resultados enriquecidos usando KeyBERT e TF-IDF.
+
+    Combina:
+    - KeyBERT: relevância semântica (60%)
+    - TF-IDF: importância estatística (40%)
+
+    Remove automaticamente termos presentes nos parâmetros originais.
 
     Args:
-        documents: Documentos do probe search.
-        top_k: Número de termos a extrair (default 20).
+        enriched_results: Resultados do probe search com dados bibliográficos (título, abstract, etc).
+        original_params: Parâmetros originais (theme, description, area_of_study, keywords) para filtro.
+        top_k: Número de termos a retornar (default 20).
 
     Returns:
-        Lista de termos relevantes com scores.
+        Lista de termos com scores:
+        {
+            "term": "e-commerce",
+            "score": 0.95,
+            "keybert_score": 0.92,
+            "tf_idf_score": 0.89,
+            "frequency": 5,
+            "sources": ["title", "abstract"]
+        }
     """
     run_id = getattr(request.state, "run_id", None)
 
     try:
-        result = await pipeline.extract_relevant_terms(documents=documents, top_k=top_k)
+        result = await pipeline.extract_relevant_terms(
+            enriched_results=enriched_results,
+            original_params=original_params,
+            top_k=top_k,
+        )
 
         return SuccessResponse(
             success=result.get("success", False),

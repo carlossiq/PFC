@@ -705,46 +705,55 @@ async def run_probe_search(
 
 
 async def extract_relevant_terms(
-    documents: list[dict[str, Any]],
+    enriched_results: list[dict[str, Any]],
+    original_params: Optional[dict[str, Any]] = None,
     top_k: int = 20,
 ) -> dict[str, Any]:
     """
-    Extrai termos relevantes de documentos usando NLP.
+    Extrai termos relevantes de resultados enriquecidos usando TermExtractor.
+
+    Combina KeyBERT (relevância semântica) e TF-IDF (importância estatística)
+    para identificar novos termos não presentes nos parâmetros originais.
 
     Args:
-        documents: Lista de documentos com campos de texto.
+        enriched_results: Resultados enriquecidos com dados bibliográficos (de run_probe_search).
+        original_params: Parâmetros originais da busca (theme, description, etc) para filtrar termos.
         top_k: Número de termos a extrair.
 
     Returns:
-        Dict com termos relevantes e scores.
+        Dict com termos relevantes, scores e detalhes.
     """
     try:
-        keyword_service = KeywordService()
+        from services.nlp.term_extraction import TermExtractor
 
-        # Extrair texto de documentos
-        texts = []
-        for doc in documents:
-            if isinstance(doc, dict):
-                # Tentar vários campos que podem ter texto
-                text = doc.get("title", "") + " " + doc.get("abstract", "") + " " + doc.get("description", "")
-                if text.strip():
-                    texts.append(text)
-
-        if not texts:
+        if not enriched_results:
             return {
                 "success": False,
-                "error": "No text found in documents",
+                "error": "No enriched results provided",
             }
 
-        # Extrair keywords
-        keywords = keyword_service.extract_keywords(texts, top_k=top_k)
+        # Usar parâmetros vazios se não fornecidos
+        if original_params is None:
+            original_params = {}
 
-        logger.info("terms_extracted", count=len(keywords))
+        # Criar extrator e extrair termos
+        extractor = TermExtractor()
+        terms = extractor.extract_and_rank_terms(
+            original_params=original_params,
+            enriched_results=enriched_results,
+            top_k=top_k,
+        )
+
+        logger.info(
+            "terms_extracted",
+            count=len(terms),
+            top_k=top_k,
+        )
 
         return {
             "success": True,
-            "terms": keywords,
-            "count": len(keywords),
+            "terms": terms,
+            "count": len(terms),
         }
 
     except Exception as exc:
