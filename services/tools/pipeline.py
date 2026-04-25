@@ -474,7 +474,8 @@ async def build_probe_query(
 
     Valida se a query gerada respeita o limite de complexidade máximo
     (settings.llm_max_query_complexity). Se exceder, tenta regenerar com
-    instruções mais fortes para simplificar.
+    instruções mais fortes para simplificar. Se todas as 3 tentativas falharem,
+    retorna a menos complexa com um aviso.
 
     Args:
         intake: InputIntake com theme (obrigatório), description, area_of_study, keywords.
@@ -491,6 +492,7 @@ async def build_probe_query(
         attempt = 0
 
         complexity_analysis = None  # Track complexity from previous attempt
+        attempts_history = []  # Store all 3 attempts
 
         while attempt < max_attempts:
             attempt += 1
@@ -545,6 +547,14 @@ async def build_probe_query(
                 max_attempts=max_attempts,
             )
 
+            # Armazenar tentativa no histórico
+            attempts_history.append({
+                "attempt": attempt,
+                "query": query,
+                "normalized": normalized,
+                "complexity": complexity_analysis,
+            })
+
             if passed:
                 # Query passou na validação
                 logger.info(
@@ -583,25 +593,38 @@ async def build_probe_query(
                     complexity_score=complexity_analysis["score"],
                 )
 
-        # Se saiu do loop sem passar na validação, a variável complexity_analysis contém a última análise
-        logger.error(
-            "probe_query_complexity_failed",
+        # Todas as 3 tentativas falharam - retornar a menos complexa
+        best_attempt = min(attempts_history, key=lambda x: x["complexity"]["score"])
+        best_complexity = best_attempt["complexity"]
+
+        logger.warning(
+            "probe_query_complexity_exceeded_returning_best",
             api=api,
             max_attempts=max_attempts,
-            max_complexity=max_complexity,
-            final_score=complexity_analysis["score"],
+            max_allowed=max_complexity*100,
+            best_attempt_num=best_attempt["attempt"],
+            best_score=best_complexity["score"],
         )
 
         return {
-            "success": False,
-            "error": f"Query exceeded complexity limit ({max_complexity}) after {max_attempts} attempts",
-            "hint": "Try a more specific or narrower topic",
+            "success": True,
+            "api": api,
+            "query": best_attempt["query"],
+            "llm_strategy": best_attempt["normalized"].get_active_fields(),
+            "user_input": intake.model_dump(),
             "complexity": {
-                "score": complexity_analysis["score"],
-                "level": complexity_analysis["level"],
-                "warnings": complexity_analysis["warnings"],
-                "recommendations": complexity_analysis["recommendations"],
+                "score": best_complexity["score"],
+                "level": best_complexity["level"],
+                "operators": best_complexity["operators"],
+                "nesting_depth": best_complexity["nesting_depth"],
+                "term_count": best_complexity["term_count"],
+                "warnings": best_complexity["warnings"],
+                "recommendations": best_complexity["recommendations"],
             },
+            "attempt": best_attempt["attempt"],
+            "warning": f"Query complexity ({best_complexity['score']:.1f}/100) exceeds limit ({max_complexity*100:.0f}) "
+                      f"after {max_attempts} simplification attempts. Returning attempt #{best_attempt['attempt']} "
+                      f"(the least complex version). Consider using a simpler or more focused topic.",
         }
 
     except Exception as exc:
@@ -738,6 +761,7 @@ async def build_final_query(
         max_attempts = 3
         attempt = 0
         complexity_analysis = None  # Track complexity from previous attempt
+        attempts_history = []  # Store all 3 attempts
 
         while attempt < max_attempts:
             attempt += 1
@@ -792,6 +816,14 @@ async def build_final_query(
                 max_attempts=max_attempts,
             )
 
+            # Armazenar tentativa no histórico
+            attempts_history.append({
+                "attempt": attempt,
+                "query": query,
+                "normalized": normalized,
+                "complexity": complexity_analysis,
+            })
+
             if passed:
                 # Query passou na validação
                 logger.info(
@@ -830,25 +862,38 @@ async def build_final_query(
                     complexity_score=complexity_analysis["score"],
                 )
 
-        # Se saiu do loop sem passar na validação, a variável complexity_analysis contém a última análise
-        logger.error(
-            "final_query_complexity_failed",
+        # Todas as 3 tentativas falharam - retornar a menos complexa
+        best_attempt = min(attempts_history, key=lambda x: x["complexity"]["score"])
+        best_complexity = best_attempt["complexity"]
+
+        logger.warning(
+            "final_query_complexity_exceeded_returning_best",
             api=api,
             max_attempts=max_attempts,
-            max_complexity=max_complexity,
-            final_score=complexity_analysis["score"],
+            max_allowed=max_complexity*100,
+            best_attempt_num=best_attempt["attempt"],
+            best_score=best_complexity["score"],
         )
 
         return {
-            "success": False,
-            "error": f"Query exceeded complexity limit ({max_complexity}) after {max_attempts} attempts",
-            "hint": "Try a more specific or narrower topic",
+            "success": True,
+            "api": api,
+            "query": best_attempt["query"],
+            "llm_strategy": best_attempt["normalized"].get_active_fields(),
+            "user_input": intake.model_dump(),
             "complexity": {
-                "score": complexity_analysis["score"],
-                "level": complexity_analysis["level"],
-                "warnings": complexity_analysis["warnings"],
-                "recommendations": complexity_analysis["recommendations"],
+                "score": best_complexity["score"],
+                "level": best_complexity["level"],
+                "operators": best_complexity["operators"],
+                "nesting_depth": best_complexity["nesting_depth"],
+                "term_count": best_complexity["term_count"],
+                "warnings": best_complexity["warnings"],
+                "recommendations": best_complexity["recommendations"],
             },
+            "attempt": best_attempt["attempt"],
+            "warning": f"Query complexity ({best_complexity['score']:.1f}/100) exceeds limit ({max_complexity*100:.0f}) "
+                      f"after {max_attempts} simplification attempts. Returning attempt #{best_attempt['attempt']} "
+                      f"(the least complex version). Consider using a simpler or more focused topic.",
         }
 
     except Exception as exc:
