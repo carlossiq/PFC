@@ -490,6 +490,8 @@ async def build_probe_query(
         max_attempts = 3
         attempt = 0
 
+        complexity_analysis = None  # Track complexity from previous attempt
+
         while attempt < max_attempts:
             attempt += 1
 
@@ -498,17 +500,22 @@ async def build_probe_query(
                 # Primeiro try: usar prompt normal
                 system_prompt = PromptLoader.load_probe_system_prompt()
             else:
-                # Retries: usar prompt com instrução mais forte
+                # Retries: usar prompt com instrução mais forte, incluindo métricas de complexidade
                 system_prompt = PromptLoader.load_probe_system_prompt()
                 simplification_instruction = (
                     f"\n\n[CRITICAL RETRY #{attempt}] "
-                    f"Previous query was too complex (complexity > {max_complexity}). "
-                    f"MUST simplify:\n"
-                    f"- Use ONLY the 2 most important concepts\n"
-                    f"- Limit each group to 2-3 terms maximum\n"
-                    f"- Remove all secondary concepts\n"
-                    f"- Use broader, more general terms\n"
-                    f"- Minimize OR operators\n"
+                    f"Previous query was TOO COMPLEX (score: {complexity_analysis['score']:.1f}/100, max: {max_complexity*100:.0f}). "
+                    f"\nComplexity breakdown:\n"
+                    f"- OR operators: {complexity_analysis['operators'].get('OR', 0)}\n"
+                    f"- AND operators: {complexity_analysis['operators'].get('AND', 0)}\n"
+                    f"- Nesting depth: {complexity_analysis['nesting_depth']}\n"
+                    f"- Total terms: {complexity_analysis['term_count']}\n"
+                    f"\nMUST simplify by:\n"
+                    f"- Use ONLY 1-2 most important concepts (reduce terms)\n"
+                    f"- Minimize OR operators within groups\n"
+                    f"- Remove nesting: avoid complex AND/OR combinations\n"
+                    f"- Use broader, more general search terms\n"
+                    f"- Maximum 2 groups per field, 2-3 terms per group\n"
                     f"Keep it simple and focused!"
                 )
                 system_prompt += simplification_instruction
@@ -730,6 +737,7 @@ async def build_final_query(
         max_complexity = getattr(settings, "llm_max_query_complexity", 0.6)
         max_attempts = 3
         attempt = 0
+        complexity_analysis = None  # Track complexity from previous attempt
 
         while attempt < max_attempts:
             attempt += 1
@@ -739,17 +747,22 @@ async def build_final_query(
                 # Primeiro try: usar prompt normal
                 system_prompt = PromptLoader.load_probe_system_prompt()
             else:
-                # Retries: usar prompt com instrução mais forte
+                # Retries: usar prompt com instrução mais forte, incluindo métricas de complexidade
                 system_prompt = PromptLoader.load_probe_system_prompt()
                 simplification_instruction = (
                     f"\n\n[CRITICAL RETRY #{attempt}] "
-                    f"Previous query was too complex (complexity > {max_complexity}). "
-                    f"MUST simplify:\n"
-                    f"- Use ONLY the 2-3 most important concepts\n"
-                    f"- Limit each group to 2-3 terms maximum\n"
-                    f"- Minimize secondary concepts\n"
-                    f"- Use broader, more general terms\n"
-                    f"- Minimize OR operators\n"
+                    f"Previous query was TOO COMPLEX (score: {complexity_analysis['score']:.1f}/100, max: {max_complexity*100:.0f}). "
+                    f"\nComplexity breakdown:\n"
+                    f"- OR operators: {complexity_analysis['operators'].get('OR', 0)}\n"
+                    f"- AND operators: {complexity_analysis['operators'].get('AND', 0)}\n"
+                    f"- Nesting depth: {complexity_analysis['nesting_depth']}\n"
+                    f"- Total terms: {complexity_analysis['term_count']}\n"
+                    f"\nMUST simplify by:\n"
+                    f"- Use ONLY 1-2 most important concepts (reduce terms)\n"
+                    f"- Minimize OR operators within groups\n"
+                    f"- Remove nesting: avoid complex AND/OR combinations\n"
+                    f"- Use broader, more general search terms\n"
+                    f"- Maximum 2 groups per field, 2-3 terms per group\n"
                     f"Keep it simple and focused!"
                 )
                 system_prompt += simplification_instruction
