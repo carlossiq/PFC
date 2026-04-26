@@ -5,6 +5,7 @@ Exposes tools as HTTP endpoints. Later, ChatService will sit in between
 to add LLM coordination and multi-turn conversation management.
 """
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,91 @@ from services.tools import pipeline
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+# Load menu structure
+MENU_FILE = Path(__file__).parent / "menu_structure.json"
+_menu_cache = None
+
+
+def _load_menu():
+    """Load menu structure from JSON file with caching."""
+    global _menu_cache
+    if _menu_cache is None:
+        try:
+            with open(MENU_FILE, "r", encoding="utf-8") as f:
+                _menu_cache = json.load(f)
+        except Exception as exc:
+            logger.error("menu_load_error", error=str(exc))
+            _menu_cache = {"error": "Could not load menu"}
+    return _menu_cache
+
+
+@router.get("/menu", response_model=SuccessResponse[dict[str, Any]])
+async def get_menu(request: Request) -> SuccessResponse[dict[str, Any]]:
+    """
+    Retorna a estrutura completa do menu para o front-end consumir.
+
+    Inclui todos os endpoints, inputs/outputs esperados, duração estimada,
+    e fluxo recomendado de uso.
+
+    Returns:
+        Menu structure com organização hierárquica de funcionalidades.
+    """
+    run_id = getattr(request.state, "run_id", None)
+
+    try:
+        menu = _load_menu()
+
+        logger.info("menu_loaded", run_id=run_id, sections=len(menu.get("menu", [])))
+
+        return SuccessResponse(
+            success=True,
+            data=menu,
+            message="Menu structure loaded successfully",
+            run_id=run_id,
+        )
+    except Exception as exc:
+        logger.error("get_menu_error", error=str(exc), run_id=run_id)
+        return SuccessResponse(
+            success=False,
+            data={"error": str(exc)},
+            message=f"Error loading menu: {str(exc)}",
+            run_id=run_id,
+        )
+
+
+@router.get("/menu/workflow", response_model=SuccessResponse[dict[str, Any]])
+async def get_workflow(request: Request) -> SuccessResponse[dict[str, Any]]:
+    """
+    Retorna apenas o fluxo recomendado de uso.
+
+    Útil para guiar o usuário através do workflow passo a passo.
+
+    Returns:
+        Passos do workflow com descrição de cada ação.
+    """
+    run_id = getattr(request.state, "run_id", None)
+
+    try:
+        menu = _load_menu()
+        workflow = menu.get("workflow", {})
+
+        logger.info("workflow_loaded", run_id=run_id, steps=len(workflow.get("recommended_flow", [])))
+
+        return SuccessResponse(
+            success=True,
+            data=workflow,
+            message="Workflow loaded successfully",
+            run_id=run_id,
+        )
+    except Exception as exc:
+        logger.error("get_workflow_error", error=str(exc), run_id=run_id)
+        return SuccessResponse(
+            success=False,
+            data={"error": str(exc)},
+            message=f"Error loading workflow: {str(exc)}",
+            run_id=run_id,
+        )
 
 
 @router.get("/apis", response_model=SuccessResponse[dict[str, Any]])

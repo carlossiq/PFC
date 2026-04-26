@@ -1,0 +1,368 @@
+{
+  "version": "1.0.0",
+  "menu": [
+    {
+      "id": "explore",
+      "label": "Exploração Inicial",
+      "icon": "compass",
+      "description": "Refine e explore temas de pesquisa",
+      "items": [
+        {
+          "id": "refine_topic",
+          "label": "Refinar Tema",
+          "icon": "sparkles",
+          "endpoint": "POST /chat/refine-topic",
+          "description": "Transforme um tema genérico em 4 variações mais específicas",
+          "inputs": {
+            "theme": {
+              "type": "string",
+              "label": "Tema Principal",
+              "placeholder": "Ex: e-commerce",
+              "required": true
+            },
+            "description": {
+              "type": "string",
+              "label": "Descrição (Opcional)",
+              "placeholder": "Ex: plataformas de venda online",
+              "required": false
+            },
+            "area_of_study": {
+              "type": "string",
+              "label": "Área de Estudo (Opcional)",
+              "placeholder": "Ex: Tecnologia da Informação",
+              "required": false
+            },
+            "keywords": {
+              "type": "string_array",
+              "label": "Palavras-chave (Opcional)",
+              "placeholder": "Ex: ['tecnologia', 'inovação']",
+              "required": false
+            }
+          },
+          "outputs": {
+            "candidates": {
+              "type": "array",
+              "description": "4 tópicos refinados com todos os campos preenchidos"
+            }
+          },
+          "duration": "~15-20s"
+        }
+      ]
+    },
+    {
+      "id": "probe_search",
+      "label": "Busca Exploratória",
+      "icon": "search",
+      "description": "Execute buscas rápidas para entender o campo",
+      "items": [
+        {
+          "id": "build_probe_query",
+          "label": "Construir Query de Probe",
+          "icon": "settings",
+          "endpoint": "POST /chat/probe/query",
+          "description": "Gera query otimizada para busca rápida (10 resultados)",
+          "inputs": {
+            "intake": {
+              "type": "InputIntake",
+              "label": "Parâmetros da Busca",
+              "description": "Use um dos tópicos refinados",
+              "required": true
+            },
+            "api": {
+              "type": "enum",
+              "label": "Base de Dados",
+              "options": ["ops", "scopus", "lens_patent", "lens_scholarly"],
+              "default": "ops",
+              "required": true
+            }
+          },
+          "outputs": {
+            "query": {
+              "type": "object",
+              "fields": ["query", "range", "format"]
+            },
+            "complexity": {
+              "type": "object",
+              "fields": ["score", "level", "passed"]
+            }
+          },
+          "duration": "~5-10s"
+        },
+        {
+          "id": "run_probe_search",
+          "label": "Executar Busca Exploratória",
+          "icon": "rocket",
+          "endpoint": "POST /chat/probe/search",
+          "description": "Execute a query gerada e obtenha resultados enriquecidos com dados bibliográficos",
+          "inputs": {
+            "query": {
+              "type": "object",
+              "label": "Query",
+              "description": "Resultado de 'Construir Query de Probe'",
+              "required": true
+            },
+            "api": {
+              "type": "enum",
+              "label": "Base de Dados",
+              "options": ["ops", "scopus", "lens_patent", "lens_scholarly"],
+              "default": "ops",
+              "required": true
+            }
+          },
+          "outputs": {
+            "results": {
+              "type": "array",
+              "description": "10 resultados enriquecidos com título, abstract, autores"
+            },
+            "enriched": {
+              "type": "boolean",
+              "description": "true se resultados foram enriquecidos com dados bibliográficos"
+            }
+          },
+          "duration": "~2-5s"
+        }
+      ]
+    },
+    {
+      "id": "term_expansion",
+      "label": "Expansão de Termos",
+      "icon": "zap",
+      "description": "Identifique e ranqueie novos termos relevantes",
+      "items": [
+        {
+          "id": "extract_terms",
+          "label": "Extrair Termos Relevantes",
+          "icon": "layers",
+          "endpoint": "POST /chat/extract-terms",
+          "description": "Analisa resultados e extrai termos com scoring semântico + estatístico",
+          "inputs": {
+            "enriched_results": {
+              "type": "array",
+              "label": "Resultados Enriquecidos",
+              "description": "Resultado de 'Executar Busca Exploratória'",
+              "required": true
+            },
+            "original_params": {
+              "type": "object",
+              "label": "Parâmetros Originais",
+              "description": "Para filtrar termos que já foram usados",
+              "required": true
+            },
+            "top_k": {
+              "type": "number",
+              "label": "Número de Termos",
+              "default": 15,
+              "min": 5,
+              "max": 50,
+              "required": false
+            }
+          },
+          "outputs": {
+            "terms": {
+              "type": "array",
+              "fields": ["term", "score", "keybert_score", "tf_idf_score", "frequency", "sources"]
+            }
+          },
+          "duration": "~8-10s"
+        }
+      ]
+    },
+    {
+      "id": "final_query",
+      "label": "Query Final",
+      "icon": "target",
+      "description": "Gere 3 variações de busca para resultados abrangentes",
+      "items": [
+        {
+          "id": "build_final_queries",
+          "label": "Gerar 3 Variações de Query",
+          "icon": "layers-2",
+          "endpoint": "POST /chat/final/queries-multi",
+          "description": "Gera SPECIFIC (alta precisão), BALANCED (recomendado) e GENERIC (alta cobertura)",
+          "inputs": {
+            "intake": {
+              "type": "InputIntake",
+              "label": "Parâmetros da Busca",
+              "required": true
+            },
+            "extracted_terms": {
+              "type": "array",
+              "label": "Termos Extraídos",
+              "description": "Resultado de 'Extrair Termos Relevantes'",
+              "required": true
+            },
+            "api": {
+              "type": "enum",
+              "label": "Base de Dados",
+              "options": ["ops", "scopus", "lens_patent", "lens_scholarly"],
+              "default": "ops",
+              "required": true
+            }
+          },
+          "outputs": {
+            "queries": {
+              "type": "object",
+              "fields": {
+                "specific": {
+                  "description": "Alta precisão (score > 0.4)",
+                  "complexity": "~16-25/100"
+                },
+                "balanced": {
+                  "description": "Recomendado (score > 0.3)",
+                  "complexity": "~20-35/100"
+                },
+                "generic": {
+                  "description": "Alta cobertura (score > 0.2)",
+                  "complexity": "~30-45/100"
+                }
+              }
+            }
+          },
+          "duration": "~18-20s"
+        },
+        {
+          "id": "run_final_search",
+          "label": "Executar Busca Final",
+          "icon": "check-circle",
+          "endpoint": "POST /chat/final/search",
+          "description": "Execute a variação selecionada para obter resultados completos",
+          "inputs": {
+            "query": {
+              "type": "object",
+              "label": "Query Selecionada",
+              "description": "Escolha uma das 3 variações geradas",
+              "required": true
+            },
+            "api": {
+              "type": "enum",
+              "label": "Base de Dados",
+              "options": ["ops", "scopus", "lens_patent", "lens_scholarly"],
+              "required": true
+            }
+          },
+          "outputs": {
+            "results": {
+              "type": "array",
+              "description": "100-500 resultados abrangentes"
+            }
+          },
+          "duration": "~3-10s",
+          "note": "Endpoint ainda não implementado"
+        }
+      ]
+    },
+    {
+      "id": "utilities",
+      "label": "Utilitários",
+      "icon": "tools",
+      "description": "Ferramentas auxiliares e informações",
+      "items": [
+        {
+          "id": "list_apis",
+          "label": "APIs Disponíveis",
+          "icon": "database",
+          "endpoint": "GET /chat/apis",
+          "description": "Lista todas as bases de dados disponíveis e seus status"
+        },
+        {
+          "id": "list_models",
+          "label": "Modelos LLM",
+          "icon": "brain",
+          "endpoint": "GET /chat/models",
+          "description": "Lista os modelos LLM disponíveis"
+        },
+        {
+          "id": "current_provider",
+          "label": "Provider Atual",
+          "icon": "info",
+          "endpoint": "GET /chat/current-provider",
+          "description": "Mostra qual LLM provider está em uso"
+        },
+        {
+          "id": "ops_token_status",
+          "label": "Status Token OPS",
+          "icon": "key",
+          "endpoint": "GET /chat/ops-token-status",
+          "description": "Verifica validade do token de autenticação da OPS"
+        },
+        {
+          "id": "analyze_query",
+          "label": "Analisar Complexidade",
+          "icon": "zap-off",
+          "endpoint": "POST /chat/analyze-query",
+          "description": "Analisa a complexidade de uma query existente",
+          "inputs": {
+            "query": {
+              "type": "string",
+              "label": "Query a Analisar",
+              "required": true
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "workflow": {
+    "recommended_flow": [
+      {
+        "step": 1,
+        "action": "refine_topic",
+        "description": "Começa com um tema genérico"
+      },
+      {
+        "step": 2,
+        "action": "build_probe_query",
+        "description": "Escolhe um dos tópicos refinados"
+      },
+      {
+        "step": 3,
+        "action": "run_probe_search",
+        "description": "Executa busca rápida para explorar"
+      },
+      {
+        "step": 4,
+        "action": "extract_terms",
+        "description": "Extrai novos termos relevantes"
+      },
+      {
+        "step": 5,
+        "action": "build_final_queries",
+        "description": "Gera 3 variações otimizadas"
+      },
+      {
+        "step": 6,
+        "action": "run_final_search",
+        "description": "Executa com a variação escolhida"
+      }
+    ]
+  },
+  "features": {
+    "multi_api": {
+      "description": "Suporta múltiplas bases de dados",
+      "apis": ["ops", "scopus", "lens_patent", "lens_scholarly"]
+    },
+    "enrichment": {
+      "description": "Resultados enriquecidos com dados bibliográficos",
+      "fields": ["title", "abstract", "inventors", "applicants"]
+    },
+    "term_scoring": {
+      "description": "Termos ranqueados por relevância semântica + estatística",
+      "components": {
+        "keybert": "60% - Relevância semântica",
+        "tfidf": "40% - Importância estatística"
+      }
+    },
+    "query_variants": {
+      "description": "3 variações com diferentes especificidades",
+      "variants": {
+        "specific": "Alta precisão, poucos termos",
+        "balanced": "Recomendado, cobertura equilibrada",
+        "generic": "Alta cobertura, muitos termos"
+      }
+    },
+    "complexity_validation": {
+      "description": "Todas as queries validadas contra limite de complexidade",
+      "limit": "60/100"
+    }
+  }
+}
