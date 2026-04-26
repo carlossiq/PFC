@@ -427,6 +427,70 @@ async def build_final_query_endpoint(
         )
 
 
+@router.post("/final/queries-multi", response_model=SuccessResponse[dict[str, Any]])
+async def build_final_queries_endpoint(
+    request: Request,
+    intake: InputIntake,
+    extracted_terms: list[dict[str, Any]] = Body(default=[], description="Termos extraídos com scores"),
+    api: str = Body(default="ops", description="API específica (ops, scopus, lens_patent, lens_scholarly)"),
+) -> SuccessResponse[dict[str, Any]]:
+    """
+    Constrói 3 variações de query final (specific, balanced, generic)
+    usando parâmetros originais e termos extraídos com scores.
+
+    Gera queries em diferentes níveis de especificidade, validando complexidade
+    de cada uma contra o limite máximo estipulado no .env (llm_max_query_complexity).
+
+    Args:
+        intake: Objeto com theme (obrigatório), description, area_of_study, keywords.
+        extracted_terms: Termos extraídos do /extract-terms endpoint com {term, score, frequency, sources}.
+        api: API específica (default: ops). Pode ser: ops, scopus, lens_patent, lens_scholarly.
+
+    Returns:
+        3 queries com diferentes especificidades:
+        {
+            "specific": { "query": {...}, "rationale": "...", "complexity": {...} },
+            "balanced": { "query": {...}, "rationale": "...", "complexity": {...} },
+            "generic": { "query": {...}, "rationale": "...", "complexity": {...} }
+        }
+    """
+    run_id = getattr(request.state, "run_id", None)
+
+    try:
+        result = await pipeline.build_final_queries_with_extraction(
+            intake=intake,
+            extracted_terms=extracted_terms,
+            api=api,
+        )
+
+        # Contar queries bem-sucedidas
+        successful_queries = sum(
+            1 for q in result.get("queries", {}).values()
+            if isinstance(q, dict) and q.get("success", False)
+        )
+
+        message = (
+            f"Generated 3 query variations with {successful_queries} within complexity limits"
+            if result.get("success", False)
+            else f"Error: {result.get('error')}"
+        )
+
+        return SuccessResponse(
+            success=result.get("success", False),
+            data=result,
+            message=message,
+            run_id=run_id,
+        )
+    except Exception as exc:
+        logger.error("build_final_queries_error", error=str(exc), run_id=run_id)
+        return SuccessResponse(
+            success=False,
+            data={"error": str(exc)},
+            message=f"Error building final queries: {str(exc)}",
+            run_id=run_id,
+        )
+
+
 @router.get("/system-prompt", response_model=SuccessResponse[dict[str, Any]])
 async def get_system_prompt(request: Request) -> SuccessResponse[dict[str, Any]]:
     """

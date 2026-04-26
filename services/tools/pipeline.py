@@ -932,6 +932,209 @@ async def build_final_query(
         }
 
 
+async def build_final_queries_with_extraction(
+    intake: InputIntake,
+    extracted_terms: list[dict[str, Any]],
+    api: str = "ops",
+) -> dict[str, Any]:
+    """
+    Constrói 3 variações de query final (específica, balanceada, genérica)
+    usando parâmetros originais e termos extraídos com scores.
+
+    Gera queries em diferentes níveis de especificidade:
+    - SPECIFIC: Alta precisão, apenas termos com score > 0.4
+    - BALANCED: Equilíbrio, termos com score > 0.3 (RECOMENDADO)
+    - GENERIC: Alta cobertura, termos com score > 0.2
+
+    Args:
+        intake: InputIntake com theme (obrigatório), description, etc.
+        extracted_terms: Lista de termos extraídos com {term, score, keybert_score, tf_idf_score, frequency}
+        api: API específica (ops, scopus, lens_patent, lens_scholarly).
+
+    Returns:
+        Dict com 3 queries (specific, balanced, generic), cada uma com validação de complexidade.
+    """
+    try:
+        llm_service = LLMServiceFactory.get_instance()
+        max_complexity = getattr(settings, "llm_max_query_complexity", 0.6)
+        max_score = max_complexity * 100
+
+        # Carregar prompt system para queries finais
+        system_prompt = PromptLoader.load_prompt("final_system_prompt.md")
+
+        # Construir mensagem com parâmetros e termos extraídos
+        top_terms_specific = [t for t in extracted_terms if t.get("score", 0) > 0.4]
+        top_terms_balanced = [t for t in extracted_terms if t.get("score", 0) > 0.3]
+        top_terms_generic = [t for t in extracted_terms if t.get("score", 0) > 0.2]
+
+        user_message = f"""
+Generate THREE search query variations for {api.upper()} database:
+
+## Original Search Parameters
+- Theme: {intake.theme}
+- Description: {intake.description}
+- Area of Study: {intake.area_of_study}
+- Keywords: {', '.join(intake.keywords) if intake.keywords else 'None'}
+
+## Extracted Relevant Terms (from search results)
+
+### High-Scoring Terms (score > 0.4) - For SPECIFIC query:
+{_format_terms_for_prompt(top_terms_specific)}
+
+### Mid-Scoring Terms (score > 0.3) - For BALANCED query:
+{_format_terms_for_prompt(top_terms_balanced)}
+
+### All Relevant Terms (score > 0.2) - For GENERIC query:
+{_format_terms_for_prompt(top_terms_generic)}
+
+## Requirements
+- All queries must have complexity score < {max_score:.0f}
+- Prefer extracted terms over original parameters when synonyms exist
+- Use ABSTRACT OR TITLE as primary search fields
+- Use minimal AND operators (max 3 for specific, 1-2 for balanced, 0-1 for generic)
+- Group related terms with OR
+- Return JSON format with queries for each variation
+
+Target API: {api}
+Query Syntax: {'CQL' if api == 'ops' else 'Boolean'}
+"""
+
+        logger.info(
+            "final_queries_generation_start",
+            api=api,
+            original_params=intake.model_dump(),
+            total_extracted_terms=len(extracted_terms),
+            specific_terms=len(top_terms_specific),
+            balanced_terms=len(top_terms_balanced),
+            generic_terms=len(top_terms_generic),
+        )
+
+        # Chamar LLM para gerar 3 queries com formato JSON customizado
+        try:
+            queries_json = await llm_service.call_raw_json(
+                prompt=system_prompt,
+                user_input=user_message,
+            )
+        except Exception as exc:
+            logger.error(
+                "final_queries_llm_call_failed",
+                error=str(exc),
+                api=api,
+            )
+            return {
+                "success": False,
+                "error": f"LLM call failed: {str(exc)}",
+            }
+
+        # Validar resposta
+        if not queries_json:
+            return {
+                "success": False,
+                "error": "LLM returned empty response",
+            }
+
+        if not queries_json:
+            return {
+                "success": False,
+                "error": "No queries generated in LLM response",
+            }
+
+        # Validar complexidade de cada query
+        results = {
+            "success": True,
+            "api": api,
+            "user_input": intake.model_dump(),
+            "extracted_terms_summary": {
+                "total": len(extracted_terms),
+                "high_score": len(top_terms_specific),
+                "mid_score": len(top_terms_balanced),
+                "all_score": len(top_terms_generic),
+            },
+            "queries": {}
+        }
+
+        for variant in ["specific", "balanced", "generic"]:
+            query_data = queries_json.get(variant, {})
+            query_str = query_data.get("query", "")
+
+            if not query_str:
+                results["queries"][variant] = {
+                    "success": False,
+                    "error": f"No query generated for {variant}",
+                }
+                continue
+
+            # Analisar complexidade
+            complexity = await _analyze_query_complexity(query_str)
+            score = complexity["score"]
+            passed = score <= max_score
+
+            logger.info(
+                "final_query_complexity_check",
+                variant=variant,
+                api=api,
+                score=score,
+                max_score=max_score,
+                passed=passed,
+            )
+
+            results["queries"][variant] = {
+                "success": passed or variant == "generic",  # Generic always returned even if complex
+                "query": {
+                    "query": query_str,
+                    "range": f"1-{getattr(settings, 'final_top_k', 100)}",
+                    "format": "json",
+                },
+                "rationale": query_data.get("rationale", ""),
+                "expected_precision": query_data.get("expected_precision", ""),
+                "focus_areas": query_data.get("focus_areas", []),
+                "complexity": {
+                    "score": score,
+                    "level": complexity["level"],
+                    "passed": passed,
+                    "warnings": complexity["warnings"],
+                },
+            }
+
+            if not passed and variant != "generic":
+                results["queries"][variant]["warning"] = (
+                    f"Query complexity ({score:.1f}/100) exceeds limit ({max_score:.0f}). "
+                    f"Consider using the GENERIC variant for broader coverage."
+                )
+
+        logger.info(
+            "final_queries_generation_complete",
+            api=api,
+            specific_passed=results["queries"].get("specific", {}).get("success", False),
+            balanced_passed=results["queries"].get("balanced", {}).get("success", False),
+            generic_returned=results["queries"].get("generic", {}).get("success", False),
+        )
+
+        return results
+
+    except Exception as exc:
+        logger.error("build_final_queries_with_extraction_error", error=str(exc), exc_info=True)
+        return {
+            "success": False,
+            "error": str(exc),
+        }
+
+
+def _format_terms_for_prompt(terms: list[dict[str, Any]]) -> str:
+    """Format extracted terms for LLM prompt display."""
+    if not terms:
+        return "- None available"
+
+    lines = []
+    for term_data in terms[:20]:  # Max 20 terms per section
+        term = term_data.get("term", "")
+        score = term_data.get("score", 0)
+        freq = term_data.get("frequency", 0)
+        lines.append(f"- {term} (score: {score:.3f}, freq: {freq})")
+
+    return "\n".join(lines)
+
+
 async def run_final_search(
     query: dict[str, Any],
     api: str,
