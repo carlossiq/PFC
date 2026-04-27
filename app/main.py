@@ -5,9 +5,10 @@ Main FastAPI application initialization and startup configuration.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import chat, health, intake, test
+from api.routes import chat, health, intake, research, test
 from core.config import settings
 from core.logging import configure_logging, get_logger
+from db.init_db import init_db
 from db.session import db_session
 from middleware.request_logging import RequestLoggingMiddleware
 
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix=settings.api_prefix)
     app.include_router(intake.router, prefix=settings.api_prefix)
     app.include_router(chat.router, prefix=settings.api_prefix)
+    app.include_router(research.router, prefix=settings.api_prefix)
     app.include_router(test.router, prefix=settings.api_prefix)
 
     # Event handlers
@@ -68,6 +70,14 @@ def create_app() -> FastAPI:
             environment=settings.environment,
             debug=settings.debug,
         )
+
+        # Initialize database tables
+        try:
+            await init_db()
+            logger.info("database_tables_initialized")
+        except Exception as exc:
+            logger.error("database_initialization_failed", error=str(exc))
+            raise
 
     @app.on_event("shutdown")
     async def shutdown_event() -> None:
