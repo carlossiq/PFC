@@ -338,7 +338,7 @@ class ResearchPhase(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text)
 
     # Additional data
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON)
+    phase_metadata: Mapped[Optional[dict]] = mapped_column(JSON)
 
     __table_args__ = (
         Index("idx_research_phase", "research_id", "phase_name"),
@@ -392,7 +392,7 @@ class ResearchTokenUsage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     # Additional data
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON)  # Any extra info (prompt size, etc)
+    call_metadata: Mapped[Optional[dict]] = mapped_column(JSON)  # Any extra info (prompt size, etc)
 
     __table_args__ = (
         Index("idx_research_token_phase", "research_id", "phase_name"),

@@ -245,100 +245,53 @@ Montar documento final
 
 ### Mapear Dados do Research para Report
 
+Use `ReportDataMapper` para consolidar dados de patentes (OPS) e artigos (Scopus):
+
 ```python
-def map_research_to_report_data(research: Research) -> dict:
-    """
-    Mapeia Research record para dados que o report espera.
-    """
-    
-    # Dados científicos
-    scientific_data = {
-        "article_count": research.scholarly_results_count,
-        "top_journals": [
-            {"journal": j, "count": c}
-            for j, c in research.metrics.article_by_journal.items()
-        ][:5] if research.metrics else [],
-        "top_fields": list(
-            research.metrics.article_by_field.keys()
-        )[:5] if research.metrics else [],
-    }
-    
-    # Dados de patentes
-    patent_data = {
-        "patent_count": research.patent_results_count,
-        "top_applicants": [
-            {"name": a, "count": c}
-            for a, c in research.metrics.patent_by_applicant.items()
-        ][:5] if research.metrics else [],
-        "top_cpc_codes": list(
-            research.metrics.patent_by_ipc.keys()
-        )[:5] if research.metrics else [],
-    }
-    
-    # S-Curve
-    s_curve_data = {
-        "phase": "GROWTH",  # Extrair de research.metrics.patent_growth_trend
-        "growth_rate": 0.18,
-        "peak_year": 2023,
-    }
-    
-    return {
-        "area_of_study": research.chosen_candidate.get("area_of_study") if research.chosen_candidate else "",
-        "keywords": research.chosen_candidate.get("keywords", []) if research.chosen_candidate else [],
-        "period_start": research.user_input.get("period_start"),
-        "period_end": research.user_input.get("period_end"),
-        "scientific_data": scientific_data,
-        "patent_data": patent_data,
-        "s_curve_data": s_curve_data,
-    }
+from services.report_data_mapper import ReportDataMapper
+from db.research_models import Research
+
+# Dados para Report com consolidação de OPS + Scopus
+research: Research = await get_research(session, research_id)
+consolidated_data = ReportDataMapper.map_complete_research_data(research)
+
+# consolidated_data contém:
+# - theme: research.title
+# - description: research.description
+# - area_of_study: de research.chosen_candidate
+# - keywords: de research.chosen_candidate
+# - period_start/end: de research.user_input
+# - patent_data: agregação de OPS (por ano, aplicantes, CPC codes)
+# - scientific_data: agregação de Scopus (por ano, journals, fields, autores)
+# - metrics: de research.metrics
+# - s_curve_data: fase de tecnologia baseada em trend
+# - apis_used: ["OPS", "Scopus"] conforme resultados
 ```
 
 ### Converter Documentos para RAG
 
+Use `ReportDataMapper.convert_all_results_to_rag_documents()` para criar documentos indexáveis:
+
 ```python
-def convert_results_to_rag_documents(research: Research) -> list[dict]:
-    """
-    Converte resultados de patentes e artigos para documentos RAG.
-    """
-    
-    documents = []
-    
-    # Documentos de patentes
-    for patent in research.patent_documents[:50]:  # Limitar para não sobrecarregar
-        doc_text = f"""
-Patente: {patent.title}
-Aplicantes: {', '.join(patent.applicants or [])}
-Inventores: {', '.join(patent.inventors or [])}
-Resumo: {patent.abstract or 'N/A'}
-Classificação CPC: {', '.join(patent.cpc_codes or [])}
-Ano: {patent.year}
-Status: {patent.legal_status}
-"""
-        documents.append({
-            "text": doc_text.strip(),
-            "source": f"Patent_{patent.publication_number}",
-            "type": "patent",
-            "year": patent.year,
-        })
-    
-    # Documentos de artigos
-    for article in research.scholarly_documents[:50]:
-        doc_text = f"""
-Artigo: {article.title}
-Autores: {', '.join(article.authors or [])}
-Resumo: {article.abstract or 'N/A'}
-Campos de Estudo: {', '.join(article.field_of_study or [])}
-Ano: {article.year}
-Citações: {article.citations or 0}
-"""
-        documents.append({
-            "text": doc_text.strip(),
-            "source": f"Article_{article.doi}",
-            "type": "article",
-            "year": article.year,
-        })
-    
-    return documents
+from services.report_data_mapper import ReportDataMapper
+
+research: Research = await get_research(session, research_id)
+
+# Converte tanto patentes (OPS) quanto artigos (Scopus) para formato RAG
+rag_documents = ReportDataMapper.convert_all_results_to_rag_documents(
+    research,
+    max_patents=50,
+    max_articles=50,
+)
+
+# Cada documento contém:
+# {
+#   "text": conteúdo formatado em português,
+#   "source": "Patent_OPS_{publication_number}" ou "Article_Scopus_{doi}",
+#   "type": "patent" ou "article",
+#   "year": ano de publicação,
+#   "api": "OPS" ou "Scopus"
+# }
 ```
 
 ## 🎯 Casos de Uso Práticos
@@ -346,6 +299,8 @@ Citações: {article.citations or 0}
 ### Caso 1: Relatório Após Pesquisa Completa
 
 ```python
+from services.report_data_mapper import ReportDataMapper
+
 @app.post("/research/{research_id}/generate-report")
 async def generate_report_for_research(
     research_id: int,
@@ -358,16 +313,18 @@ async def generate_report_for_research(
     if not research:
         raise HTTPException(status_code=404, detail="Research not found")
     
-    # Indexar documentos
-    documents = convert_results_to_rag_documents(research)
-    await report_service.add_documents_to_rag(documents)
+    # Consolidar dados de OPS (patentes) + Scopus (artigos)
+    consolidated_data = ReportDataMapper.map_complete_research_data(research)
     
-    # Gerar relatório
-    report_data = map_research_to_report_data(research)
+    # Converter patentes e artigos para documentos RAG
+    rag_documents = ReportDataMapper.convert_all_results_to_rag_documents(research)
+    await report_service.add_documents_to_rag(rag_documents)
+    
+    # Gerar relatório com dados consolidados
     report = await report_service.generate_full_report(
-        theme=research.title,
-        description=research.description,
-        data=report_data,
+        theme=consolidated_data["theme"],
+        description=consolidated_data["description"],
+        data=consolidated_data,
     )
     
     return {"success": True, "report": report}

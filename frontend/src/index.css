@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: 'Anurati';
+  src: url('/src/fonts/Anurati-Regular.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  background-color: #17212b;
+  overflow-y: hidden;
+}

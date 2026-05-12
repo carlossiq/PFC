@@ -355,3 +355,58 @@ async def list_models(
     except Exception as exc:
         logger.error("list_models_error", error=str(exc), run_id=run_id)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/generate-from-research", response_model=ReportResponse)
+async def generate_report_from_research(
+    request: Request,
+    research_id: int,
+    service: ReportService = Depends(get_report_service),
+) -> ReportResponse:
+    """
+    Generate report from existing Research object.
+
+    Convenient endpoint that:
+    1. Loads Research from database (requires external session)
+    2. Consolidates OPS (patents) + Scopus (articles) data
+    3. Creates RAG documents from both sources
+    4. Generates complete report
+
+    Note: This endpoint requires the Research to be pre-loaded and passed.
+    For actual implementation, you may want to inject the session and load
+    the Research directly here.
+
+    Args:
+        research_id: ID of research to generate report for
+        service: Report service instance
+
+    Returns:
+        Generated report in Markdown format
+    """
+    run_id = getattr(request.state, "run_id", None)
+
+    try:
+        logger.info("research_report_generation_requested", research_id=research_id, run_id=run_id)
+
+        # Note: In production, you would:
+        # 1. Inject AsyncSession dependency
+        # 2. Load Research: research = await session.get(Research, research_id)
+        # 3. Call: report = await service.generate_report_from_research(research)
+
+        # For now, return error indicating this needs proper integration
+        raise HTTPException(
+            status_code=501,
+            detail="This endpoint requires database session injection. "
+            "Use example_research_to_report.py for reference implementation.",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(
+            "research_report_generation_error",
+            error=str(exc),
+            research_id=research_id,
+            run_id=run_id,
+        )
+        raise HTTPException(status_code=500, detail=str(exc))

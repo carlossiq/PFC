@@ -1,0 +1,524 @@
+================================================================================
+PLANEJAMENTO DA INTERFACE WEB - SISTEMA DE PROSPECÇÃO TECNOLÓGICA
+================================================================================
+
+DATA: 2026-04-27
+STATUS: Planejado (Médio Prazo: 2-4 semanas)
+PRIORIDADE: Alta (componente crítico para uso final)
+
+================================================================================
+1. VISÃO GERAL
+================================================================================
+
+A interface web permite que usuários finais interajam com o sistema de
+prospecção tecnológica através de um navegador, sem necessidade de conhecimento
+técnico.
+
+COMPONENTES PRINCIPAIS:
+1. ✓ Pesquisa (tema, período)
+2. ✓ Acompanhamento de progresso em tempo real
+3. ✓ Editor de Markdown/LaTeX no navegador (tipo Overleaf)
+4. ✓ Preview side-by-side
+5. ✓ Export para PDF
+6. ✓ Histórico de pesquisas
+
+================================================================================
+2. ARQUITETURA
+================================================================================
+
+Frontend:
+├─ React.js ou Vue.js (framework)
+├─ Monaco Editor (editor de texto)
+├─ Markdown-it + KaTeX (preview)
+├─ Tailwind ou Material-UI (styling)
+└─ Socket.io (WebSocket)
+
+Backend (já implementado):
+├─ FastAPI (API REST)
+├─ Ollama (LLM local)
+├─ ChromaDB (RAG)
+└─ PostgreSQL (database)
+
+Integração:
+├─ HTTP REST para requisições
+├─ WebSocket para progresso em tempo real
+└─ Local Storage para rascunhos
+
+================================================================================
+3. FLUXO DO USUÁRIO
+================================================================================
+
+PASSO 1: HOME PAGE
+┌────────────────────────────┐
+│  Logo + Descrição          │
+│  "Análise Tecnológica IA"  │
+│                            │
+│  [Iniciar Nova Pesquisa]   │
+│  [Ver Histórico]           │
+└────────────────────────────┘
+    ↓
+PASSO 2: BUSCA
+┌────────────────────────────┐
+│ Tema: ________________      │
+│ Período: [2018] a [2024]   │
+│ [Buscar]                   │
+└────────────────────────────┘
+    ↓
+PASSO 3: PROGRESSO (Em Tempo Real)
+┌────────────────────────────────────┐
+│ Fase 1: Refine Topic               │
+│ ████████████░░░░░░░░░░░░░░░░░ 40% │
+│ Tempo: 2.3s | Tokens: 245         │
+│                                    │
+│ Fase 2: Probe Search               │
+│ ███████████░░░░░░░░░░░░░░░░░░ 30% │
+│ Patentes: 1523 | Artigos: 245     │
+│                                    │
+│ Fase 3: Extract Terms              │
+│ ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 0%
+│                                    │
+│ Tempo total: 12.5s                │
+└────────────────────────────────────┘
+    ↓ (após geração de relatório)
+PASSO 4: EDITOR DE RELATÓRIO
+┌──────────────────────────────────────────────┐
+│ [Relatório] [Editor] [Preview] [Download]    │
+│                                              │
+│ Editor (esquerda)    │  Preview (direita)   │
+│ ─────────────────────┼─────────────────────  │
+│ # Introdução         │  Introdução          │
+│ Os sistemas...       │  ───────────────     │
+│ \textbf{bold}        │  Os sistemas...      │
+│                      │  bold                │
+│ ## Metodologia       │                      │
+│ Utilizamos...        │  Metodologia         │
+│                      │  ───────────────     │
+│ [Ctrl+S para salvar] │  Utilizamos...       │
+│                      │                      │
+│ Unsaved changes ⚠️    │                      │
+└──────────────────────────────────────────────┘
+    ↓
+PASSO 5: EXPORT
+┌────────────────────────────┐
+│ [Download PDF]             │
+│ [Download LaTeX]           │
+│ [Download Markdown]        │
+│ [Enviar por Email]         │
+│ [Gerar Link Público]       │
+└────────────────────────────┘
+
+================================================================================
+4. COMPONENTES PRINCIPAIS
+================================================================================
+
+4.1 SearchForm Component
+└─ Entrada de tema (texto)
+└─ Seletor de período (slider ou input)
+└─ Botão submit
+└─ Validação client-side
+└─ Feedback visual de validação
+
+4.2 ProgressTracker Component
+└─ Barra de progresso (0-100%)
+└─ Informações por fase
+└─ Métricas em tempo real
+└─ Tempo decorrido
+└─ Status (em andamento / concluído)
+└─ Atualiza via WebSocket (não precisa refresh)
+
+4.3 ReportEditor Component
+└─ Monaco Editor (VSCode embed)
+└─ Sintaxe highlighting (Markdown/LaTeX)
+└─ Auto-completion
+└─ Line numbers
+└─ Auto-save (a cada 30s em Local Storage)
+└─ Undo/redo (Ctrl+Z/Ctrl+Y)
+└─ Search and replace (Ctrl+H)
+└─ Shortcuts:
+   - Ctrl+B → **bold**
+   - Ctrl+I → *itálico*
+   - Ctrl+` → code
+   - Tab → indent
+   - Shift+Tab → unindent
+
+4.4 PreviewPanel Component
+└─ Renderização de Markdown
+└─ Compilação de equações (KaTeX)
+└─ Scroll sincronizado com editor
+└─ Atualiza em tempo real conforme digita
+└─ Modo full-screen
+└─ Zoom in/out
+
+4.5 ExportButton Component
+└─ Download PDF (via pandoc ou wkhtmltopdf)
+└─ Download LaTeX (.tex)
+└─ Download Markdown (.md)
+└─ Email (com PDF anexado)
+└─ Link compartilhável (gera UUID no BD)
+
+4.6 HistoryComponent
+└─ Lista de pesquisas anteriores
+└─ Thumbnail do resultado
+└─ Data e hora
+└─ Duração
+└─ Clique para abrir
+└─ Opção para duplicar
+└─ Opção para deletar
+
+================================================================================
+5. EDITOR DE MARKDOWN/LATEX NO NAVEGADOR
+================================================================================
+
+CARACTERÍSTICAS:
+
+1. Edição em Tempo Real
+   - Usuário digita no editor
+   - Preview atualiza imediatamente
+   - Sem delay perceptível
+   - Auto-save a cada 30 segundos
+
+2. Sintaxe Highlighting
+   - Markdown: headings, bold, italic, lists, código
+   - LaTeX: commands, environments, math mode
+   - Temas: light, dark, solarized
+
+3. Auto-Completion
+   - \begin{} autocompleta com \end{}
+   - # autocompleta com espaço
+   - Sugestões de comandos LaTeX
+   - Snippets customizados
+
+4. Preview Side-by-Side
+   - Esquerda: editor
+   - Direita: preview renderizado
+   - Sincronização de scroll
+   - Modo full-screen para editor ou preview
+   - Toggle preview/editor para mobile
+
+5. Histórico de Versões
+   - Salva último backup a cada 30s
+   - Mantém últimas 10 versões
+   - Botão "Revert to version"
+   - Mostra timestamp de cada versão
+
+6. Validação
+   - Detecta LaTeX syntax errors
+   - Aviso se há seções incompletas
+   - Valida estrutura REPTEC/AGITEC
+   - Oferece sugestões de correção
+
+EXEMPLO DE USO:
+
+1. Relatório é gerado em Markdown
+2. Frontend exibe em editor com preview
+3. Usuário pode:
+   - Editar texto diretamente
+   - Mudar formatação (bold, itálico, etc)
+   - Adicionar/remover seções
+   - Ajustar equações LaTeX
+
+4. Ao clicar "Download PDF":
+   - Sistema converte Markdown → LaTeX
+   - Compila LaTeX → PDF
+   - Retorna PDF pronto
+
+5. Usuário pode:
+   - Fazer novos downloads após edições
+   - Enviar por email
+   - Compartilhar link público
+   - Exportar em vários formatos
+
+================================================================================
+6. INTEGRAÇÃO COM BACKEND
+================================================================================
+
+ENDPOINTS EXISTENTES (já implementados):
+POST /api/v1/chat/refine-topic
+POST /api/v1/chat/probe/search
+POST /api/v1/chat/extract-terms
+POST /api/v1/chat/final/search
+POST /api/v1/reports/generate
+
+NOVOS ENDPOINTS NECESSÁRIOS:
+POST /api/v1/reports/export-pdf
+  Input: {markdown: "...", format: "latex"|"html"}
+  Output: PDF binary
+
+POST /api/v1/reports/export-latex
+  Input: {markdown: "..."}
+  Output: LaTeX file text
+
+GET /api/v1/research/history
+  Output: [{id, title, created_at, duration}, ...]
+
+GET /api/v1/research/{id}
+  Output: {id, title, description, report_markdown, ...}
+
+DELETE /api/v1/research/{id}
+  Output: {success: true}
+
+WEBSOCKET:
+WS /api/v1/ws/search-progress
+  Retorna updates em tempo real:
+  {
+    "phase": "probe_search",
+    "progress": 65,
+    "patents_found": 1523,
+    "articles_found": 245,
+    "elapsed_seconds": 12.5,
+    "estimated_remaining": 5
+  }
+
+================================================================================
+7. DEPENDÊNCIAS FRONTEND
+================================================================================
+
+Framework:
+- react@18+ ou vue@3+
+- react-router-dom ou vue-router
+
+Editor:
+- @monaco-editor/react (Monaco Editor for React)
+- monaco-editor (core)
+
+Preview:
+- markdown-it (Markdown parser)
+- katex (Math rendering)
+- highlight.js (código syntax highlighting)
+
+UI:
+- tailwindcss ou @mui/material
+- lucide-react ou material-ui icons
+
+Comunicação:
+- axios (HTTP client)
+- socket.io-client (WebSocket)
+
+Estado:
+- @reduxjs/toolkit ou pinia (Vue)
+- react-redux ou vuex
+
+Utilitários:
+- uuid (gera IDs únicos)
+- date-fns (manipulação de datas)
+- lodash (utilitários)
+
+PDF Export:
+- jspdf + html2canvas (client-side)
+- ou chamada para backend com pandoc
+
+Dev Tools:
+- typescript
+- eslint
+- prettier
+- vitest (testes)
+
+================================================================================
+8. FLUXO DE DADOS DETALHADO
+================================================================================
+
+USER DIGITA TEMA
+     ↓
+FRONTEND valida entrada
+     ↓
+FRONTEND POST /api/v1/chat/refine-topic
+     ↓
+BACKEND processa (2-5s)
+     ↓
+BACKEND retorna tema refinado
+     ↓
+FRONTEND abre WebSocket: WS /api/v1/ws/search-progress
+     ↓
+FRONTEND POST /api/v1/chat/probe/search
+BACKEND começa fase 1, envia updates via WebSocket
+     ↓
+FRONTEND recebe WebSocket updates
+     ↓
+ProgressTracker atualiza em tempo real (sem refresh)
+     ↓
+Fases 2, 3, 4 prosseguem (com updates WebSocket)
+     ↓
+BACKEND completa busca, inicia geração
+     ↓
+BACKEND POST /api/v1/reports/generate
+     ↓
+BACKEND gera Markdown via RAG + Ollama
+     ↓
+BACKEND retorna Markdown formatado
+     ↓
+FRONTEND recebe Markdown
+     ↓
+FRONTEND exibe em ReportEditor
+     ↓
+PreviewPanel renderiza preview imediatamente
+     ↓
+USUÁRIO pode:
+├─ Editar (Monaco Editor)
+├─ Ver preview em tempo real
+├─ Auto-save cada 30s
+├─ Undo/redo
+├─ Search and replace
+└─ Quando pronto:
+   └─ Clica "Download PDF"
+      └─ Markdown é convertido em LaTeX
+      └─ LaTeX é compilado em PDF
+      └─ PDF é retornado para download
+
+================================================================================
+9. AUTENTICAÇÃO E SEGURANÇA
+================================================================================
+
+Login (futuro):
+- JWT tokens para autenticação
+- Email + password
+- OAuth (Google, GitHub)
+- Session management
+
+Autorização:
+- Usuários só veem suas pesquisas
+- API valida ownership antes de retornar dados
+- DELETE apenas para próprias pesquisas
+
+Segurança:
+- HTTPS obrigatório em produção
+- CSRF protection
+- Rate limiting por IP
+- Input validation no frontend
+- SQL injection prevention (ORM)
+- XSS protection (Markdown-it safe mode)
+
+Privacidade:
+- Opção de pesquisas privadas vs públicas
+- Link compartilhável com token único
+- Dados sensíveis não são logados
+- Relatórios podem ser deletados
+
+================================================================================
+10. PERFORMANCE E OTIMIZAÇÕES
+================================================================================
+
+Frontend:
+- Code splitting por página
+- Lazy loading de componentes
+- Memoização (React.memo, useMemo)
+- Virtual scrolling para listas longas
+- Service workers para offline mode (futuro)
+
+Backend:
+- Caching de resultados OPS/Scopus
+- Compressão de resposta (gzip)
+- CDN para assets estáticos
+- Rate limiting por usuário
+- Connection pooling para DB
+
+WebSocket:
+- Compressão de mensagens
+- Heartbeat para detectar desconexão
+- Reconexão automática
+- Fila de mensagens se offline
+
+================================================================================
+11. RESPONSIVIDADE (MOBILE)
+================================================================================
+
+Desktop (>1024px):
+- Editor lado a lado com preview
+- Barra lateral com histórico
+- Full features
+
+Tablet (768px-1024px):
+- Abas: [Editor] [Preview]
+- Toggle entre dois modos
+- Teclado virtual pode ocluir
+
+Mobile (<768px):
+- Stack vertical: editor sobre preview
+- Botões maiores (48px minimum)
+- Sem preview side-by-side (usar abas)
+- Teclado virtual importante
+- Botões de export em bottom sheet
+
+================================================================================
+12. CRONOGRAMA ESTIMADO
+================================================================================
+
+Semana 1: Setup e Componentes Base
+└─ Setup React/Vue + build tools
+└─ Layout base (Header, Sidebar, Main)
+└─ SearchForm component
+└─ Routing básico
+
+Semana 2: Editor e Preview
+└─ Integração Monaco Editor
+└─ Markdown-it + KaTeX
+└─ Preview side-by-side
+└─ Auto-save em Local Storage
+
+Semana 3: WebSocket e Progresso
+└─ Integração WebSocket no backend
+└─ ProgressTracker component
+└─ Atualizações em tempo real
+└─ Sincronização de abas
+
+Semana 4: Export e Funcionalidades
+└─ Export PDF (pandoc integration)
+└─ Export LaTeX
+└─ Export Markdown
+└─ Email sharing
+└─ History component
+
+Testes e Ajustes:
+└─ Testes automatizados
+└─ Testes de usabilidade
+└─ Performance tuning
+└─ Responsive design ajustes
+
+TOTAL: ~4 semanas para MVP (Minimum Viable Product)
+
+================================================================================
+13. PRÓXIMAS FASES (PÓS MVP)
+================================================================================
+
+Fase 2: Login e Multi-Usuário
+└─ Autenticação com JWT
+└─ Perfil de usuário
+└─ Salvar pesquisas pessoais
+└─ Compartilhamento de relatórios
+
+Fase 3: Gráficos
+└─ Integração Chart.js ou Plotly
+└─ Timeline de patentes/artigos
+└─ Distribuições (CPC, fields)
+└─ Curva-S renderizada
+└─ Exportação de gráficos em PDF
+
+Fase 4: Colaboração
+└─ Múltiplos usuários editando
+└─ Comentários nos relatórios
+└─ Sugestões de mudanças
+└─ Histórico de contribuições
+
+Fase 5: IA Enhancements
+└─ Sugestões automáticas de edição
+└─ Detecção de inconsistências
+└─ Geração de gráficos automática
+└─ Análise de sentimento
+
+================================================================================
+14. CONCLUSÃO
+================================================================================
+
+A interface web é um componente crítico que transforma o sistema de
+engenharia (backend) em um produto usável para usuários finais.
+
+O Markdown/LaTeX editável no navegador oferece flexibilidade para que usuários
+finalizem e customizem relatórios sem ferramentas externas.
+
+O export para PDF torna o sistema completo - entrada a saída dentro de um
+navegador.
+
+Timeline estimado: 4 semanas para MVP, pronto para usar.
+
+================================================================================
+FIM DO DOCUMENTO DE PLANEJAMENTO
+================================================================================

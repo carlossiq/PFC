@@ -5,7 +5,7 @@ Main FastAPI application initialization and startup configuration.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import chat, health, intake, research, test
+from api.routes import chat, health, intake, reports, research, test
 from core.config import settings
 from core.logging import configure_logging, get_logger
 from db.init_db import init_db
@@ -55,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(intake.router, prefix=settings.api_prefix)
     app.include_router(chat.router, prefix=settings.api_prefix)
     app.include_router(research.router, prefix=settings.api_prefix)
+    app.include_router(reports.router, prefix=settings.api_prefix)
     app.include_router(test.router, prefix=settings.api_prefix)
 
     # Event handlers
@@ -78,6 +79,17 @@ def create_app() -> FastAPI:
         except Exception as exc:
             logger.error("database_initialization_failed", error=str(exc))
             raise
+
+        # Initialize report generation services (Ollama + RAG)
+        try:
+            from api.routes.reports import initialize_services
+            success = await initialize_services()
+            if success:
+                logger.info("report_services_initialized")
+            else:
+                logger.warning("report_services_not_available")
+        except Exception as exc:
+            logger.warning("report_services_initialization_failed", error=str(exc))
 
     @app.on_event("shutdown")
     async def shutdown_event() -> None:

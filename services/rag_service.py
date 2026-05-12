@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Optional
 
 import chromadb
-from chromadb.config import Settings
 
 from core.logging import get_logger
 from services.ollama_service import OllamaService
@@ -44,14 +43,10 @@ class RAGService:
         self.db_path = db_path
         self.collection_name = collection_name
 
-        # Initialize ChromaDB
+        # Initialize ChromaDB using new API
         try:
-            settings = Settings(
-                chroma_db_impl="duckdb+parquet",
-                persist_directory=db_path,
-                anonymized_telemetry=False,
-            )
-            self.client = chromadb.Client(settings)
+            # Use persistent client with new ChromaDB API
+            self.client = chromadb.PersistentClient(path=db_path)
             self.collection = self.client.get_or_create_collection(
                 name=collection_name,
                 metadata={"hnsw:space": "cosine"},

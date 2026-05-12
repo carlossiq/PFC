@@ -6,7 +6,10 @@ Generates technology prospecting reports in REPTEC/AGITEC style.
 
 import asyncio
 from datetime import datetime
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    from db.research_models import Research
 
 from core.logging import get_logger
 from prompts.report_prompts import (
@@ -15,6 +18,7 @@ from prompts.report_prompts import (
 )
 from services.ollama_service import OllamaService
 from services.rag_service import RAGService
+from services.report_data_mapper import ReportDataMapper
 
 logger = get_logger(__name__)
 
@@ -244,6 +248,79 @@ class ReportService:
                 "error": str(exc),
                 "generated_at": datetime.utcnow().isoformat(),
             }
+
+    async def generate_report_from_research(
+        self,
+        research: "Research",
+        chart_paths: Optional[dict[str, str]] = None,
+    ) -> str:
+        """
+        Generate complete report from Research object (OPS + Scopus consolidated).
+
+        Handles the full workflow:
+        1. Consolidate OPS and Scopus data using ReportDataMapper
+        2. Create RAG documents from both patent and article sources
+        3. Index documents in RAG
+        4. Generate report with consolidated data
+
+        Args:
+            research: Research object from database
+            chart_paths: Optional paths to visualization charts
+
+        Returns:
+            Complete report in Markdown format
+        """
+        try:
+            logger.info(
+                "research_report_generation_start",
+                research_id=research.research_id,
+            )
+
+            # Consolidate data from OPS (patents) and Scopus (articles)
+            consolidated_data = ReportDataMapper.map_complete_research_data(research)
+
+            # Create RAG documents from both sources
+            rag_documents = (
+                ReportDataMapper.convert_all_results_to_rag_documents(research)
+            )
+
+            # Index documents in RAG
+            chunk_count = await self.add_documents_to_rag(rag_documents)
+            logger.info(
+                "research_documents_indexed",
+                research_id=research.research_id,
+                chunks=chunk_count,
+            )
+
+            # Generate report with consolidated data
+            report = await self.generate_full_report(
+                theme=consolidated_data["theme"],
+                description=consolidated_data["description"],
+                data=consolidated_data,
+                chart_paths=chart_paths or {},
+                metadata={
+                    "area_of_study": consolidated_data["area_of_study"],
+                    "keywords": consolidated_data["keywords"],
+                    "period_start": consolidated_data["period_start"],
+                    "period_end": consolidated_data["period_end"],
+                },
+            )
+
+            logger.info(
+                "research_report_generation_success",
+                research_id=research.research_id,
+            )
+            return report
+
+        except Exception as exc:
+            logger.error(
+                "research_report_generation_failed",
+                error=str(exc),
+                research_id=research.research_id,
+            )
+            raise ReportGenerationError(
+                f"Erro ao gerar relatório para pesquisa {research.research_id}: {str(exc)}"
+            )
 
     def _build_report_header(
         self,

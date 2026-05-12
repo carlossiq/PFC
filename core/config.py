@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     allowed_origins: list[str] = ["http://localhost:3000", "http://localhost:8000"]
 
     # Database
-    database_url: str = "sqlite:///./app.db"
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/pfc_db"
 
     # Security
     secret_key: str = "65E3ifwj_6WAL3FBVmOIpg4axw656GNbEOqYTJdx-cg"

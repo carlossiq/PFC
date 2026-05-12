@@ -1,0 +1,411 @@
+════════════════════════════════════════════════════════════════════════════════
+                    PROMPT PARA FIGMA - VERSÃO RESUMIDA
+════════════════════════════════════════════════════════════════════════════════
+
+[COPIAR E COLAR DIRETO NO FIGMA OU ENVIAR PARA DESIGNER]
+
+────────────────────────────────────────────────────────────────────────────────
+CONTEXTO DO PROJETO
+────────────────────────────────────────────────────────────────────────────────
+
+Estou desenvolvendo uma plataforma de PROSPECÇÃO TECNOLÓGICA INTELIGENTE que
+busca e analisa patentes, artigos científicos e notícias usando IA.
+
+A plataforma guia o usuário através de um fluxo de 7 etapas com decisões
+(gateways) onde o usuário pode refinar resultados iterativamente.
+
+OBJETIVO: Design clean, intuitivo e que visualize bem o fluxo de dados
+passando pelas etapas.
+
+────────────────────────────────────────────────────────────────────────────────
+FLUXO DE DADOS - 7 ETAPAS
+────────────────────────────────────────────────────────────────────────────────
+
+1. PARÂMETROS INICIAIS
+   ├─ Gateway: "Gerar com IA?"
+   └─ Output: SearchParams (tema, keywords, fontes, datas)
+
+2. ESPECIFICAÇÃO
+   ├─ Gateway: "Especificar? / Usar anterior? / Gerar novo?"
+   └─ Output: SearchParams refinados
+
+3. BUSCA INICIAL
+   ├─ Armazena parâmetros
+   ├─ Executa busca
+   └─ Output: SearchResult[] (100+ resultados)
+
+4. REFINAMENTO DE QUERY ⚠️ LOOP AQUI
+   ├─ Gateway: "Satisfeito?"
+   ├─ SIM → Próxima etapa
+   └─ NÃO → Loop: Sugere termos → Cria query → Busca novamente
+
+5. BUSCA FINAL
+   ├─ Busca com query refinada
+   └─ Output: FinalSearchResponse + Gera Charts automaticamente
+
+6. VALIDAÇÃO DE GRÁFICOS
+   ├─ Gateway: "Satisfeito com gráficos?"
+   ├─ SIM → Gera relatório
+   └─ NÃO → DELETE gráfico, volta regenerar
+
+7. RELATÓRIO & DOWNLOAD
+   ├─ Sintetiza dados
+   ├─ Gera PDF/XLSX/DOCX
+   └─ Output: File download link
+
+────────────────────────────────────────────────────────────────────────────────
+DADOS PASSANDO PELO SISTEMA
+────────────────────────────────────────────────────────────────────────────────
+
+SearchParams:
+  • theme: string (ex: "Machine Learning")
+  • keywords: string[] (ex: ["IA", "Healthcare"])
+  • yearStart: number (ex: 2020)
+  • yearEnd: number (ex: 2026)
+  • sources: {patents: bool, articles: bool, news: bool}
+
+SearchResult[] (Resultados da busca):
+  • 50-200 itens por etapa
+  • Cada item: id, title, source (patents/articles/news), year, abstract, relevance%
+
+RefinedQuery (Query refinada):
+  • Original query (CQL)
+  • Refined query (CQL com termos selecionados)
+  • selectedTerms: string[]
+  • removedTerms: string[]
+
+Chart[] (4 tipos):
+  • Line (timeline)
+  • Bar (by source: patents, articles, news)
+  • Pie (distribution)
+  • Scatter (year vs relevance)
+
+ReportData (Resultado final):
+  • searchParams (originais)
+  • initialResults[] (primeiros 50)
+  • finalResults[] (finais, refinados)
+  • charts[] (3-5 gráficos)
+  • summary: string (texto sintetizado)
+  • statistics: {totalPatents, totalArticles, totalResults, timeline}
+  • downloadUrl, fileName
+
+────────────────────────────────────────────────────────────────────────────────
+LAYOUT ESTRUTURA (DESKTOP)
+────────────────────────────────────────────────────────────────────────────────
+
+┌───────────────────────────────────────────────────────────────────────┐
+│ HEADER (Logo + Help)                                                 │
+├────────────────┬────────────────────────────────────────────────────┤
+│                │ Step Title + Progress Indicator                     │
+│  SIDEBAR       ├────────────────────────────────────────────────────┤
+│  (280px)       │                                                     │
+│                │  MAIN CONTENT AREA (responsivo até 100%)            │
+│  • Theme       │  ┌──────────────────────────────────────────┐      │
+│  • Keywords    │  │                                          │      │
+│  • Sources     │  │  [Varia por step: Form | List | Charts]│      │
+│  • Dates       │  │                                          │      │
+│                │  │                                          │      │
+│  • Status      │  │                                          │      │
+│  • History     │  └──────────────────────────────────────────┘      │
+│                │                                                     │
+│  [SAVE]        │  SIDE PANEL (280px)                                │
+│  [RESET]       │  ┌──────────────────────────────────────────┐      │
+│                │  │ Status: [PRONTO] / [PROCESSANDO]        │      │
+│                │  │ Próximas ações                           │      │
+│                │  │ Tips & warnings                          │      │
+│                │  └──────────────────────────────────────────┘      │
+└────────────────┴────────────────────────────────────────────────────┘
+```
+
+────────────────────────────────────────────────────────────────────────────────
+PALETA DE CORES
+────────────────────────────────────────────────────────────────────────────────
+
+PRIMARY:
+  • #07345F (Dark Blue) - Sidebar, primary elements
+  • #0EA5E9 (Sky Blue) - Links, active states, current step
+  • #22C55E (Green) - Success, primary action buttons
+  • #EAB308 (Yellow) - Warning, secondary actions
+
+NEUTRAL:
+  • #FFFFFF (White) - Cards, backgrounds
+  • #F1F5F9 (Slate-100) - Page background
+  • #E2E8F0 (Slate-200) - Light borders, disabled
+  • #CBD5E1 (Slate-300) - Default borders
+  • #0F172A (Slate-900) - Primary text
+
+STATUS:
+  • #22C55E (Green) - ✓ Success, complete
+  • #0EA5E9 (Blue) - ⟳ Processing, loading
+  • #EAB308 (Yellow) - ⚠ Warning
+  • #EF4444 (Red) - ✗ Error
+
+────────────────────────────────────────────────────────────────────────────────
+SCREENS NECESSÁRIAS
+────────────────────────────────────────────────────────────────────────────────
+
+STEP 1 - PARÂMETROS INICIAIS:
+  ├─ Form:
+  │  ├─ Theme input (text)
+  │  ├─ Keywords (tag input com add/remove)
+  │  ├─ Date range (2 inputs: start, end)
+  │  ├─ Sources (3 checkboxes)
+  │  └─ [GERAR COM IA] [CONTINUAR]
+  │
+  └─ Generated params view (se IA gerou):
+     ├─ Card mostrando: Tema, Keywords, Período
+     ├─ [GERAR NOVAMENTE] [ACEITAR]
+     └─ Loading spinner
+
+STEP 2 - ESPECIFICAÇÃO:
+  ├─ Choice buttons (3 opções, uno à vez):
+  │  ├─ [Especificar] → mostra form
+  │  ├─ [Usar Anterior] → carrega último
+  │  └─ [Gerar Novo] → AI gera
+  └─ Loading spinner
+
+STEP 3 - RESULTADOS INICIAIS:
+  ├─ "XX Resultados Encontrados" (badge)
+  ├─ Results list:
+  │  └─ Card × 10 (scroll):
+  │     ├─ Título
+  │     ├─ Source badge (Patent/Article/News)
+  │     ├─ Year
+  │     ├─ Abstract (truncado, 3 linhas)
+  │     ├─ Relevance %
+  │     └─ [INFO] [ACEITAR] [DESCARTAR]
+  │
+  └─ Gateway: "Satisfeito?"
+     ├─ [NÃO - REFINAR QUERY]
+     └─ [SIM - CONTINUAR]
+
+STEP 4 - REFINAMENTO (COM LOOP):
+  ├─ Sub-step 1: Choose terms
+  │  └─ [ANALISAR TERMOS]
+  │
+  ├─ Sub-step 2: Select terms
+  │  └─ Terms list (checkboxes):
+  │     └─ ☑ Term (frequency: 45, relevance: 92%)
+  │
+  ├─ Selected summary:
+  │  └─ "Termos selecionados: IA, Healthcare, Diagnóstico"
+  │
+  └─ [VOLTAR] [CRIAR QUERY] (disabled até selecionar)
+
+STEP 5 - BUSCA FINAL:
+  ├─ Progress:
+  │  ├─ ⟳ Executando busca final...
+  │  └─ ⟳ Gerando gráficos...
+  │
+  ├─ Stats (quando pronto):
+  │  ├─ Total: 245 resultados
+  │  ├─ Patentes: 120
+  │  ├─ Artigos: 100
+  │  ├─ Notícias: 25
+  │  └─ Período: 2020-2026
+  │
+  └─ [REVISAR GRÁFICOS]
+
+STEP 6 - VALIDAÇÃO DE GRÁFICOS:
+  ├─ "XX Gráficos Gerados" (badge)
+  ├─ Charts grid (2 colunas, scrollável):
+  │  └─ Chart card × 4:
+  │     ├─ Chart (canvas/SVG: line, bar, pie, scatter)
+  │     ├─ Título + Tipo
+  │     ├─ Description (pequeno)
+  │     └─ [INFO] [EXPORTAR] [REMOVER]
+  │
+  └─ Gateway: "Satisfeito?"
+     ├─ [NÃO - REGENERAR]
+     └─ [SIM - GERAR RELATÓRIO]
+
+STEP 7 - RELATÓRIO:
+  ├─ Report card:
+  │  ├─ Title
+  │  ├─ Summary (texto)
+  │  │
+  │  └─ Stats grid (2×2):
+  │     ├─ [Total Resultados: 245]
+  │     ├─ [Patentes: 120]
+  │     ├─ [Artigos: 100]
+  │     └─ [Timeline: 2020-2026]
+  │
+  ├─ File info:
+  │  ├─ Format selector: [PDF ▼] [XLSX] [DOCX]
+  │  ├─ File size: 2.4 MB
+  │  └─ Generated: 2024-04-28 10:45
+  │
+  └─ [NOVA BUSCA] [BAIXAR PDF]
+
+────────────────────────────────────────────────────────────────────────────────
+COMPONENTES REUTILIZÁVEIS
+────────────────────────────────────────────────────────────────────────────────
+
+BUTTONS:
+  ├─ Primary (Green): [CONTINUAR] [ACEITAR] [GERAR]
+  ├─ Secondary (Gray): [GERAR COM IA] [VOLTAR]
+  ├─ Danger (Red): [DESCARTAR] [REMOVER]
+  ├─ Link (Blue): [Info] [Export]
+  └─ States: default, hover (darker), active, disabled, loading (spinner)
+
+INPUTS:
+  ├─ Text (theme, keywords)
+  ├─ Number (years)
+  ├─ Checkbox (sources)
+  ├─ Radio (format selection)
+  └─ States: default, focus (blue ring), error (red), disabled
+
+CARDS:
+  ├─ Result card (title, badges, content, buttons)
+  ├─ Chart card (chart preview, title, actions)
+  ├─ Stats card (big number, label, icon)
+  ├─ Info card (status, tips)
+  └─ States: default, hover (lift), selected (border), error
+
+BADGES/PILLS:
+  ├─ Source (Patents-blue, Articles-purple, News-orange)
+  ├─ Status (Ready-green, Processing-blue, Warning-yellow, Error-red)
+  ├─ Relevance (XX%)
+  └─ Tag (keyword pills with remove button)
+
+────────────────────────────────────────────────────────────────────────────────
+STATES & ANIMATIONS
+────────────────────────────────────────────────────────────────────────────────
+
+LOADING:
+  ├─ Spinner (rotating circle, 300ms per rotation)
+  ├─ Message: "Gerando parâmetros..."
+  ├─ Skeleton loaders (5 placeholder cards)
+  └─ Disable buttons
+
+ERROR:
+  ├─ Toast message (bottom-right, red, 5s auto-dismiss)
+  ├─ Card shows: ✗ [Error title] [Message]
+  ├─ Red border on invalid input
+  └─ Inline error text (red, small)
+
+SUCCESS:
+  ├─ Toast: ✓ [Success message] (green, 3s auto-dismiss)
+  ├─ Green checkmark on completed items
+  ├─ Stepper shows ✓ on completed steps
+  └─ Card highlight (subtle green border)
+
+EMPTY:
+  ├─ Icon (magnifying glass, history clock, etc)
+  ├─ Message: "Nenhum resultado encontrado"
+  ├─ Suggestion: "Tente refinar..."
+  └─ Action button: [Adjust parameters]
+
+────────────────────────────────────────────────────────────────────────────────
+TIPOGRAFIA
+────────────────────────────────────────────────────────────────────────────────
+
+Headings:
+  ├─ H1 (Page title): 32px, bold
+  ├─ H2 (Section): 24px, bold
+  ├─ H3 (Card): 18px, bold
+  └─ H4 (Label): 14px, bold
+
+Body:
+  ├─ Regular: 14px
+  ├─ Small: 12px
+  └─ Tiny: 11px
+
+Font: Sans-serif (system fonts: -apple-system, Segoe UI, Helvetica, Arial)
+
+────────────────────────────────────────────────────────────────────────────────
+DIMENSÕES & SPACING
+────────────────────────────────────────────────────────────────────────────────
+
+Layout:
+  ├─ Sidebar: 280px wide
+  ├─ Main content: responsivo (600px min até 100%)
+  ├─ Side panel: 280px wide
+  └─ Viewport: 1920×1080 (min 1366×768)
+
+Spacing:
+  ├─ Page padding: 32px
+  ├─ Section gap: 32px
+  ├─ Card padding: 24px
+  ├─ Card gap: 16px
+  ├─ Element gap: 16px
+  └─ Input spacing: 8px
+
+Border radius:
+  ├─ Buttons: 6-8px
+  ├─ Inputs: 6-8px
+  ├─ Cards: 12px
+  └─ Large: 16px
+
+────────────────────────────────────────────────────────────────────────────────
+CHARTS REQUERIDOS
+────────────────────────────────────────────────────────────────────────────────
+
+1. LINE CHART:
+   ├─ X-axis: Years (2020-2026)
+   ├─ Y-axis: Count (0-500)
+   ├─ Multiple lines (one per source: Patents, Articles, News)
+   └─ Legend, grid, data labels on hover
+
+2. BAR CHART:
+   ├─ X-axis: Source (Patents | Articles | News)
+   ├─ Y-axis: Count
+   ├─ Colored bars (blue, purple, orange)
+   └─ Data labels on top of bars
+
+3. PIE CHART:
+   ├─ Distribution by source
+   ├─ Show percentages
+   ├─ Legend on side
+   └─ Colors: blue (patents), purple (articles), orange (news)
+
+4. SCATTER:
+   ├─ X-axis: Year
+   ├─ Y-axis: Relevance Score (0-100%)
+   ├─ Color by source
+   ├─ Size by importance
+   └─ Tooltip on hover
+
+────────────────────────────────────────────────────────────────────────────────
+ESPECIFICAÇÕES DO FIGMA
+────────────────────────────────────────────────────────────────────────────────
+
+Estrutura de arquivo:
+  Figma Project: "AGIA - Prospecting Platform"
+  ├─ 📋 Design System
+  │  ├─ Colors
+  │  ├─ Typography
+  │  ├─ Components (atoms, molecules)
+  │  └─ Icons
+  ├─ 📱 Screens (7 steps + states)
+  ├─ 🎨 Layouts (desktop, variations)
+  ├─ 📖 Prototypes (main flow, loops, errors)
+  └─ 🖼️ Assets (icons, illustrations)
+
+Naming convention:
+  ├─ Button/Primary/Default
+  ├─ Button/Primary/Hover
+  ├─ Input/Default
+  ├─ Card/Default
+  └─ etc.
+
+────────────────────────────────────────────────────────────────────────────────
+REQUISITOS FINAIS
+────────────────────────────────────────────────────────────────────────────────
+
+✓ Clean, professional design
+✓ Intuitive navigation (user knows where they are)
+✓ Data-first visualization
+✓ Clear feedback for all actions
+✓ Accessible colors (AA standard minimum)
+✓ Responsive for future mobile support
+✓ Ready for handoff to React + Tailwind developers
+✓ Component-based (reusable across screens)
+✓ Interactive prototypes for testing
+✓ Design system documentation
+
+════════════════════════════════════════════════════════════════════════════════
+                          END OF PROMPT
+════════════════════════════════════════════════════════════════════════════════
+
+Pronto para compartilhar com seu designer do Figma!
