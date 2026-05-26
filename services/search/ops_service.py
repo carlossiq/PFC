@@ -14,6 +14,7 @@ import httpx
 from core.config import settings
 from core.logging import get_logger
 from services.search.base import SearchError, SearchResult
+from services.search.ops_token_manager import ops_token_manager
 
 logger = get_logger(__name__)
 
@@ -84,11 +85,11 @@ class OPSService:
     """
 
     # Configurações
-    _OPS_API_URL = "https://ops.epo.org/rest-services"
+    _OPS_API_URL = "https://ops.epo.org/3.2/rest-services"
     _OPS_TOKEN_URL = "https://ops.epo.org/auth/accesstoken"
     _MAX_RETRIES = 3
     _RETRY_DELAY_SECONDS = 2
-    _TIMEOUT_SECONDS = 30
+    _TIMEOUT_SECONDS = 60
 
     def __init__(
         self,
@@ -163,25 +164,82 @@ class OPSService:
                 run_id=run_id,
             )
 
+    async def search_with_abstracts(
+        self,
+        query: dict[str, Any],
+        top_k: int = 10,
+        run_id: Optional[str] = None,
+    ) -> SearchResult:
+        """
+        Executa busca em OPS usando endpoint /search/abstract que já retorna abstracts.
+
+        Muito mais eficiente que search + enrich, pois uma única requisição
+        retorna todos os dados necessários.
+
+        Args:
+            query: Query dict com 'query' (CQL string).
+            top_k: Número de resultados com abstracts a retornar (1-100).
+            run_id: ID único da requisição para logging.
+
+        Returns:
+            SearchResult com dados de sucesso ou erro (incluindo abstracts).
+        """
+        start_time = time.time()
+
+        try:
+            # Garantir token válido
+            await self._ensure_valid_token(run_id)
+
+            if not self.token:
+                return SearchResult(
+                    api_name="ops",
+                    success=False,
+                    query=query.get("query", ""),
+                    error_code="NO_TOKEN",
+                    error_message="Failed to obtain OPS authentication token",
+                    duration_seconds=time.time() - start_time,
+                    run_id=run_id,
+                )
+
+            # Executar busca com retry usando endpoint /search/abstract
+            return await self._search_abstract_with_retry(query, top_k, run_id, start_time)
+
+        except Exception as exc:
+            duration = time.time() - start_time
+
+            logger.error(
+                "ops_search_abstract_error",
+                error=str(exc),
+                error_type=type(exc).__name__,
+                run_id=run_id,
+            )
+
+            return SearchResult(
+                api_name="ops",
+                success=False,
+                query=query.get("query", ""),
+                error_code="UNKNOWN_ERROR",
+                error_message=str(exc),
+                duration_seconds=duration,
+                run_id=run_id,
+            )
+
     async def _ensure_valid_token(self, run_id: Optional[str] = None) -> None:
         """
         Garante que token OAuth2 válido está disponível.
 
-        Obtém novo token se não houver ou se estiver expirado.
+        Usa token manager centralizado para evitar renovações desnecessárias.
 
         Args:
             run_id: ID único da requisição para logging.
         """
-        if self.token and not self.token.is_expired():
-            return
-
-        logger.info(
-            "ops_token_refresh_required",
-            has_token=self.token is not None,
-            run_id=run_id,
-        )
-
-        await self._get_new_token(run_id)
+        token = await ops_token_manager.get_valid_token()
+        if token:
+            # Atualizar referência local se token foi renovado
+            self.token = ops_token_manager.token
+        else:
+            logger.error("ops_token_unavailable", run_id=run_id)
+            self.token = None
 
     async def _get_new_token(self, run_id: Optional[str] = None) -> None:
         """
@@ -291,13 +349,16 @@ class OPSService:
                     if isinstance(total_count, str):
                         total_count = int(total_count)
 
-                    # Extrair resultados
-                    search_result = world_patent_data.get("ops:biblio-search", {}).get("ops:search-result", [])
-                    if not isinstance(search_result, list):
-                        search_result = [search_result] if search_result else []
+                    # Extrair resultados — cada ops:publication-reference vira um item separado
+                    search_result_raw = world_patent_data.get("ops:biblio-search", {}).get("ops:search-result", {})
+                    if isinstance(search_result_raw, list):
+                        search_result_raw = search_result_raw[0] if search_result_raw else {}
 
-                    # Retornar como dicionários (não strings JSON)
-                    results = search_result
+                    pub_refs = search_result_raw.get("ops:publication-reference", [])
+                    if not isinstance(pub_refs, list):
+                        pub_refs = [pub_refs] if pub_refs else []
+
+                    results = [{"ops:publication-reference": ref} for ref in pub_refs]
                 except (json.JSONDecodeError, ValueError):
                     # Se não for JSON, tentar XML
                     root = ET.fromstring(response.text)
@@ -369,12 +430,40 @@ class OPSService:
 
                 await asyncio.sleep(self._RETRY_DELAY_SECONDS * (attempt + 1))
 
+            except httpx.TimeoutException as exc:
+                retry_count = attempt
+                duration = time.time() - start_time
+
+                logger.warning(
+                    "ops_search_timeout",
+                    timeout_seconds=self._TIMEOUT_SECONDS,
+                    attempt=attempt + 1,
+                    error_type=type(exc).__name__,
+                    run_id=run_id,
+                )
+
+                if attempt == self._MAX_RETRIES - 1:
+                    return SearchResult(
+                        api_name="ops",
+                        success=False,
+                        query=query.get("query", ""),
+                        error_code="TIMEOUT",
+                        error_message=f"Request timeout after {self._TIMEOUT_SECONDS}s (attempt {attempt + 1}/{self._MAX_RETRIES})",
+                        retry_count=retry_count,
+                        duration_seconds=duration,
+                        run_id=run_id,
+                    )
+
+                await asyncio.sleep(self._RETRY_DELAY_SECONDS * (attempt + 1))
+
             except Exception as exc:
                 duration = time.time() - start_time
 
+                error_msg = str(exc) if str(exc) else f"{type(exc).__name__}: connection error"
+
                 logger.error(
                     "ops_search_error",
-                    error=str(exc),
+                    error=error_msg,
                     error_type=type(exc).__name__,
                     response_text=response.text[:200] if 'response' in locals() else "N/A",
                     run_id=run_id,
@@ -385,7 +474,329 @@ class OPSService:
                     success=False,
                     query=query.get("query", ""),
                     error_code="SEARCH_ERROR",
-                    error_message=str(exc),
+                    error_message=error_msg,
+                    duration_seconds=duration,
+                    run_id=run_id,
+                )
+
+        # Fallback
+        duration = time.time() - start_time
+        return SearchResult(
+            api_name="ops",
+            success=False,
+            query=query.get("query", ""),
+            error_code="MAX_RETRIES_EXCEEDED",
+            error_message="Maximum retries exceeded",
+            retry_count=self._MAX_RETRIES,
+            duration_seconds=duration,
+            run_id=run_id,
+        )
+
+    async def _search_abstract_with_retry(
+        self,
+        query: dict[str, Any],
+        top_k: int,
+        run_id: Optional[str],
+        start_time: float,
+    ) -> SearchResult:
+        """
+        Executa busca no endpoint /search/abstract com retry logic.
+
+        Este endpoint retorna resultados já com abstracts, eliminando a necessidade
+        de enriquecimento posterior. Usa header X-OPS-Range para controlar quantos.
+
+        Args:
+            query: Query dict com 'query' (CQL string).
+            top_k: Número de resultados a retornar (1-100).
+            run_id: ID da requisição para logging.
+            start_time: Timestamp de início.
+
+        Returns:
+            SearchResult com dados ou erro.
+        """
+        retry_count = 0
+
+        for attempt in range(self._MAX_RETRIES):
+            try:
+                logger.info(
+                    "ops_search_abstract_attempt",
+                    attempt=attempt + 1,
+                    top_k=top_k,
+                    run_id=run_id,
+                )
+
+                # Construir URL com /search/abstract em vez de /search
+                url = f"{self._OPS_API_URL}/published-data/search/abstract"
+                cql_query = query.get("query", "")
+
+                # Header X-OPS-Range controla quantos resultados retornar
+                # Formato: "1-{top_k}"
+                headers = self._get_headers()
+                headers["X-OPS-Range"] = f"1-{top_k}"
+
+                response = await self.async_client.get(
+                    url,
+                    params={"q": cql_query},
+                    headers=headers,
+                    timeout=self._TIMEOUT_SECONDS,
+                )
+
+                response.raise_for_status()
+
+                # Parsear resposta (XML ou JSON)
+                results = []
+                total_count = None
+
+                try:
+                    # Tentar JSON primeiro
+                    data = response.json()
+                    logger.debug("ops_search_abstract_response_format", format="json")
+
+                except (json.JSONDecodeError, ValueError):
+                    # API retorna XML - fazer parsing correto
+                    logger.debug("ops_search_abstract_response_format", format="xml")
+
+                    try:
+                        root = ET.fromstring(response.text)
+
+                        logger.debug(
+                            "ops_xml_root",
+                            tag=root.tag,
+                        )
+
+                        # Extrair total count
+                        biblio_search = root.find(
+                            ".//{http://ops.epo.org}biblio-search"
+                        )
+                        if biblio_search is not None:
+                            total_count_str = biblio_search.get("total-result-count")
+                            total_count = int(total_count_str) if total_count_str else None
+                            logger.debug("ops_xml_total_count", count=total_count)
+
+                        # Extrair cada exchange-document com seu abstract
+                        search_result = root.find(
+                            ".//{http://ops.epo.org}search-result"
+                        )
+
+                        logger.debug(
+                            "ops_xml_search_result_found",
+                            found=search_result is not None,
+                        )
+
+                        if search_result is not None:
+                            # Encontrar todos exchange-documents diretos
+                            exchange_docs_list = list(search_result)
+                            all_tags = [child.tag for child in exchange_docs_list]
+                            logger.info(
+                                "ops_xml_children_count",
+                                count=len(exchange_docs_list),
+                                all_tags=all_tags,
+                            )
+
+                            # Cada exchange-documents contém um exchange-document
+                            for idx, exchange_docs in enumerate(exchange_docs_list):
+                                # Verificar o tag
+                                logger.info("ops_xml_child_tag", index=idx, tag=exchange_docs.tag)
+
+                                # Log grandchildren tags para diagnóstico
+                                grandchildren = [gc.tag for gc in exchange_docs]
+                                logger.info(
+                                    "ops_xml_grandchildren_tags",
+                                    index=idx,
+                                    grandchildren_tags=grandchildren,
+                                )
+
+                                # Procurar exchange-document com várias tentativas
+                                exchange_doc = None
+
+                                # Tentativa 1: Com namespace completo
+                                exchange_doc = exchange_docs.find(
+                                    "{http://www.epo.org/exchange}exchange-document"
+                                )
+                                if exchange_doc is not None:
+                                    logger.debug(
+                                        "ops_xml_exchange_doc_found",
+                                        index=idx,
+                                        method="with_namespace",
+                                    )
+
+                                # Tentativa 2: Sem namespace
+                                if exchange_doc is None:
+                                    exchange_doc = exchange_docs.find("exchange-document")
+                                    if exchange_doc is not None:
+                                        logger.debug(
+                                            "ops_xml_exchange_doc_found",
+                                            index=idx,
+                                            method="without_namespace",
+                                        )
+
+                                # Tentativa 3: Busca recursiva
+                                if exchange_doc is None:
+                                    exchange_doc = exchange_docs.find(
+                                        ".//{http://www.epo.org/exchange}exchange-document"
+                                    )
+                                    if exchange_doc is not None:
+                                        logger.debug(
+                                            "ops_xml_exchange_doc_found",
+                                            index=idx,
+                                            method="recursive_with_namespace",
+                                        )
+
+                                # Tentativa 4: Busca recursiva sem namespace
+                                if exchange_doc is None:
+                                    exchange_doc = exchange_docs.find(".//exchange-document")
+                                    if exchange_doc is not None:
+                                        logger.debug(
+                                            "ops_xml_exchange_doc_found",
+                                            index=idx,
+                                            method="recursive_without_namespace",
+                                        )
+
+                                if exchange_doc is None:
+                                    logger.warning(
+                                        "ops_xml_exchange_doc_not_found",
+                                        index=idx,
+                                        parent_tag=exchange_docs.tag,
+                                    )
+
+                                if exchange_doc is not None:
+                                    # Extrair publication-reference
+                                    pub_ref = exchange_doc.find(
+                                        ".//{http://www.epo.org/exchange}publication-reference"
+                                    )
+
+                                    # Extrair abstract
+                                    abstract_elem = exchange_doc.find(
+                                        ".//{http://www.epo.org/exchange}abstract"
+                                    )
+                                    abstract_text = ""
+                                    if abstract_elem is not None:
+                                        p_elem = abstract_elem.find(
+                                            ".//{http://www.epo.org/exchange}p"
+                                        )
+                                        if p_elem is not None and p_elem.text:
+                                            abstract_text = p_elem.text
+
+                                    # Montar resultado com abstract
+                                    result = {
+                                        "publication-reference": ET.tostring(
+                                            pub_ref, encoding="unicode"
+                                        ) if pub_ref is not None else None,
+                                        "abstract": abstract_text,
+                                        "raw": ET.tostring(
+                                            exchange_doc, encoding="unicode"
+                                        ),
+                                    }
+                                    results.append(result)
+
+                        logger.info(
+                            "ops_search_abstract_xml_parsed",
+                            results_count=len(results),
+                            total_count=total_count,
+                        )
+
+                    except ET.ParseError as exc:
+                        logger.error(
+                            "ops_search_abstract_xml_parse_error",
+                            error=str(exc),
+                        )
+                        raise
+
+                duration = time.time() - start_time
+
+                logger.info(
+                    "ops_search_abstract_success",
+                    results_count=len(results),
+                    total_count=total_count,
+                    duration=duration,
+                    run_id=run_id,
+                )
+
+                return SearchResult(
+                    api_name="ops",
+                    success=True,
+                    query=cql_query,
+                    results=results,
+                    total_count=total_count,
+                    results_returned=len(results),
+                    retry_count=retry_count,
+                    duration_seconds=duration,
+                    run_id=run_id,
+                )
+
+            except httpx.HTTPStatusError as exc:
+                retry_count = attempt
+                duration = time.time() - start_time
+
+                is_retryable = exc.response.status_code in [408, 429, 500, 502, 503, 504]
+
+                logger.warning(
+                    "ops_search_abstract_http_error",
+                    status_code=exc.response.status_code,
+                    attempt=attempt + 1,
+                    is_retryable=is_retryable,
+                    response_text=exc.response.text[:200],
+                    run_id=run_id,
+                )
+
+                if not is_retryable or attempt == self._MAX_RETRIES - 1:
+                    return SearchResult(
+                        api_name="ops",
+                        success=False,
+                        query=query.get("query", ""),
+                        error_code=f"HTTP_{exc.response.status_code}",
+                        error_message=f"HTTP {exc.response.status_code}",
+                        retry_count=retry_count,
+                        duration_seconds=duration,
+                        run_id=run_id,
+                    )
+
+                await asyncio.sleep(self._RETRY_DELAY_SECONDS * (attempt + 1))
+
+            except httpx.TimeoutException as exc:
+                retry_count = attempt
+                duration = time.time() - start_time
+
+                logger.warning(
+                    "ops_search_abstract_timeout",
+                    timeout_seconds=self._TIMEOUT_SECONDS,
+                    attempt=attempt + 1,
+                    run_id=run_id,
+                )
+
+                if attempt == self._MAX_RETRIES - 1:
+                    return SearchResult(
+                        api_name="ops",
+                        success=False,
+                        query=query.get("query", ""),
+                        error_code="TIMEOUT",
+                        error_message=f"Request timeout after {self._TIMEOUT_SECONDS}s (attempt {attempt + 1}/{self._MAX_RETRIES})",
+                        retry_count=retry_count,
+                        duration_seconds=duration,
+                        run_id=run_id,
+                    )
+
+                await asyncio.sleep(self._RETRY_DELAY_SECONDS * (attempt + 1))
+
+            except Exception as exc:
+                duration = time.time() - start_time
+
+                error_msg = str(exc) if str(exc) else f"{type(exc).__name__}: connection error"
+
+                logger.error(
+                    "ops_search_abstract_error",
+                    error=error_msg,
+                    error_type=type(exc).__name__,
+                    response_text=response.text[:200] if 'response' in locals() else "N/A",
+                    run_id=run_id,
+                )
+
+                return SearchResult(
+                    api_name="ops",
+                    success=False,
+                    query=query.get("query", ""),
+                    error_code="SEARCH_ERROR",
+                    error_message=error_msg,
                     duration_seconds=duration,
                     run_id=run_id,
                 )
@@ -440,16 +851,16 @@ class OPSService:
             Dict with bibliographic data or None if failed
         """
         try:
-            # Construct publication number: country.doc-number.kind
-            publication_number = f"{country}{doc_number}.{kind}"
+            # Construct publication number in docdb format: country.doc-number.kind
+            publication_number_docdb = f"{country}.{doc_number}.{kind}"
 
-            # URL: Use API v3.2 with epodoc format
-            # Format: /3.2/rest-services/published-data/publication/epodoc/{publication-number}/biblio
-            url = f"https://ops.epo.org/3.2/rest-services/published-data/publication/epodoc/{publication_number}/biblio"
+            # URL: Use API v3.2 with docdb format (not epodoc)
+            # Format: /3.2/rest-services/published-data/publication/docdb/{country}.{doc-number}.{kind}/biblio
+            url = f"https://ops.epo.org/3.2/rest-services/published-data/publication/docdb/{publication_number_docdb}/biblio"
 
             logger.info(
                 "ops_fetch_biblio",
-                publication_number=publication_number,
+                publication_number_docdb=publication_number_docdb,
                 run_id=run_id,
             )
 
@@ -466,10 +877,16 @@ class OPSService:
             return data
 
         except Exception as exc:
-            logger.warning(
+            error_msg = str(exc) if str(exc) else f"{type(exc).__name__}: unknown error"
+
+            logger.error(
                 "ops_fetch_biblio_failed",
                 publication_number=f"{country}{doc_number}.{kind}",
-                error=str(exc),
+                url=url,
+                error=error_msg,
+                error_type=type(exc).__name__,
+                response_status=response.status_code if 'response' in locals() else "N/A",
+                response_text=response.text[:200] if 'response' in locals() else "N/A",
                 run_id=run_id,
             )
             return None
@@ -576,6 +993,9 @@ class OPSService:
         """
         enriched_results = []
 
+        # Ensure valid token before enrichment (may have expired during search)
+        await self._ensure_valid_token(run_id)
+
         # Only enrich up to max_results
         results_to_process = results[:max_results]
 
@@ -589,7 +1009,16 @@ class OPSService:
         for idx, result in enumerate(results_to_process, 1):
             try:
                 # Extract publication identifiers
-                pub_ref = result.get("ops:publication-reference", result) if isinstance(result, dict) else result
+                # Handle both formats: direct ops:publication-reference or wrapped in "raw"
+                if isinstance(result, dict):
+                    if "ops:publication-reference" in result:
+                        pub_ref = result.get("ops:publication-reference")
+                    elif "raw" in result and isinstance(result["raw"], dict):
+                        pub_ref = result["raw"].get("ops:publication-reference", result)
+                    else:
+                        pub_ref = result
+                else:
+                    pub_ref = result
 
                 # Handle list of publication references (take the first one)
                 if isinstance(pub_ref, list):
@@ -645,8 +1074,11 @@ class OPSService:
                 if biblio_data:
                     extracted_biblio = self._extract_from_biblio(biblio_data)
 
+                # Keep original raw data, but avoid duplication if already wrapped
+                raw_to_keep = result.get("raw", result) if "raw" in result and isinstance(result.get("raw"), dict) else result
+
                 enriched_results.append({
-                    "raw": result,
+                    "raw": raw_to_keep,
                     "publication_number": publication_number,
                     "biblio": extracted_biblio,
                 })

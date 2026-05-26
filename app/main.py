@@ -5,7 +5,8 @@ Main FastAPI application initialization and startup configuration.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import chat, health, intake, reports, research, test
+from api.routes import chat, health, reports, research, test
+from api.routes.reports import initialize_services
 from core.config import settings
 from core.logging import configure_logging, get_logger
 from db.init_db import init_db
@@ -27,7 +28,12 @@ def create_app() -> FastAPI:
     configure_logging()
 
     # Inicializar banco de dados
-    db_session.initialize()
+    try:
+        db_session.initialize()
+        logger.info("database_session_initialized")
+    except Exception as exc:
+        logger.error("database_session_initialization_failed", error=str(exc))
+        raise
 
     # Criar aplicação FastAPI
     app = FastAPI(
@@ -52,7 +58,6 @@ def create_app() -> FastAPI:
 
     # Incluir rotas
     app.include_router(health.router, prefix=settings.api_prefix)
-    app.include_router(intake.router, prefix=settings.api_prefix)
     app.include_router(chat.router, prefix=settings.api_prefix)
     app.include_router(research.router, prefix=settings.api_prefix)
     app.include_router(reports.router, prefix=settings.api_prefix)
@@ -82,7 +87,6 @@ def create_app() -> FastAPI:
 
         # Initialize report generation services (Ollama + RAG)
         try:
-            from api.routes.reports import initialize_services
             success = await initialize_services()
             if success:
                 logger.info("report_services_initialized")
@@ -96,8 +100,12 @@ def create_app() -> FastAPI:
         """
         Handler executado ao desligar a aplicação.
         """
-        await db_session.close()
-        logger.info("application_shutdown", app_name=settings.app_name)
+        try:
+            await db_session.close()
+        except Exception as exc:
+            logger.error("database_session_close_failed", error=str(exc))
+        finally:
+            logger.info("application_shutdown", app_name=settings.app_name)
 
     return app
 

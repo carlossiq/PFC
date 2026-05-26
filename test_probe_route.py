@@ -1,105 +1,189 @@
 #!/usr/bin/env python3
 """
-Teste da rota POST /test/probe-search
+Teste completo do fluxo de Probe Search:
+1. POST /chat/probe/query - Construir query
+2. POST /chat/probe/search - Executar busca bruta
+3. POST /chat/probe/enrich - Enriquecer top 10 resultados
 """
 
-import asyncio
-import json
-from schemas.intake import InputIntake
-from fastapi import Request
+from fastapi.testclient import TestClient
+from app.main import app
+
+client = TestClient(app)
 
 
-async def test_route():
-    """Testa a rota probe-search."""
+def test_probe_workflow():
+    """Testa o fluxo completo de probe search."""
 
-    print("\n" + "="*60)
-    print("TESTE: Rota POST /test/probe-search")
-    print("="*60)
+    print("\n" + "=" * 80)
+    print("TESTE COMPLETO: FLUXO DE PROBE SEARCH")
+    print("=" * 80)
 
-    # Importar a função diretamente do módulo test
-    from api.routes.test import test_probe_search
+    # ============================================================================
+    # ETAPA 1: POST /chat/probe/query - Construir query
+    # ============================================================================
+    print("\n[ETAPA 1] POST /api/v1/chat/probe/query - Construir Query")
+    print("-" * 80)
 
-    # Criar requisição mock
-    class MockState:
-        run_id = None
-
-    class MockRequest:
-        state = MockState()
-
-    request = MockRequest()
-
-    # Criar intake
-    intake = InputIntake(
-        theme="Machine Learning in Healthcare",
-        description="Diagnostic AI systems for medical imaging",
-        area_of_study="Healthcare",
-        keywords=["neural networks", "medical imaging", "deep learning"],
-    )
+    intake_data = {
+        "theme": "Deep learning for medical diagnosis",
+        "description": "AI-based diagnostic systems for medical imaging",
+        "area_of_study": "Healthcare & AI",
+        "keywords": ["computer-aided diagnosis", "deep learning", "medical imaging"],
+    }
 
     print(f"\nIntake:")
-    print(f"  Theme: {intake.theme}")
-    print(f"  Description: {intake.description}")
-    print(f"  Area of Study: {intake.area_of_study}")
-    print(f"  Keywords: {', '.join(intake.keywords or [])}")
+    print(f"  Theme: {intake_data['theme']}")
+    print(f"  Description: {intake_data['description']}")
+    print(f"  Area: {intake_data['area_of_study']}")
+    print(f"  Keywords: {', '.join(intake_data['keywords'])}")
 
-    print(f"\nChamando rota probe-search...")
+    response1 = client.post(
+        "/api/v1/chat/probe/query",
+        json=intake_data,
+        params={"api": "ops"},
+    )
 
-    try:
-        response = await test_probe_search(request, intake)
+    print(f"\nResposta:")
+    print(f"  Status: {response1.status_code}")
 
-        print(f"\n[OK] Resposta recebida!")
-        print(f"  Success: {response.success}")
-        print(f"  Run ID: {response.run_id}")
+    if response1.status_code != 200:
+        print(f"  [ERRO] {response1.json()}")
+        return
 
-        # Extrair dados
-        data = response.data
+    data1 = response1.json()
+    print(f"  Success: {data1.get('success')}")
 
-        print(f"\nEstrutura da resposta:")
-        print(f"  - LLM Strategy:")
-        llm = data.get("llm_strategy", {})
-        print(f"    Active fields: {llm.get('field_count', 0)}")
-        print(f"    Fields: {list(llm.get('active_fields', {}).keys())}")
+    if not data1.get("success"):
+        print(f"  [ERRO] {data1.get('data', {}).get('error')}")
+        return
 
-        print(f"\n  - Query Gerada:")
-        query = data.get("query_generated", {})
-        print(f"    API: {query.get('api')}")
-        print(f"    Size: {query.get('size')}")
-        print(f"    Must clauses: {query.get('must_clauses_count')}")
+    query_result = data1.get("data", {})
+    query_built = query_result.get("query", {})
 
-        print(f"\n  - Resultados da API:")
-        api_res = data.get("api_results", {})
-        print(f"    Success: {api_res.get('success')}")
-        print(f"    Total available: {api_res.get('total_available')}")
-        print(f"    Results returned: {api_res.get('results_returned')}")
-        print(f"    Duration: {api_res.get('duration_seconds')}s")
+    print(f"\nQuery Construída:")
+    print(f"  API: {query_result.get('api')}")
+    print(f"  Attempt: {query_result.get('attempt')}")
+    print(f"  Complexity Score: {query_result.get('complexity', {}).get('score')}")
+    print(f"  Complexity Level: {query_result.get('complexity', {}).get('level')}")
+    print(f"  Query String: {query_built.get('query', '')[:100]}...")
 
-        print(f"\n  - Documentos Encontrados:")
-        docs = data.get("documents", {})
-        print(f"    Total retrieved: {docs.get('total_retrieved')}")
+    # ============================================================================
+    # ETAPA 2: POST /chat/probe/search - Executar busca com abstracts
+    # ============================================================================
+    print("\n" + "=" * 80)
+    print("[ETAPA 2] POST /api/v1/chat/probe/search - Busca com Abstracts")
+    print("-" * 80)
 
-        samples = docs.get("samples", [])
-        if samples:
-            print(f"\n  Primeiros 3 documentos:")
-            for i, doc in enumerate(samples[:3], 1):
-                print(f"\n    [{i}]")
-                print(f"      Title: {doc.get('title', 'N/A')[:80]}...")
-                print(f"      Lens ID: {doc.get('lens_id', 'N/A')}")
-                print(f"      Date: {doc.get('publication_date', 'N/A')}")
-                print(f"      Applicant: {doc.get('applicant', 'N/A')}")
-                applicant = doc.get('applicant', 'N/A')
-                inventor = doc.get('inventor', 'N/A')
-                if applicant != "N/A":
-                    print(f"      Applicant: {applicant}")
-                if inventor != "N/A":
-                    print(f"      Inventor: {inventor}")
+    search_payload = {
+        "query": query_built,
+        "api": "ops",
+        "top_k": 10,
+    }
 
-        print(f"\n[OK] TESTE COMPLETO COM SUCESSO!")
+    print(f"\nPayload:")
+    print(f"  API: {search_payload['api']}")
+    print(f"  Top K: {search_payload['top_k']}")
+    print(f"  Query string (resumido): {search_payload['query'].get('query', '')[:80]}...")
 
-    except Exception as e:
-        print(f"[ERRO] {str(e)}")
-        import traceback
-        traceback.print_exc()
+    response2 = client.post(
+        "/api/v1/chat/probe/search",
+        json=search_payload,
+    )
+
+    print(f"\nResposta:")
+    print(f"  Status: {response2.status_code}")
+
+    if response2.status_code != 200:
+        print(f"  [ERRO] {response2.json()}")
+        return
+
+    data2 = response2.json()
+    print(f"  Success: {data2.get('success')}")
+
+    search_result = data2.get("data", {})
+    print(f"\nResultados da Busca:")
+    print(f"  API: {search_result.get('api')}")
+    print(f"  Results returned: {search_result.get('results_count')}")
+    print(f"  Total available: {search_result.get('total_available')}")
+    print(f"  Has abstracts: {search_result.get('has_abstracts')}")
+    print(f"  Error: {search_result.get('error')}")
+
+    results_with_abstracts = search_result.get("results", [])
+    if results_with_abstracts:
+        print(f"\n[OK] Recebidos {len(results_with_abstracts)} resultados COM abstracts")
+
+        print(f"\nPrimeiros 3 resultados:")
+        for i, result in enumerate(results_with_abstracts[:3], 1):
+            print(f"\n  [{i}]")
+            if isinstance(result, dict):
+                pub_ref = result.get("publication-reference", "N/A")
+                abstract = result.get("abstract", "N/A")
+                print(f"      Publication Reference: {str(pub_ref)[:100]}...")
+                if abstract and abstract != "N/A":
+                    print(f"      Abstract: {abstract[:150]}...")
+                else:
+                    print(f"      Abstract: [Não disponível]")
+    else:
+        print(f"[AVISO] Sem resultados na busca")
+        return
+
+    # ============================================================================
+    # ETAPA 3: POST /chat/extract-terms - Extrair termos relevantes
+    # ============================================================================
+    print("\n" + "=" * 80)
+    print("[ETAPA 3] POST /api/v1/chat/extract-terms - Extração de Termos")
+    print("-" * 80)
+
+    extract_payload = {
+        "enriched_results": results_with_abstracts,
+        "original_params": intake_data,
+        "top_k": 20,
+    }
+
+    print(f"\nPayload:")
+    print(f"  Total results: {len(results_with_abstracts)}")
+    print(f"  Top K terms: {extract_payload['top_k']}")
+
+    response3 = client.post(
+        "/api/v1/chat/extract-terms",
+        json=extract_payload,
+    )
+
+    print(f"\nResposta:")
+    print(f"  Status: {response3.status_code}")
+
+    if response3.status_code != 200:
+        print(f"  [ERRO] {response3.json()}")
+        return
+
+    data3 = response3.json()
+    print(f"  Success: {data3.get('success')}")
+
+    extract_result = data3.get("data", {})
+    print(f"\nTermos Extraídos:")
+    terms = extract_result.get("terms", [])
+    if terms:
+        print(f"  Total: {len(terms)}")
+        print(f"  Top 5 termos:")
+        for i, term in enumerate(terms[:5], 1):
+            print(f"    {i}. {term}")
+
+    # ============================================================================
+    # RESUMO FINAL
+    # ============================================================================
+    print("\n" + "=" * 80)
+    print("[RESUMO] TESTE COMPLETADO COM SUCESSO!")
+    print("=" * 80)
+    print(f"\nFluxo executado:")
+    print(f"  ✅ [ETAPA 1] Query construída com sucesso")
+    print(f"  ✅ [ETAPA 2] Busca retornou {search_result.get('results_count')} resultados COM abstracts")
+    print(f"  ✅ [ETAPA 3] Extração de termos extraiu {len(terms)} termos relevantes")
+    print("\nPróximos passos:")
+    print(f"  • Use os {len(terms)} termos extraídos para:")
+    print(f"    - POST /chat/final/queries-multi (cria 3 variações de query final)")
+    print(f"    - POST /chat/final/search (busca final com mais resultados)")
 
 
 if __name__ == "__main__":
-    asyncio.run(test_route())
+    test_probe_workflow()

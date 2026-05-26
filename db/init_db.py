@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from core.config import settings
 from core.logging import get_logger
+from db.session import db_session
 
 logger = get_logger(__name__)
 
@@ -21,7 +22,7 @@ async def init_db() -> None:
     Inicializa o banco de dados criando todas as tabelas.
 
     Importa modelos de ambos os ficheiros (models.py e research_models.py)
-    e cria as tabelas correspondentes.
+    e cria as tabelas correspondentes usando engine existente de db_session.
     """
     try:
         # Importar os modelos para registar os metadados
@@ -38,12 +39,11 @@ async def init_db() -> None:
 
         logger.info("database_init_starting", models_loaded=9)
 
-        # Construir URL do banco de dados
-        db_url = _build_db_url()
-        logger.info("database_init_url", url=_mask_password(db_url))
+        # Usar engine já inicializado em db_session
+        if db_session.engine is None:
+            raise RuntimeError("Database engine not initialized. Call db_session.initialize() first.")
 
-        # Criar engine para criar tabelas
-        engine = create_async_engine(db_url, echo=settings.debug)
+        engine = db_session.engine
 
         # Criar tabelas do models.py
         async with engine.begin() as conn:
@@ -54,8 +54,6 @@ async def init_db() -> None:
         async with engine.begin() as conn:
             logger.info("database_init_creating_research_tables")
             await conn.run_sync(ResearchBase.metadata.create_all)
-
-        await engine.dispose()
 
         logger.info(
             "database_init_completed",
@@ -71,45 +69,6 @@ async def init_db() -> None:
         print(f"\n[ERROR] Database initialization failed: {exc}")
         raise
 
-
-def _build_db_url() -> str:
-    """
-    Constrói URL de conexão PostgreSQL assíncrona.
-
-    Returns:
-        URL para PostgreSQL com driver asyncpg.
-    """
-    db_url = getattr(settings, "database_url", None)
-
-    if not db_url:
-        logger.warning("DATABASE_URL not set, using in-memory SQLite")
-        return "sqlite+aiosqlite:///:memory:"
-
-    # Substituir postgresql:// por postgresql+asyncpg://
-    if db_url.startswith("postgresql://"):
-        return db_url.replace("postgresql://", "postgresql+asyncpg://")
-    elif db_url.startswith("postgres://"):
-        return db_url.replace("postgres://", "postgresql+asyncpg://")
-
-    return db_url
-
-
-def _mask_password(url: str) -> str:
-    """
-    Mascara senha na URL para logging.
-
-    Args:
-        url: URL de banco de dados.
-
-    Returns:
-        URL com senha mascarada.
-    """
-    if "@" in url:
-        before, after = url.split("@", 1)
-        if ":" in before:
-            prefix, _ = before.rsplit(":", 1)
-            return f"{prefix}:***@{after}"
-    return url
 
 
 async def main() -> None:

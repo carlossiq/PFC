@@ -638,52 +638,56 @@ async def build_probe_query(
 async def run_probe_search(
     query: dict[str, Any],
     api: str,
+    top_k: int = 10,
 ) -> dict[str, Any]:
     """
-    Executa probe search em uma API específica.
+    Executa probe search em uma API específica com abstracts.
+
+    Usa endpoints otimizados que já retornam abstracts (ex: /search/abstract do OPS).
+    Renova token OAuth2 antes de fazer a requisição.
 
     Args:
         query: Query já construída.
         api: Nome da API (ops, scopus, lens_patent, lens_scholarly).
+        top_k: Número de resultados a retornar (1-100, default 10).
 
     Returns:
-        Dict com resultados da busca.
+        Dict com resultados da busca já contendo abstracts.
     """
     try:
+        # Renovar/garantir token válido ANTES da busca
         if api == "ops":
-            service = OPSService()
-            result = await service.search(query)
+            from services.search.ops_token_manager import ops_token_manager
+            token = await ops_token_manager.get_valid_token()
+            if not token:
+                # Obter mensagem de erro específica do Token Manager
+                error_reason = "Unknown error obtaining token"
+                if hasattr(ops_token_manager, '_last_error'):
+                    error_reason = ops_token_manager._last_error
 
-            # Enrich OPS results with bibliographic data for term extraction
-            if result.success and result.results:
-                enriched_results = await service.enrich_results_with_biblio(
-                    results=result.results,
-                    max_results=settings.probe_top_k,
-                )
-                await service.close()
-
+                logger.error("ops_probe_search_token_failed", reason=error_reason)
                 return {
-                    "success": result.success,
+                    "success": False,
                     "api": api,
-                    "results_count": result.results_returned,
-                    "total_available": result.total_count,
-                    "results": enriched_results,
-                    "enriched": True,
-                    "error": None,
+                    "has_abstracts": True,
+                    "error": f"Failed to obtain OPS authentication token: {error_reason}",
                 }
 
+        if api == "ops":
+            service = OPSService()
+            result = await service.search_with_abstracts(query, top_k=top_k)
             await service.close()
         elif api == "scopus":
             service = ScopusService()
-            result = await service.search(query)
+            result = await service.search(query, top_k=top_k)
             await service.close()
         else:
             # Lens Patent ou Scholarly
             service = LensService()
             if api == "lens_patent":
-                result = await service.search_patent(query=query)
+                result = await service.search_patent(query=query, top_k=top_k)
             else:
-                result = await service.search_scholarly(query=query)
+                result = await service.search_scholarly(query=query, top_k=top_k)
             service.close()
 
         return {
@@ -692,11 +696,88 @@ async def run_probe_search(
             "results_count": result.results_returned,
             "total_available": result.total_count,
             "results": result.results if result.success else [],
+            "has_abstracts": True,
             "error": result.error_message if not result.success else None,
         }
 
     except Exception as exc:
         logger.error("run_probe_search_error", error=str(exc), api=api)
+        return {
+            "success": False,
+            "api": api,
+            "has_abstracts": True,
+            "error": str(exc),
+        }
+
+
+async def enrich_probe_results(
+    results: list[dict[str, Any]],
+    api: str,
+    top_k: int = 10,
+) -> dict[str, Any]:
+    """
+    Enriquece resultados brutos com dados bibliográficos.
+
+    Apenas APIs que suportam enriquecimento (atualmente: OPS) serão processadas.
+    Enriquece até top_k resultados com dados completos (título, abstract, inventors, applicants).
+
+    Args:
+        results: Resultados brutos da busca (do /probe/search endpoint).
+        api: Nome da API (ops, scopus, lens_patent, lens_scholarly).
+        top_k: Número de resultados a enriquecer (default 10).
+
+    Returns:
+        Dict com resultados enriquecidos e estatísticas.
+    """
+    try:
+        if api != "ops":
+            return {
+                "success": False,
+                "api": api,
+                "error": f"API '{api}' does not support enrichment. Only 'ops' is supported.",
+                "enriched_count": 0,
+                "total": len(results),
+            }
+
+        if not results:
+            return {
+                "success": True,
+                "api": api,
+                "results": [],
+                "enriched_count": 0,
+                "total": 0,
+            }
+
+        service = OPSService()
+        enriched_results = await service.enrich_results_with_biblio(
+            results=results,
+            max_results=top_k,
+        )
+        await service.close()
+
+        # Contar enriquecimentos bem-sucedidos
+        enriched_count = sum(1 for r in enriched_results if r.get("biblio") is not None)
+
+        logger.info(
+            "probe_results_enriched",
+            api=api,
+            total_results=len(results),
+            enriched_count=enriched_count,
+            top_k=top_k,
+        )
+
+        return {
+            "success": True,
+            "api": api,
+            "results": enriched_results,
+            "enriched_count": enriched_count,
+            "total": len(enriched_results),
+            "total_with_abstracts": sum(1 for r in enriched_results if (r.get("biblio") or {}).get("abstract")),
+            "total_with_titles": sum(1 for r in enriched_results if (r.get("biblio") or {}).get("title")),
+        }
+
+    except Exception as exc:
+        logger.error("enrich_probe_results_error", error=str(exc), api=api)
         return {
             "success": False,
             "api": api,

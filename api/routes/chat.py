@@ -5,7 +5,6 @@ Exposes tools as HTTP endpoints. Later, ChatService will sit in between
 to add LLM coordination and multi-turn conversation management.
 """
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -13,97 +12,17 @@ from fastapi import APIRouter, Body, Request
 
 from core.logging import get_logger
 from schemas.intake import InputIntake
+from schemas.request import (
+    FinalSearchRequest,
+    ProbeSearchRequest,
+    TermExtractionRequest,
+)
 from schemas.response import SuccessResponse
 from services.tools import pipeline
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
-
-# Load menu structure
-MENU_FILE = Path(__file__).parent / "menu_structure.json"
-_menu_cache = None
-
-
-def _load_menu():
-    """Load menu structure from JSON file with caching."""
-    global _menu_cache
-    if _menu_cache is None:
-        try:
-            with open(MENU_FILE, "r", encoding="utf-8") as f:
-                _menu_cache = json.load(f)
-        except Exception as exc:
-            logger.error("menu_load_error", error=str(exc))
-            _menu_cache = {"error": "Could not load menu"}
-    return _menu_cache
-
-
-@router.get("/menu", response_model=SuccessResponse[dict[str, Any]])
-async def get_menu(request: Request) -> SuccessResponse[dict[str, Any]]:
-    """
-    Retorna a estrutura completa do menu para o front-end consumir.
-
-    Inclui todos os endpoints, inputs/outputs esperados, duração estimada,
-    e fluxo recomendado de uso.
-
-    Returns:
-        Menu structure com organização hierárquica de funcionalidades.
-    """
-    run_id = getattr(request.state, "run_id", None)
-
-    try:
-        menu = _load_menu()
-
-        logger.info("menu_loaded", run_id=run_id, sections=len(menu.get("menu", [])))
-
-        return SuccessResponse(
-            success=True,
-            data=menu,
-            message="Menu structure loaded successfully",
-            run_id=run_id,
-        )
-    except Exception as exc:
-        logger.error("get_menu_error", error=str(exc), run_id=run_id)
-        return SuccessResponse(
-            success=False,
-            data={"error": str(exc)},
-            message=f"Error loading menu: {str(exc)}",
-            run_id=run_id,
-        )
-
-
-@router.get("/menu/workflow", response_model=SuccessResponse[dict[str, Any]])
-async def get_workflow(request: Request) -> SuccessResponse[dict[str, Any]]:
-    """
-    Retorna apenas o fluxo recomendado de uso.
-
-    Útil para guiar o usuário através do workflow passo a passo.
-
-    Returns:
-        Passos do workflow com descrição de cada ação.
-    """
-    run_id = getattr(request.state, "run_id", None)
-
-    try:
-        menu = _load_menu()
-        workflow = menu.get("workflow", {})
-
-        logger.info("workflow_loaded", run_id=run_id, steps=len(workflow.get("recommended_flow", [])))
-
-        return SuccessResponse(
-            success=True,
-            data=workflow,
-            message="Workflow loaded successfully",
-            run_id=run_id,
-        )
-    except Exception as exc:
-        logger.error("get_workflow_error", error=str(exc), run_id=run_id)
-        return SuccessResponse(
-            success=False,
-            data={"error": str(exc)},
-            message=f"Error loading workflow: {str(exc)}",
-            run_id=run_id,
-        )
 
 
 @router.get("/apis", response_model=SuccessResponse[dict[str, Any]])
@@ -205,7 +124,12 @@ async def get_current_provider(request: Request) -> SuccessResponse[dict[str, An
 @router.post("/analyze-query", response_model=SuccessResponse[dict[str, Any]])
 async def analyze_query_complexity_endpoint(
     request: Request,
-    query: str = Body(..., embed=True),
+    query: str = Body(
+        ...,
+        example="(TITLE:(e-commerce OR online shopping) OR ABSTRACT:(digital payment)) AND (IPC:G06Q) AND (PD>=20150101 AND PD<=20261231)",
+        embed=True,
+        description="Query string a analisar (CQL, SQL, ou expressão booleana)"
+    ),
 ) -> SuccessResponse[dict[str, Any]]:
     """
     Analisa complexidade de uma query booleana.
@@ -296,7 +220,15 @@ async def check_ops_token(request: Request) -> SuccessResponse[dict[str, Any]]:
 @router.post("/refine-topic", response_model=SuccessResponse[dict[str, Any]])
 async def refine_topic(
     request: Request,
-    intake: InputIntake,
+    intake: InputIntake = Body(
+        ...,
+        example={
+            "theme": "artificial intelligence",
+            "description": "General AI and machine learning applications",
+            "area_of_study": "Computer Science",
+            "keywords": ["neural networks", "deep learning"]
+        }
+    ),
 ) -> SuccessResponse[dict[str, Any]]:
     """
     Refina e especifica o tema fornecido em 4 variações mais focadas.
@@ -348,7 +280,15 @@ async def refine_topic(
 @router.post("/probe/query", response_model=SuccessResponse[dict[str, Any]])
 async def build_probe_query_endpoint(
     request: Request,
-    intake: InputIntake,
+    intake: InputIntake = Body(
+        ...,
+        example={
+            "theme": "e-commerce and digital payments",
+            "description": "Online shopping platforms with secure payment processing",
+            "area_of_study": "Information Technology",
+            "keywords": ["blockchain", "cryptocurrency", "payment gateway"]
+        }
+    ),
     api: str = "ops",
 ) -> SuccessResponse[dict[str, Any]]:
     """
@@ -385,28 +325,33 @@ async def build_probe_query_endpoint(
 @router.post("/probe/search", response_model=SuccessResponse[dict[str, Any]])
 async def run_probe_search_endpoint(
     request: Request,
-    query: dict[str, Any] = Body(...),
-    api: str = Body(...),
+    probe_request: ProbeSearchRequest = Body(...),
 ) -> SuccessResponse[dict[str, Any]]:
     """
-    Executa probe search.
+    Executa probe search com abstracts.
+
+    Usa o endpoint /search/abstract do OPS que já retorna abstracts,
+    eliminando a necessidade de enriquecimento posterior.
 
     Args:
-        query: Query já construída (do /probe/query endpoint).
-        api: Nome da API (ops, scopus, lens_patent, lens_scholarly).
+        probe_request: Query construída, API a usar e número de resultados.
 
     Returns:
-        Resultados da busca probe (max 10-25 documentos).
+        Resultados da busca probe com abstracts e dados bibliográficos.
     """
     run_id = getattr(request.state, "run_id", None)
 
     try:
-        result = await pipeline.run_probe_search(query=query, api=api)
+        result = await pipeline.run_probe_search(
+            query=probe_request.query.model_dump(),
+            api=probe_request.api,
+            top_k=probe_request.top_k,
+        )
 
         return SuccessResponse(
             success=result.get("success", False),
             data=result,
-            message=f"Probe search completed: {result.get('results_count', 0)} results" if result.get("success") else f"Error: {result.get('error')}",
+            message=f"Probe search completed: {result.get('results_count', 0)} results with abstracts" if result.get("success") else f"Error: {result.get('error')}",
             run_id=run_id,
         )
     except Exception as exc:
@@ -422,9 +367,7 @@ async def run_probe_search_endpoint(
 @router.post("/extract-terms", response_model=SuccessResponse[dict[str, Any]])
 async def extract_terms_endpoint(
     request: Request,
-    enriched_results: list[dict[str, Any]] = Body(..., description="Resultados enriquecidos do probe search"),
-    original_params: dict[str, Any] = Body(default={}, description="Parâmetros originais da busca para filtrar termos"),
-    top_k: int = Body(default=20, description="Número de termos a extrair"),
+    extract_request: TermExtractionRequest = Body(...),
 ) -> SuccessResponse[dict[str, Any]]:
     """
     Extrai termos relevantes de resultados enriquecidos usando KeyBERT e TF-IDF.
@@ -436,9 +379,7 @@ async def extract_terms_endpoint(
     Remove automaticamente termos presentes nos parâmetros originais.
 
     Args:
-        enriched_results: Resultados do probe search com dados bibliográficos (título, abstract, etc).
-        original_params: Parâmetros originais (theme, description, area_of_study, keywords) para filtro.
-        top_k: Número de termos a retornar (default 20).
+        extract_request: Resultados enriquecidos, parâmetros originais, e número de termos.
 
     Returns:
         Lista de termos com scores:
@@ -455,9 +396,9 @@ async def extract_terms_endpoint(
 
     try:
         result = await pipeline.extract_relevant_terms(
-            enriched_results=enriched_results,
-            original_params=original_params,
-            top_k=top_k,
+            enriched_results=extract_request.enriched_results,
+            original_params=extract_request.original_params,
+            top_k=extract_request.top_k,
         )
 
         return SuccessResponse(
@@ -479,7 +420,15 @@ async def extract_terms_endpoint(
 @router.post("/final/query", response_model=SuccessResponse[dict[str, Any]])
 async def build_final_query_endpoint(
     request: Request,
-    intake: InputIntake,
+    intake: InputIntake = Body(
+        ...,
+        example={
+            "theme": "machine learning for cybersecurity",
+            "description": "AI-based intrusion detection and threat prevention",
+            "area_of_study": "Computer Science & Security",
+            "keywords": ["anomaly detection", "neural networks", "classification"]
+        }
+    ),
     api: str = "ops",
 ) -> SuccessResponse[dict[str, Any]]:
     """
@@ -516,9 +465,38 @@ async def build_final_query_endpoint(
 @router.post("/final/queries-multi", response_model=SuccessResponse[dict[str, Any]])
 async def build_final_queries_endpoint(
     request: Request,
-    intake: InputIntake,
-    extracted_terms: list[dict[str, Any]] = Body(default=[], description="Termos extraídos com scores"),
-    api: str = Body(default="ops", description="API específica (ops, scopus, lens_patent, lens_scholarly)"),
+    intake: InputIntake = Body(
+        ...,
+        example={
+            "theme": "quantum computing applications",
+            "description": "Quantum algorithms and hardware implementations",
+            "area_of_study": "Physics & Computer Science",
+            "keywords": ["qubits", "superposition", "entanglement"]
+        }
+    ),
+    extracted_terms: list[dict[str, Any]] = Body(
+        default=[],
+        example=[
+            {
+                "term": "quantum gates",
+                "score": 0.92,
+                "keybert_score": 0.90,
+                "tf_idf_score": 0.95,
+                "frequency": 8,
+                "sources": ["title", "abstract"]
+            },
+            {
+                "term": "quantum error correction",
+                "score": 0.88,
+                "keybert_score": 0.85,
+                "tf_idf_score": 0.92,
+                "frequency": 5,
+                "sources": ["abstract"]
+            }
+        ],
+        description="Termos extraídos com scores (do /extract-terms endpoint)"
+    ),
+    api: str = Body("ops", example="ops", description="API específica (ops, scopus, lens_patent, lens_scholarly)"),
 ) -> SuccessResponse[dict[str, Any]]:
     """
     Constrói 3 variações de query final (specific, balanced, generic)
@@ -625,17 +603,13 @@ async def get_system_prompt(request: Request) -> SuccessResponse[dict[str, Any]]
 @router.post("/final/search", response_model=SuccessResponse[dict[str, Any]])
 async def run_final_search_endpoint(
     request: Request,
-    query: dict[str, Any] = Body(...),
-    api: str = Body(...),
-    max_results: int = 500,
+    final_request: FinalSearchRequest = Body(...),
 ) -> SuccessResponse[dict[str, Any]]:
     """
     Executa busca final (busca de produção).
 
     Args:
-        query: Query final construída.
-        api: Nome da API.
-        max_results: Máximo de resultados (default 500).
+        final_request: Query final construída, API e máximo de resultados.
 
     Returns:
         Resultados da busca final (até max_results documentos).
@@ -643,7 +617,11 @@ async def run_final_search_endpoint(
     run_id = getattr(request.state, "run_id", None)
 
     try:
-        result = await pipeline.run_final_search(query=query, api=api, max_results=max_results)
+        result = await pipeline.run_final_search(
+            query=final_request.query.model_dump(),
+            api=final_request.api,
+            max_results=final_request.max_results,
+        )
 
         return SuccessResponse(
             success=result.get("success", False),
