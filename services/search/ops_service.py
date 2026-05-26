@@ -76,6 +76,56 @@ class OPSToken:
         }
 
 
+def _local_name(tag: str) -> str:
+    """
+    Extrai o nome local de uma tag, ignorando namespace.
+
+    Args:
+        tag: Tag completo (e.g., "{http://example.com}element" ou "element")
+
+    Returns:
+        Nome local da tag (e.g., "element")
+    """
+    if tag.startswith("{"):
+        return tag.split("}", 1)[1]
+    return tag
+
+
+def _find_first_by_local_name(element: ET.Element, local_name: str) -> Optional[ET.Element]:
+    """
+    Encontra primeiro elemento filho por nome local, ignorando namespace.
+
+    Args:
+        element: Elemento pai
+        local_name: Nome local da tag (sem namespace)
+
+    Returns:
+        Elemento encontrado ou None
+    """
+    for child in element:
+        if _local_name(child.tag) == local_name:
+            return child
+    return None
+
+
+def _find_all_by_local_name(element: ET.Element, local_name: str) -> list[ET.Element]:
+    """
+    Encontra todos elementos descendentes por nome local, ignorando namespace.
+
+    Args:
+        element: Elemento para buscar dentro
+        local_name: Nome local da tag (sem namespace)
+
+    Returns:
+        Lista de elementos encontrados
+    """
+    results = []
+    for descendant in element.iter():
+        if _local_name(descendant.tag) == local_name:
+            results.append(descendant)
+    return results
+
+
 class OPSService:
     """
     Serviço de busca na API European Patent Office (OPS).
@@ -553,29 +603,42 @@ class OPSService:
                     logger.debug("ops_search_abstract_response_format", format="json")
 
                 except (json.JSONDecodeError, ValueError):
-                    # API retorna XML - fazer parsing correto
+                    # API retorna XML - fazer parsing com namespace-agnostic
                     logger.debug("ops_search_abstract_response_format", format="xml")
 
                     try:
-                        EXCHANGE_NS = "http://www.epo.org/exchange"
-                        OPS_NS = "http://ops.epo.org"
-
                         root = ET.fromstring(response.text)
+
+                        # Diagnóstico detalhado
+                        content_type = response.headers.get("content-type", "unknown")
+                        unique_tags = set()
+                        for elem in root.iter():
+                            unique_tags.add(_local_name(elem.tag))
 
                         logger.info(
                             "ops_search_abstract_xml_root",
                             root_tag=root.tag,
+                            root_local_name=_local_name(root.tag),
                             response_length=len(response.text),
+                            content_type=content_type,
+                            response_sample=response.text[:1000],
+                            unique_tags_found=sorted(list(unique_tags))[:10],
                         )
 
-                        # Extrair total count
-                        biblio_search = root.find(f".//{{{OPS_NS}}}biblio-search")
-                        if biblio_search is not None:
+                        # Extrair total count (ignorando namespace)
+                        biblio_search_elems = _find_all_by_local_name(root, "biblio-search")
+                        total_count = None
+                        if biblio_search_elems:
+                            biblio_search = biblio_search_elems[0]
                             total_count_str = biblio_search.get("total-result-count")
                             total_count = int(total_count_str) if total_count_str else None
+                            logger.info(
+                                "ops_search_abstract_total_count",
+                                total_count=total_count,
+                            )
 
-                        # Buscar todos exchange-document diretamente do root
-                        exchange_documents = root.findall(f".//{{{EXCHANGE_NS}}}exchange-document")
+                        # Buscar todos exchange-document (ignorando namespace)
+                        exchange_documents = _find_all_by_local_name(root, "exchange-document")
 
                         logger.info(
                             "ops_search_abstract_exchange_documents_found",
@@ -584,14 +647,21 @@ class OPSService:
 
                         results = []
 
-                        for exchange_doc in exchange_documents:
+                        for idx, exchange_doc in enumerate(exchange_documents):
                             family_id = exchange_doc.attrib.get("family-id")
 
-                            # Buscar publication-reference com document-id type docdb
-                            docdb = exchange_doc.find(
-                                f".//{{{EXCHANGE_NS}}}publication-reference/"
-                                f"{{{EXCHANGE_NS}}}document-id[@document-id-type='docdb']"
-                            )
+                            # Encontrar publication-reference e depois document-id com type docdb
+                            pub_refs = _find_all_by_local_name(exchange_doc, "publication-reference")
+                            docdb = None
+
+                            for pub_ref in pub_refs:
+                                doc_ids = _find_all_by_local_name(pub_ref, "document-id")
+                                for doc_id_elem in doc_ids:
+                                    if doc_id_elem.get("document-id-type") == "docdb":
+                                        docdb = doc_id_elem
+                                        break
+                                if docdb is not None:
+                                    break
 
                             country = None
                             doc_number = None
@@ -599,10 +669,10 @@ class OPSService:
                             publication_date = None
 
                             if docdb is not None:
-                                country_elem = docdb.find(f"{{{EXCHANGE_NS}}}country")
-                                doc_number_elem = docdb.find(f"{{{EXCHANGE_NS}}}doc-number")
-                                kind_elem = docdb.find(f"{{{EXCHANGE_NS}}}kind")
-                                date_elem = docdb.find(f"{{{EXCHANGE_NS}}}date")
+                                country_elem = _find_first_by_local_name(docdb, "country")
+                                doc_number_elem = _find_first_by_local_name(docdb, "doc-number")
+                                kind_elem = _find_first_by_local_name(docdb, "kind")
+                                date_elem = _find_first_by_local_name(docdb, "date")
 
                                 country = (
                                     country_elem.text.strip()
@@ -625,6 +695,14 @@ class OPSService:
                                     else None
                                 )
 
+                                logger.debug(
+                                    "ops_search_abstract_document_extracted",
+                                    index=idx,
+                                    country=country,
+                                    doc_number=doc_number,
+                                    kind=kind,
+                                )
+
                             docdb_id = (
                                 f"{country}.{doc_number}.{kind}"
                                 if country and doc_number and kind
@@ -633,11 +711,15 @@ class OPSService:
 
                             # Extrair abstracts (preferir lang="en")
                             abstract_text = None
-                            for abstract_elem in exchange_doc.findall(f".//{{{EXCHANGE_NS}}}abstract"):
+                            abstract_elems = _find_all_by_local_name(exchange_doc, "abstract")
+
+                            for abstract_elem in abstract_elems:
                                 lang = abstract_elem.attrib.get("lang")
 
+                                # Encontrar todos os <p> dentro do abstract
+                                p_elems = _find_all_by_local_name(abstract_elem, "p")
                                 paragraphs = []
-                                for p_elem in abstract_elem.findall(f".//{{{EXCHANGE_NS}}}p"):
+                                for p_elem in p_elems:
                                     if p_elem.text:
                                         paragraphs.append(p_elem.text.strip())
 
@@ -673,6 +755,7 @@ class OPSService:
                         logger.error(
                             "ops_search_abstract_xml_parse_error",
                             error=str(exc),
+                            response_sample=response.text[:500],
                         )
                         raise
 
