@@ -557,137 +557,111 @@ class OPSService:
                     logger.debug("ops_search_abstract_response_format", format="xml")
 
                     try:
+                        EXCHANGE_NS = "http://www.epo.org/exchange"
+                        OPS_NS = "http://ops.epo.org"
+
                         root = ET.fromstring(response.text)
 
-                        logger.debug(
-                            "ops_xml_root",
-                            tag=root.tag,
+                        logger.info(
+                            "ops_search_abstract_xml_root",
+                            root_tag=root.tag,
+                            response_length=len(response.text),
                         )
 
                         # Extrair total count
-                        biblio_search = root.find(
-                            ".//{http://ops.epo.org}biblio-search"
-                        )
+                        biblio_search = root.find(f".//{{{OPS_NS}}}biblio-search")
                         if biblio_search is not None:
                             total_count_str = biblio_search.get("total-result-count")
                             total_count = int(total_count_str) if total_count_str else None
-                            logger.debug("ops_xml_total_count", count=total_count)
 
-                        # Extrair cada exchange-document com seu abstract
-                        search_result = root.find(
-                            ".//{http://ops.epo.org}search-result"
+                        # Buscar todos exchange-document diretamente do root
+                        exchange_documents = root.findall(f".//{{{EXCHANGE_NS}}}exchange-document")
+
+                        logger.info(
+                            "ops_search_abstract_exchange_documents_found",
+                            count=len(exchange_documents),
                         )
 
-                        logger.debug(
-                            "ops_xml_search_result_found",
-                            found=search_result is not None,
-                        )
+                        results = []
 
-                        if search_result is not None:
-                            # Encontrar todos exchange-documents diretos
-                            exchange_docs_list = list(search_result)
-                            all_tags = [child.tag for child in exchange_docs_list]
-                            logger.info(
-                                "ops_xml_children_count",
-                                count=len(exchange_docs_list),
-                                all_tags=all_tags,
+                        for exchange_doc in exchange_documents:
+                            family_id = exchange_doc.attrib.get("family-id")
+
+                            # Buscar publication-reference com document-id type docdb
+                            docdb = exchange_doc.find(
+                                f".//{{{EXCHANGE_NS}}}publication-reference/"
+                                f"{{{EXCHANGE_NS}}}document-id[@document-id-type='docdb']"
                             )
 
-                            # Cada exchange-documents contém um exchange-document
-                            for idx, exchange_docs in enumerate(exchange_docs_list):
-                                # Verificar o tag
-                                logger.info("ops_xml_child_tag", index=idx, tag=exchange_docs.tag)
+                            country = None
+                            doc_number = None
+                            kind = None
+                            publication_date = None
 
-                                # Log grandchildren tags para diagnóstico
-                                grandchildren = [gc.tag for gc in exchange_docs]
-                                logger.info(
-                                    "ops_xml_grandchildren_tags",
-                                    index=idx,
-                                    grandchildren_tags=grandchildren,
+                            if docdb is not None:
+                                country_elem = docdb.find(f"{{{EXCHANGE_NS}}}country")
+                                doc_number_elem = docdb.find(f"{{{EXCHANGE_NS}}}doc-number")
+                                kind_elem = docdb.find(f"{{{EXCHANGE_NS}}}kind")
+                                date_elem = docdb.find(f"{{{EXCHANGE_NS}}}date")
+
+                                country = (
+                                    country_elem.text.strip()
+                                    if country_elem is not None and country_elem.text
+                                    else None
+                                )
+                                doc_number = (
+                                    doc_number_elem.text.strip()
+                                    if doc_number_elem is not None and doc_number_elem.text
+                                    else None
+                                )
+                                kind = (
+                                    kind_elem.text.strip()
+                                    if kind_elem is not None and kind_elem.text
+                                    else None
+                                )
+                                publication_date = (
+                                    date_elem.text.strip()
+                                    if date_elem is not None and date_elem.text
+                                    else None
                                 )
 
-                                # Procurar exchange-document com várias tentativas
-                                exchange_doc = None
+                            docdb_id = (
+                                f"{country}.{doc_number}.{kind}"
+                                if country and doc_number and kind
+                                else None
+                            )
 
-                                # Tentativa 1: Com namespace completo
-                                exchange_doc = exchange_docs.find(
-                                    "{http://www.epo.org/exchange}exchange-document"
-                                )
-                                if exchange_doc is not None:
-                                    logger.debug(
-                                        "ops_xml_exchange_doc_found",
-                                        index=idx,
-                                        method="with_namespace",
-                                    )
+                            # Extrair abstracts (preferir lang="en")
+                            abstract_text = None
+                            for abstract_elem in exchange_doc.findall(f".//{{{EXCHANGE_NS}}}abstract"):
+                                lang = abstract_elem.attrib.get("lang")
 
-                                # Tentativa 2: Sem namespace
-                                if exchange_doc is None:
-                                    exchange_doc = exchange_docs.find("exchange-document")
-                                    if exchange_doc is not None:
-                                        logger.debug(
-                                            "ops_xml_exchange_doc_found",
-                                            index=idx,
-                                            method="without_namespace",
-                                        )
+                                paragraphs = []
+                                for p_elem in abstract_elem.findall(f".//{{{EXCHANGE_NS}}}p"):
+                                    if p_elem.text:
+                                        paragraphs.append(p_elem.text.strip())
 
-                                # Tentativa 3: Busca recursiva
-                                if exchange_doc is None:
-                                    exchange_doc = exchange_docs.find(
-                                        ".//{http://www.epo.org/exchange}exchange-document"
-                                    )
-                                    if exchange_doc is not None:
-                                        logger.debug(
-                                            "ops_xml_exchange_doc_found",
-                                            index=idx,
-                                            method="recursive_with_namespace",
-                                        )
+                                text = " ".join(paragraphs).strip()
 
-                                # Tentativa 4: Busca recursiva sem namespace
-                                if exchange_doc is None:
-                                    exchange_doc = exchange_docs.find(".//exchange-document")
-                                    if exchange_doc is not None:
-                                        logger.debug(
-                                            "ops_xml_exchange_doc_found",
-                                            index=idx,
-                                            method="recursive_without_namespace",
-                                        )
+                                if text:
+                                    # Preferir lang="en", senão usar o primeiro disponível
+                                    if lang == "en":
+                                        abstract_text = text
+                                        break
+                                    elif abstract_text is None:
+                                        abstract_text = text
 
-                                if exchange_doc is None:
-                                    logger.warning(
-                                        "ops_xml_exchange_doc_not_found",
-                                        index=idx,
-                                        parent_tag=exchange_docs.tag,
-                                    )
-
-                                if exchange_doc is not None:
-                                    # Extrair publication-reference
-                                    pub_ref = exchange_doc.find(
-                                        ".//{http://www.epo.org/exchange}publication-reference"
-                                    )
-
-                                    # Extrair abstract
-                                    abstract_elem = exchange_doc.find(
-                                        ".//{http://www.epo.org/exchange}abstract"
-                                    )
-                                    abstract_text = ""
-                                    if abstract_elem is not None:
-                                        p_elem = abstract_elem.find(
-                                            ".//{http://www.epo.org/exchange}p"
-                                        )
-                                        if p_elem is not None and p_elem.text:
-                                            abstract_text = p_elem.text
-
-                                    # Montar resultado com abstract
-                                    result = {
-                                        "publication-reference": ET.tostring(
-                                            pub_ref, encoding="unicode"
-                                        ) if pub_ref is not None else None,
-                                        "abstract": abstract_text,
-                                        "raw": ET.tostring(
-                                            exchange_doc, encoding="unicode"
-                                        ),
-                                    }
-                                    results.append(result)
+                            result = {
+                                "family_id": family_id,
+                                "country": country,
+                                "doc_number": doc_number,
+                                "kind": kind,
+                                "publication_date": publication_date,
+                                "docdb_id": docdb_id,
+                                "abstract": abstract_text,
+                                "raw": ET.tostring(exchange_doc, encoding="unicode"),
+                            }
+                            results.append(result)
 
                         logger.info(
                             "ops_search_abstract_xml_parsed",
