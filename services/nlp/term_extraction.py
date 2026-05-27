@@ -617,26 +617,31 @@ class TermExtractor:
         self,
         candidates: list[str],
         scores: dict[str, float],
-        lambda_param: float = 0.6,
+        lambda_param: float = 0.4,
         top_k: int = 20,
+        similarity_threshold: float = 0.5,
     ) -> list[str]:
         """
-        Rank terms using Maximal Marginal Relevance (MMR).
+        Rank terms using Maximal Marginal Relevance (MMR) with hard diversity constraint.
 
         MMR = lambda * relevance_score - (1 - lambda) * max_similarity_to_selected
 
-        Balances relevance with diversity. With lambda=0.6:
-        - 60% weight on relevance (high-scoring terms)
-        - 40% weight on diversity (avoiding similar terms)
+        Hard constraint: Skip terms with >similarity_threshold overlap with selected terms.
+
+        With lambda=0.4 and threshold=0.5:
+        - 40% weight on relevance (high-scoring terms)
+        - 60% weight on diversity (avoiding similar terms)
+        - Skip any term >50% similar to already selected terms
 
         Args:
             candidates: List of candidate terms to rank
             scores: Dict mapping term -> relevance_score
-            lambda_param: Weight for relevance vs diversity (0-1)
+            lambda_param: Weight for relevance vs diversity (0-1), default 0.4
             top_k: Number of top terms to return
+            similarity_threshold: Skip terms more similar than this (0-1)
 
         Returns:
-            List of top-k terms ranked by MMR
+            List of top-k terms ranked by MMR with diversity guarantee
         """
         if not candidates or top_k <= 0:
             return []
@@ -654,7 +659,7 @@ class TermExtractor:
         selected = []
         remaining = set(candidates)
 
-        # Iteratively select top-k terms by MMR
+        # Iteratively select top-k terms by MMR with hard similarity constraint
         for _ in range(min(top_k, len(candidates))):
             best_term = None
             best_mmr = float("-inf")
@@ -665,6 +670,10 @@ class TermExtractor:
                 # Calculate diversity penalty: max similarity to any already selected term
                 if selected:
                     max_similarity = max(jaccard_similarity(candidate, term) for term in selected)
+
+                    # Hard constraint: Skip if too similar to any selected term
+                    if max_similarity > similarity_threshold:
+                        continue
                 else:
                     max_similarity = 0.0
 
@@ -899,13 +908,14 @@ class TermExtractor:
             remaining_terms=len(filtered_ngrams),
         )
 
-        # Rank by MMR (Maximal Marginal Relevance) with lambda=0.6
-        # Balances relevance (60%) with diversity (40%)
+        # Rank by MMR (Maximal Marginal Relevance) with lambda=0.4
+        # Balances relevance (40%) with diversity (60%), with hard >50% similarity threshold
         ranked_terms = self._calculate_mmr_ranking(
             candidates=filtered_ngrams,
             scores=combined_scores,
-            lambda_param=0.6,
+            lambda_param=0.4,
             top_k=top_k,
+            similarity_threshold=0.5,
         )
 
         # Build result objects with all scores

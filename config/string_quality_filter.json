@@ -9,7 +9,8 @@
         "will", "would", "could", "should", "may", "might", "shall",
         "this", "that", "these", "those", "it", "its", "as", "up",
         "free", "standing", "based", "related", "high", "low", "new",
-        "good", "such", "each", "both", "about", "into", "through"
+        "good", "such", "each", "both", "about", "into", "through",
+        "which", "who", "whom", "whose", "what", "when", "where", "why", "how"
       ]
     },
     "patent_structural_words": {
@@ -36,7 +37,8 @@
         "results", "findings", "conclusion", "approach", "method",
         "technique", "framework", "model", "system", "process",
         "based", "using", "used", "via", "among", "between",
-        "compared", "contrast", "addition", "furthermore", "however"
+        "compared", "contrast", "addition", "furthermore", "however",
+        "substantial", "absence", "edge", "edges", "pore", "pores"
       ]
     }
   }
