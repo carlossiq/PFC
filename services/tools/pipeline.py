@@ -645,6 +645,9 @@ async def run_probe_search(
     Usa endpoints otimizados que já retornam abstracts (ex: /search/abstract do OPS).
     Renova token OAuth2 antes de fazer a requisição.
 
+    Nota: Busca top_k + 5 resultados para compensar abstracts em idiomas não-ingleses,
+    garantindo mais opções com abstracts em inglês.
+
     Args:
         query: Query já construída.
         api: Nome da API (ops, scopus, lens_patent, lens_scholarly).
@@ -654,6 +657,9 @@ async def run_probe_search(
         Dict com resultados da busca já contendo abstracts.
     """
     try:
+        # Buffer de resultados para compensar abstracts em outros idiomas
+        effective_top_k = min(top_k + 5, 100)
+
         # Renovar/garantir token válido ANTES da busca
         if api == "ops":
             from services.search.ops_token_manager import ops_token_manager
@@ -674,19 +680,19 @@ async def run_probe_search(
 
         if api == "ops":
             service = OPSService()
-            result = await service.search_with_abstracts(query, top_k=top_k)
+            result = await service.search_with_abstracts(query, top_k=effective_top_k)
             await service.close()
         elif api == "scopus":
             service = ScopusService()
-            result = await service.search(query, top_k=top_k)
+            result = await service.search(query, top_k=effective_top_k)
             await service.close()
         else:
             # Lens Patent ou Scholarly
             service = LensService()
             if api == "lens_patent":
-                result = await service.search_patent(query=query, top_k=top_k)
+                result = await service.search_patent(query=query, top_k=effective_top_k)
             else:
-                result = await service.search_scholarly(query=query, top_k=top_k)
+                result = await service.search_scholarly(query=query, top_k=effective_top_k)
             service.close()
 
         return {
