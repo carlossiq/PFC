@@ -550,6 +550,300 @@ class OPSService:
             run_id=run_id,
         )
 
+    def _extract_biblio_fields_xml(self, exchange_doc_elem) -> dict[str, Any]:
+        """
+        Extrai campos bibliográficos estruturados de um elemento XML exchange-document.
+
+        Versão para XML parsing (fallback).
+
+        Args:
+            exchange_doc_elem: Elemento XML do exchange-document
+
+        Returns:
+            Dict com campos estruturados
+        """
+        result = {
+            # Priority 1: Essential fields
+            "family_id": exchange_doc_elem.attrib.get("family-id"),
+            "invention_title": None,
+            "abstract": None,
+            "publication_date": None,
+            "priority_date": None,
+            "applicants": [],
+            "ipc_classifications": [],
+            "cpc_classifications": [],
+            # Priority 2: Important fields
+            "country": None,
+            "inventors": [],
+            "docdb_id": None,
+            # Priority 3: Complementary fields
+            "kind": None,
+            "application_reference": None,
+        }
+
+        try:
+            # Extract invention-title (prefer English)
+            invention_titles = _find_all_by_local_name(exchange_doc_elem, "invention-title")
+            for title_elem in invention_titles:
+                lang = title_elem.attrib.get("lang", "")
+                title_text = title_elem.text or ""
+                if lang == "en":
+                    result["invention_title"] = title_text
+                    break
+                elif result["invention_title"] is None:
+                    result["invention_title"] = title_text
+
+            # Extract abstract (prefer English)
+            abstract_elems = _find_all_by_local_name(exchange_doc_elem, "abstract")
+            for abstract_elem in abstract_elems:
+                lang = abstract_elem.attrib.get("lang")
+                p_elems = _find_all_by_local_name(abstract_elem, "p")
+                paragraphs = [p.text.strip() for p in p_elems if p.text]
+                text = " ".join(paragraphs).strip()
+                if text:
+                    if lang == "en":
+                        result["abstract"] = text
+                        break
+                    elif result["abstract"] is None:
+                        result["abstract"] = text
+
+            # Extract publication data from document-id
+            all_doc_ids = _find_all_by_local_name(exchange_doc_elem, "document-id")
+            for doc_id_elem in all_doc_ids:
+                if doc_id_elem.get("document-id-type") == "docdb":
+                    country_elem = _find_first_by_local_name(doc_id_elem, "country")
+                    doc_number_elem = _find_first_by_local_name(doc_id_elem, "doc-number")
+                    kind_elem = _find_first_by_local_name(doc_id_elem, "kind")
+                    date_elem = _find_first_by_local_name(doc_id_elem, "date")
+
+                    country = country_elem.text if country_elem is not None else None
+                    doc_number = doc_number_elem.text if doc_number_elem is not None else None
+                    kind = kind_elem.text if kind_elem is not None else None
+                    publication_date = date_elem.text if date_elem is not None else None
+
+                    result["country"] = country
+                    result["kind"] = kind
+                    result["publication_date"] = publication_date
+                    result["docdb_id"] = f"{country}.{doc_number}.{kind}" if all([country, doc_number, kind]) else None
+                    break
+
+            # Extract applicants
+            applicants_container = _find_first_by_local_name(exchange_doc_elem, "applicants")
+            if applicants_container is not None:
+                applicant_elems = _find_all_by_local_name(applicants_container, "applicant")
+                for applicant_elem in applicant_elems:
+                    name_elem = _find_first_by_local_name(applicant_elem, "name")
+                    if name_elem is not None and name_elem.text:
+                        result["applicants"].append(name_elem.text)
+
+            # Extract inventors
+            inventors_container = _find_first_by_local_name(exchange_doc_elem, "inventors")
+            if inventors_container is not None:
+                inventor_elems = _find_all_by_local_name(inventors_container, "inventor")
+                for inventor_elem in inventor_elems:
+                    name_elem = _find_first_by_local_name(inventor_elem, "name")
+                    if name_elem is not None and name_elem.text:
+                        result["inventors"].append(name_elem.text)
+
+            # Extract IPC classifications
+            ipc_container = _find_first_by_local_name(exchange_doc_elem, "classifications-ipcr")
+            if ipc_container is not None:
+                ipc_elems = _find_all_by_local_name(ipc_container, "classification-ipcr")
+                for ipc_elem in ipc_elems:
+                    text_elem = _find_first_by_local_name(ipc_elem, "text")
+                    if text_elem is not None and text_elem.text:
+                        result["ipc_classifications"].append(text_elem.text)
+
+            # Extract CPC classifications
+            cpc_container = _find_first_by_local_name(exchange_doc_elem, "classifications-cpc")
+            if cpc_container is not None:
+                cpc_elems = _find_all_by_local_name(cpc_container, "classification-cpc")
+                for cpc_elem in cpc_elems:
+                    text_elem = _find_first_by_local_name(cpc_elem, "text")
+                    if text_elem is not None and text_elem.text:
+                        result["cpc_classifications"].append(text_elem.text)
+
+        except Exception:
+            # Se há erro ao processar, retorna o que conseguiu extrair
+            pass
+
+        return result
+
+    def _extract_biblio_fields(self, exchange_doc: dict) -> dict[str, Any]:
+        """
+        Extrai campos bibliográficos estruturados do exchange-document.
+
+        Retorna apenas campos configurados (sem raw data).
+
+        Args:
+            exchange_doc: Documento do exchange-documents
+
+        Returns:
+            Dict com campos estruturados
+        """
+        result = {
+            # Priority 1: Essential fields
+            "family_id": exchange_doc.get("@family-id"),
+            "invention_title": None,
+            "abstract": None,
+            "publication_date": None,
+            "priority_date": None,
+            "applicants": [],
+            "ipc_classifications": [],
+            "cpc_classifications": [],
+            # Priority 2: Important fields
+            "country": None,
+            "inventors": [],
+            "docdb_id": None,
+            # Priority 3: Complementary fields
+            "kind": None,
+            "application_reference": None,
+        }
+
+        try:
+            biblio_data = exchange_doc.get("bibliographic-data", {})
+
+            # Extract invention-title (prefer English)
+            invention_titles = biblio_data.get("invention-title", [])
+            if not isinstance(invention_titles, list):
+                invention_titles = [invention_titles] if invention_titles else []
+            for title_item in invention_titles:
+                if isinstance(title_item, dict):
+                    lang = title_item.get("@lang", "")
+                    title_text = title_item.get("$", "")
+                    if lang == "en":
+                        result["invention_title"] = title_text
+                        break
+                    elif result["invention_title"] is None:
+                        result["invention_title"] = title_text
+
+            # Extract abstract (prefer English)
+            abstract_elems = exchange_doc.get("abstract", [])
+            if not isinstance(abstract_elems, list):
+                abstract_elems = [abstract_elems] if abstract_elems else []
+            for abstract_elem in abstract_elems:
+                lang = abstract_elem.get("@lang")
+                p_elems = abstract_elem.get("p", [])
+                if not isinstance(p_elems, list):
+                    p_elems = [p_elems] if p_elems else []
+                paragraphs = []
+                for p_elem in p_elems:
+                    if isinstance(p_elem, dict):
+                        text = p_elem.get("$", "")
+                    else:
+                        text = str(p_elem)
+                    if text:
+                        paragraphs.append(text.strip())
+                text = " ".join(paragraphs).strip()
+                if text:
+                    if lang == "en":
+                        result["abstract"] = text
+                        break
+                    elif result["abstract"] is None:
+                        result["abstract"] = text
+
+            # Extract publication-reference data
+            pub_ref = biblio_data.get("publication-reference", {})
+            doc_ids = pub_ref.get("document-id", [])
+            if not isinstance(doc_ids, list):
+                doc_ids = [doc_ids] if doc_ids else []
+
+            for doc_id in doc_ids:
+                if doc_id.get("@document-id-type") == "docdb":
+                    country = doc_id.get("country", {}).get("$")
+                    doc_number = doc_id.get("doc-number", {}).get("$")
+                    kind = doc_id.get("kind", {}).get("$")
+                    publication_date = doc_id.get("date", {}).get("$")
+
+                    result["country"] = country
+                    result["kind"] = kind
+                    result["publication_date"] = publication_date
+                    result["docdb_id"] = f"{country}.{doc_number}.{kind}" if all([country, doc_number, kind]) else None
+                    break
+
+            # Extract priority-reference
+            priority_ref = biblio_data.get("priority-reference", {})
+            if priority_ref:
+                # Can be a single dict or list
+                if isinstance(priority_ref, list):
+                    priority_ref = priority_ref[0] if priority_ref else {}
+                doc_id = priority_ref.get("document-id", {})
+                if isinstance(doc_id, list):
+                    doc_id = doc_id[0] if doc_id else {}
+                priority_date = doc_id.get("date", {}).get("$") if isinstance(doc_id, dict) else None
+                result["priority_date"] = priority_date
+
+            # Extract applicants
+            parties = biblio_data.get("parties", {})
+            applicants = parties.get("applicants", {}).get("applicant", [])
+            if not isinstance(applicants, list):
+                applicants = [applicants] if applicants else []
+            for applicant in applicants:
+                if isinstance(applicant, dict):
+                    name_data = applicant.get("name", {})
+                    name = name_data.get("$") if isinstance(name_data, dict) else str(applicant)
+                else:
+                    name = str(applicant)
+                if name:
+                    result["applicants"].append(name)
+
+            # Extract inventors
+            inventors = parties.get("inventors", {}).get("inventor", [])
+            if not isinstance(inventors, list):
+                inventors = [inventors] if inventors else []
+            for inventor in inventors:
+                if isinstance(inventor, dict):
+                    name_data = inventor.get("name", {})
+                    name = name_data.get("$") if isinstance(name_data, dict) else str(inventor)
+                else:
+                    name = str(inventor)
+                if name:
+                    result["inventors"].append(name)
+
+            # Extract IPC classifications
+            classifications = biblio_data.get("classifications-ipcr", {})
+            if classifications:
+                ipc_elems = classifications.get("classification-ipcr", [])
+                if not isinstance(ipc_elems, list):
+                    ipc_elems = [ipc_elems] if ipc_elems else []
+                for ipc_elem in ipc_elems:
+                    if isinstance(ipc_elem, dict):
+                        text = ipc_elem.get("text", {}).get("$") if isinstance(ipc_elem.get("text"), dict) else ipc_elem.get("text")
+                        if text:
+                            result["ipc_classifications"].append(text)
+
+            # Extract CPC classifications
+            cpc_class = biblio_data.get("classifications-cpc", {})
+            if cpc_class:
+                cpc_elems = cpc_class.get("classification-cpc", [])
+                if not isinstance(cpc_elems, list):
+                    cpc_elems = [cpc_elems] if cpc_elems else []
+                for cpc_elem in cpc_elems:
+                    if isinstance(cpc_elem, dict):
+                        text = cpc_elem.get("text", {}).get("$") if isinstance(cpc_elem.get("text"), dict) else cpc_elem.get("text")
+                        if text:
+                            result["cpc_classifications"].append(text)
+
+            # Extract application-reference
+            app_ref = biblio_data.get("application-reference", {})
+            if app_ref:
+                if isinstance(app_ref, list):
+                    app_ref = app_ref[0] if app_ref else {}
+                doc_id = app_ref.get("document-id", {})
+                if isinstance(doc_id, list):
+                    doc_id = doc_id[0] if doc_id else {}
+                country = doc_id.get("country", {}).get("$") if isinstance(doc_id, dict) else None
+                doc_number = doc_id.get("doc-number", {}).get("$") if isinstance(doc_id, dict) else None
+                kind = doc_id.get("kind", {}).get("$") if isinstance(doc_id, dict) else None
+                if country and doc_number:
+                    result["application_reference"] = f"{country}{doc_number}" + (f".{kind}" if kind else "")
+
+        except Exception:
+            # Se há erro ao processar, retorna o que conseguiu extrair
+            pass
+
+        return result
+
     async def _search_abstract_with_retry(
         self,
         query: dict[str, Any],
@@ -636,77 +930,8 @@ class OPSService:
                         if not exchange_doc:
                             continue
 
-                        family_id = exchange_doc.get("@family-id")
-
-                        # Extrair publication-reference
-                        biblio_data = exchange_doc.get("bibliographic-data", {})
-                        pub_ref = biblio_data.get("publication-reference", {})
-
-                        # Extrair document-id com type docdb
-                        doc_ids = pub_ref.get("document-id", [])
-                        if not isinstance(doc_ids, list):
-                            doc_ids = [doc_ids] if doc_ids else []
-
-                        country = None
-                        doc_number = None
-                        kind = None
-                        publication_date = None
-
-                        for doc_id in doc_ids:
-                            if doc_id.get("@document-id-type") == "docdb":
-                                country = doc_id.get("country", {}).get("$")
-                                doc_number = doc_id.get("doc-number", {}).get("$")
-                                kind = doc_id.get("kind", {}).get("$")
-                                publication_date = doc_id.get("date", {}).get("$")
-                                break
-
-                        docdb_id = (
-                            f"{country}.{doc_number}.{kind}"
-                            if country and doc_number and kind
-                            else None
-                        )
-
-                        # Extrair abstract (preferir lang="en")
-                        abstract_text = None
-                        abstract_elems = exchange_doc.get("abstract", [])
-                        if not isinstance(abstract_elems, list):
-                            abstract_elems = [abstract_elems] if abstract_elems else []
-
-                        for abstract_elem in abstract_elems:
-                            lang = abstract_elem.get("@lang")
-                            p_elems = abstract_elem.get("p", [])
-
-                            if not isinstance(p_elems, list):
-                                p_elems = [p_elems] if p_elems else []
-
-                            paragraphs = []
-                            for p_elem in p_elems:
-                                if isinstance(p_elem, dict):
-                                    text = p_elem.get("$", "")
-                                else:
-                                    text = str(p_elem)
-                                if text:
-                                    paragraphs.append(text.strip())
-
-                            text = " ".join(paragraphs).strip()
-
-                            if text:
-                                if lang == "en":
-                                    abstract_text = text
-                                    break
-                                elif abstract_text is None:
-                                    abstract_text = text
-
-                        result = {
-                            "family_id": family_id,
-                            "country": country,
-                            "doc_number": doc_number,
-                            "kind": kind,
-                            "publication_date": publication_date,
-                            "docdb_id": docdb_id,
-                            "abstract": abstract_text,
-                            "raw": json.dumps(exchange_doc),
-                        }
+                        # Extrair campos estruturados usando helper
+                        result = self._extract_biblio_fields(exchange_doc)
                         results.append(result)
 
                 except (json.JSONDecodeError, ValueError) as json_error:
@@ -758,104 +983,8 @@ class OPSService:
                         results = []
 
                         for idx, exchange_doc in enumerate(exchange_documents):
-                            family_id = exchange_doc.attrib.get("family-id")
-
-                            # Encontrar publication-reference e depois document-id com type docdb
-                            # Tentar buscar document-id recursivamente primeiro (mais robusto)
-                            all_doc_ids = _find_all_by_local_name(exchange_doc, "document-id")
-
-                            docdb = None
-                            doc_id_types_found = []
-                            # Procurar o primeiro document-id com type="docdb"
-                            for doc_id_elem in all_doc_ids:
-                                doc_id_type = doc_id_elem.get("document-id-type")
-                                doc_id_types_found.append(doc_id_type)
-
-                                if doc_id_type == "docdb":
-                                    docdb = doc_id_elem
-                                    break
-
-                            if docdb is None and len(all_doc_ids) > 0:
-                                logger.info(
-                                    "ops_search_abstract_no_docdb_found",
-                                    exchange_index=idx,
-                                    family_id=family_id,
-                                    document_ids_count=len(all_doc_ids),
-                                    available_doc_id_types=doc_id_types_found,
-                                )
-
-                            country = None
-                            doc_number = None
-                            kind = None
-                            publication_date = None
-
-                            if docdb is not None:
-                                country_elem = _find_first_by_local_name(docdb, "country")
-                                doc_number_elem = _find_first_by_local_name(docdb, "doc-number")
-                                kind_elem = _find_first_by_local_name(docdb, "kind")
-                                date_elem = _find_first_by_local_name(docdb, "date")
-
-                                country = (
-                                    country_elem.text.strip()
-                                    if country_elem is not None and country_elem.text
-                                    else None
-                                )
-                                doc_number = (
-                                    doc_number_elem.text.strip()
-                                    if doc_number_elem is not None and doc_number_elem.text
-                                    else None
-                                )
-                                kind = (
-                                    kind_elem.text.strip()
-                                    if kind_elem is not None and kind_elem.text
-                                    else None
-                                )
-                                publication_date = (
-                                    date_elem.text.strip()
-                                    if date_elem is not None and date_elem.text
-                                    else None
-                                )
-
-                            docdb_id = (
-                                f"{country}.{doc_number}.{kind}"
-                                if country and doc_number and kind
-                                else None
-                            )
-
-                            # Extrair abstracts (preferir lang="en")
-                            abstract_text = None
-                            abstract_elems = _find_all_by_local_name(exchange_doc, "abstract")
-
-                            for abstract_elem in abstract_elems:
-                                lang = abstract_elem.attrib.get("lang")
-
-                                # Encontrar todos os <p> dentro do abstract
-                                p_elems = _find_all_by_local_name(abstract_elem, "p")
-                                paragraphs = []
-                                for p_elem in p_elems:
-                                    if p_elem.text:
-                                        paragraphs.append(p_elem.text.strip())
-
-                                text = " ".join(paragraphs).strip()
-
-                                if text:
-                                    # Preferir lang="en", senão usar o primeiro disponível
-                                    if lang == "en":
-                                        abstract_text = text
-                                        break
-                                    elif abstract_text is None:
-                                        abstract_text = text
-
-                            result = {
-                                "family_id": family_id,
-                                "country": country,
-                                "doc_number": doc_number,
-                                "kind": kind,
-                                "publication_date": publication_date,
-                                "docdb_id": docdb_id,
-                                "abstract": abstract_text,
-                                "raw": ET.tostring(exchange_doc, encoding="unicode"),
-                            }
+                            # Extrair campos estruturados usando helper XML
+                            result = self._extract_biblio_fields_xml(exchange_doc)
                             results.append(result)
 
                         logger.info(
