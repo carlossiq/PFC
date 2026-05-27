@@ -614,13 +614,128 @@ class OPSService:
                 )
 
                 try:
-                    # Tentar JSON primeiro
+                    # Tentar JSON primeiro (OPS retorna JSON serializado de XML)
                     data = response.json()
                     logger.info("ops_search_abstract_response_format", format="json", data_keys=list(data.keys()) if isinstance(data, dict) else type(data).__name__)
 
+                    # Parser para JSON serializado de XML do OPS
+                    world_patent_data = data.get("ops:world-patent-data", {})
+                    biblio_search = world_patent_data.get("ops:biblio-search", {})
+
+                    # Extrair total count
+                    total_count_str = biblio_search.get("@total-result-count")
+                    if total_count_str:
+                        total_count = int(total_count_str)
+                        logger.info(
+                            "ops_search_abstract_json_total_count",
+                            total_count=total_count,
+                        )
+
+                    # Extrair search-result que contém os documentos
+                    search_result = biblio_search.get("ops:search-result", {})
+
+                    # search-result contém exchange-documents (pode ser list ou dict)
+                    exchange_documents_container = search_result.get("exchange-documents", [])
+
+                    if not isinstance(exchange_documents_container, list):
+                        exchange_documents_container = [exchange_documents_container] if exchange_documents_container else []
+
+                    logger.info(
+                        "ops_search_abstract_json_exchange_documents_found",
+                        count=len(exchange_documents_container),
+                    )
+
+                    results = []
+
+                    for container in exchange_documents_container:
+                        # Cada container tem um exchange-document dentro
+                        exchange_doc = container.get("exchange-document", {})
+
+                        if not exchange_doc:
+                            continue
+
+                        family_id = exchange_doc.get("@family-id")
+
+                        # Extrair publication-reference
+                        biblio_data = exchange_doc.get("bibliographic-data", {})
+                        pub_ref = biblio_data.get("publication-reference", {})
+
+                        # Extrair document-id com type docdb
+                        doc_ids = pub_ref.get("document-id", [])
+                        if not isinstance(doc_ids, list):
+                            doc_ids = [doc_ids] if doc_ids else []
+
+                        country = None
+                        doc_number = None
+                        kind = None
+                        publication_date = None
+
+                        for doc_id in doc_ids:
+                            if doc_id.get("@document-id-type") == "docdb":
+                                country = doc_id.get("country", {}).get("$")
+                                doc_number = doc_id.get("doc-number", {}).get("$")
+                                kind = doc_id.get("kind", {}).get("$")
+                                publication_date = doc_id.get("date", {}).get("$")
+                                break
+
+                        docdb_id = (
+                            f"{country}.{doc_number}.{kind}"
+                            if country and doc_number and kind
+                            else None
+                        )
+
+                        # Extrair abstract (preferir lang="en")
+                        abstract_text = None
+                        abstract_elems = exchange_doc.get("abstract", [])
+                        if not isinstance(abstract_elems, list):
+                            abstract_elems = [abstract_elems] if abstract_elems else []
+
+                        for abstract_elem in abstract_elems:
+                            lang = abstract_elem.get("@lang")
+                            p_elems = abstract_elem.get("p", [])
+
+                            if not isinstance(p_elems, list):
+                                p_elems = [p_elems] if p_elems else []
+
+                            paragraphs = []
+                            for p_elem in p_elems:
+                                if isinstance(p_elem, dict):
+                                    text = p_elem.get("$", "")
+                                else:
+                                    text = str(p_elem)
+                                if text:
+                                    paragraphs.append(text.strip())
+
+                            text = " ".join(paragraphs).strip()
+
+                            if text:
+                                if lang == "en":
+                                    abstract_text = text
+                                    break
+                                elif abstract_text is None:
+                                    abstract_text = text
+
+                        result = {
+                            "family_id": family_id,
+                            "country": country,
+                            "doc_number": doc_number,
+                            "kind": kind,
+                            "publication_date": publication_date,
+                            "docdb_id": docdb_id,
+                            "abstract": abstract_text,
+                            "raw": json.dumps(exchange_doc),
+                        }
+                        results.append(result)
+
+                        logger.debug(
+                            "ops_search_abstract_json_document_parsed",
+                            docdb_id=docdb_id,
+                            has_abstract=abstract_text is not None,
+                        )
+
                 except (json.JSONDecodeError, ValueError) as json_error:
-                    # API retorna XML - fazer parsing com namespace-agnostic
-                    logger.info("ops_search_abstract_response_format", format="xml", json_error=str(json_error))
+                    # Se JSON falhar, tentar como XML
+                    logger.info("ops_search_abstract_response_format", format="xml_fallback", json_error=str(json_error))
 
                     try:
                         root = ET.fromstring(response.text)
