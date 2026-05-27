@@ -229,10 +229,10 @@ class OPSService:
         run_id: Optional[str] = None,
     ) -> SearchResult:
         """
-        Executa busca em OPS usando endpoint /search/abstract que já retorna abstracts.
+        Executa busca em OPS usando endpoint /search/biblio que já retorna dados bibliográficos completos.
 
         Muito mais eficiente que search + enrich, pois uma única requisição
-        retorna todos os dados necessários.
+        retorna todos os dados necessários (abstracts, títulos, etc).
 
         Args:
             query: Query dict com 'query' (CQL string).
@@ -259,7 +259,7 @@ class OPSService:
                     run_id=run_id,
                 )
 
-            # Executar busca com retry usando endpoint /search/abstract
+            # Executar busca com retry usando endpoint /search/biblio
             return await self._search_abstract_with_retry(query, top_k, run_id, start_time)
 
         except Exception as exc:
@@ -558,10 +558,10 @@ class OPSService:
         start_time: float,
     ) -> SearchResult:
         """
-        Executa busca no endpoint /search/abstract com retry logic.
+        Executa busca no endpoint /search/biblio com retry logic.
 
-        Este endpoint retorna resultados já com abstracts, eliminando a necessidade
-        de enriquecimento posterior. Usa header X-OPS-Range para controlar quantos.
+        Este endpoint retorna resultados já com dados bibliográficos (abstracts, títulos, etc),
+        eliminando a necessidade de enriquecimento posterior. Usa header X-OPS-Range para controlar quantos.
 
         Args:
             query: Query dict com 'query' (CQL string).
@@ -583,8 +583,8 @@ class OPSService:
                     run_id=run_id,
                 )
 
-                # Construir URL com /search/abstract em vez de /search
-                url = f"{self._OPS_API_URL}/published-data/search/abstract"
+                # Construir URL com /search/biblio em vez de /search
+                url = f"{self._OPS_API_URL}/published-data/search/biblio"
                 cql_query = query.get("query", "")
 
                 # Header X-OPS-Range controla quantos resultados retornar
