@@ -697,10 +697,11 @@ class TermExtractor:
         1. Extract title and abstract separately from each result
         2. Clean and tokenize into n-grams with source tracking
         3. Score with KeyBERT (semantic) and TF-IDF (statistical)
-        4. Apply configurable weights: title (default 3.0) vs abstract (default 1.0)
-        5. Combine scores
-        6. Remove original terms and generic terms
-        7. Rank by combined weighted score
+        4. Normalize scores separately: KeyBERT and TF-IDF to 0-1 scale
+        5. Combine scores: 60% TF-IDF + 40% KeyBERT, weighted by source
+        6. Apply configurable weights: title (default 3.0) vs abstract (default 1.0)
+        7. Remove original terms and generic terms
+        8. Rank by combined weighted score
 
         Args:
             original_params: Original search parameters
@@ -819,23 +820,39 @@ class TermExtractor:
         tfidf_title_scores = self._extract_tfidf_scores(title_texts, unique_ngrams) if title_texts else {}
         tfidf_abstract_scores = self._extract_tfidf_scores(abstract_texts, unique_ngrams) if abstract_texts else {}
 
-        # Combine scores: 60% KeyBERT, 40% TF-IDF, weighted by source (title vs abstract)
-        w_keybert = 0.6
-        w_tfidf = 0.4
+        # Normalize scores separately (0-1 scale) to avoid scale mismatch
+        # TF-IDF scores are already normalized in _extract_tfidf_scores
+        # KeyBERT scores need normalization to match TF-IDF scale
+        def normalize_scores(scores_dict: dict[str, float]) -> dict[str, float]:
+            """Normalize scores to 0-1 range."""
+            if not scores_dict:
+                return {}
+            max_score = max(scores_dict.values()) if scores_dict else 1.0
+            if max_score == 0:
+                return scores_dict
+            return {term: score / max_score for term, score in scores_dict.items()}
+
+        # Normalize KeyBERT scores separately for title and abstract
+        keybert_title_scores = normalize_scores(keybert_title_scores)
+        keybert_abstract_scores = normalize_scores(keybert_abstract_scores)
+
+        # Combine scores: 60% TF-IDF + 40% KeyBERT, weighted by source (title vs abstract)
+        w_tfidf = 0.6
+        w_keybert = 0.4
 
         combined_scores = {}
         score_adjustments = {}  # Store bonus/penalty for transparency
 
         for ngram in unique_ngrams:
-            # Title contribution (combine KeyBERT and TF-IDF without weight yet)
+            # Title contribution (combine normalized TF-IDF and KeyBERT)
             title_keybert = keybert_title_scores.get(ngram, 0.0)
             title_tfidf = tfidf_title_scores.get(ngram, 0.0)
-            title_combined = w_keybert * title_keybert + w_tfidf * title_tfidf
+            title_combined = w_tfidf * title_tfidf + w_keybert * title_keybert
 
-            # Abstract contribution (combine KeyBERT and TF-IDF without weight yet)
+            # Abstract contribution (combine normalized TF-IDF and KeyBERT)
             abstract_keybert = keybert_abstract_scores.get(ngram, 0.0)
             abstract_tfidf = tfidf_abstract_scores.get(ngram, 0.0)
-            abstract_combined = w_keybert * abstract_keybert + w_tfidf * abstract_tfidf
+            abstract_combined = w_tfidf * abstract_tfidf + w_keybert * abstract_keybert
 
             # Final score: apply weights during weighted average calculation
             if title_combined > 0 and abstract_combined > 0:
