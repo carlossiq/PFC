@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     # Query Complexity Configuration
     llm_max_query_complexity: float = 0.6
 
+    # Term Extraction Configuration
+    term_extraction_title_weight: float = 3.0  # Peso para termos extraídos de títulos
+    term_extraction_abstract_weight: float = 1.0  # Peso para termos extraídos de abstracts
+
     # Feature flags - APIs habilitadas (busca final)
     lens_patent_enabled: bool = True
     lens_scholarly_enabled: bool = True

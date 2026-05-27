@@ -242,12 +242,13 @@ class TermExtractor:
         Extract and rank relevant terms from enriched results.
 
         Process:
-        1. Combine title + abstract from each result
-        2. Clean and tokenize into n-grams
+        1. Extract title and abstract separately from each result
+        2. Clean and tokenize into n-grams with source tracking
         3. Score with KeyBERT (semantic) and TF-IDF (statistical)
-        4. Combine scores
-        5. Remove original terms and generic terms
-        6. Rank by combined score
+        4. Apply configurable weights: title (default 3.0) vs abstract (default 1.0)
+        5. Combine scores
+        6. Remove original terms and generic terms
+        7. Rank by combined weighted score
 
         Args:
             original_params: Original search parameters
@@ -257,12 +258,19 @@ class TermExtractor:
         Returns:
             List of terms with scores, ordered by relevance
         """
+        from core.config import settings
+
         # Normalize original parameters
         original_terms = self._normalize_original_params(original_params)
 
-        # Extract texts from results
-        texts = []
-        text_to_result = {}  # Track which result each text comes from
+        # Extract title and abstract weights from config
+        title_weight = getattr(settings, "term_extraction_title_weight", 3.0)
+        abstract_weight = getattr(settings, "term_extraction_abstract_weight", 1.0)
+
+        # Extract texts from results (separated by source)
+        title_texts = []
+        abstract_texts = []
+        text_to_result = {}
 
         for idx, result in enumerate(enriched_results):
             biblio = result.get("biblio", {})
@@ -270,39 +278,57 @@ class TermExtractor:
             if not biblio:
                 continue
 
-            title = biblio.get("title", "")
+            title = biblio.get("invention_title", "") or biblio.get("title", "")
             abstract = biblio.get("abstract", "")
 
             if not title and not abstract:
                 continue
 
-            combined_text = f"{title} {abstract}"
-            cleaned = self._clean_text(combined_text)
+            # Process title separately
+            if title:
+                cleaned_title = self._clean_text(title)
+                title_texts.append(cleaned_title)
+                text_to_result[cleaned_title] = {
+                    "source": "title",
+                    "publication_number": result.get("publication_number"),
+                }
 
-            texts.append(cleaned)
-            text_to_result[cleaned] = {
-                "publication_number": result.get("publication_number"),
-                "has_title": bool(title),
-                "has_abstract": bool(abstract),
-            }
+            # Process abstract separately
+            if abstract:
+                cleaned_abstract = self._clean_text(abstract)
+                abstract_texts.append(cleaned_abstract)
+                text_to_result[cleaned_abstract] = {
+                    "source": "abstract",
+                    "publication_number": result.get("publication_number"),
+                }
 
-        if not texts:
+        # Combine all texts for unified n-gram extraction
+        all_texts = title_texts + abstract_texts
+        if not all_texts:
             return []
 
         # Extract n-grams from all texts
         all_ngrams = []
         ngram_frequency = Counter()
-        ngram_sources = {}
+        ngram_sources = {}  # Track which sources each ngram comes from
 
-        for text in texts:
+        for text in title_texts:
             ngrams = self._tokenize_ngrams(text)
             all_ngrams.extend(ngrams)
             ngram_frequency.update(ngrams)
-
             for ngram in ngrams:
                 if ngram not in ngram_sources:
-                    ngram_sources[ngram] = {"title": 0, "abstract": 0, "count": 0}
-                ngram_sources[ngram]["count"] += 1
+                    ngram_sources[ngram] = {"title": 0, "abstract": 0}
+                ngram_sources[ngram]["title"] += 1
+
+        for text in abstract_texts:
+            ngrams = self._tokenize_ngrams(text)
+            all_ngrams.extend(ngrams)
+            ngram_frequency.update(ngrams)
+            for ngram in ngrams:
+                if ngram not in ngram_sources:
+                    ngram_sources[ngram] = {"title": 0, "abstract": 0}
+                ngram_sources[ngram]["abstract"] += 1
 
         unique_ngrams = list(set(all_ngrams))
 
@@ -312,26 +338,42 @@ class TermExtractor:
         logger.info(
             "term_extraction_ngrams_extracted",
             total_ngrams=len(unique_ngrams),
-            total_documents=len(texts),
+            title_documents=len(title_texts),
+            abstract_documents=len(abstract_texts),
         )
 
-        # Extract KeyBERT scores
-        keybert_scores = self._extract_keybert_scores(texts, unique_ngrams)
+        # Extract KeyBERT scores separately for title and abstract
+        keybert_title_scores = self._extract_keybert_scores(title_texts, unique_ngrams) if title_texts else {}
+        keybert_abstract_scores = self._extract_keybert_scores(abstract_texts, unique_ngrams) if abstract_texts else {}
 
-        # Extract TF-IDF scores
-        tfidf_scores = self._extract_tfidf_scores(texts, unique_ngrams)
+        # Extract TF-IDF scores separately for title and abstract
+        tfidf_title_scores = self._extract_tfidf_scores(title_texts, unique_ngrams) if title_texts else {}
+        tfidf_abstract_scores = self._extract_tfidf_scores(abstract_texts, unique_ngrams) if abstract_texts else {}
 
-        # Combine scores: 60% KeyBERT, 40% TF-IDF
+        # Combine scores: 60% KeyBERT, 40% TF-IDF, weighted by source (title vs abstract)
         w_keybert = 0.6
         w_tfidf = 0.4
 
         combined_scores = {}
         for ngram in unique_ngrams:
-            keybert = keybert_scores.get(ngram, 0.0)
-            tfidf = tfidf_scores.get(ngram, 0.0)
+            # Title contribution
+            title_keybert = keybert_title_scores.get(ngram, 0.0)
+            title_tfidf = tfidf_title_scores.get(ngram, 0.0)
+            title_combined = w_keybert * title_keybert + w_tfidf * title_tfidf
+            title_score = title_combined * title_weight if title_combined > 0 else 0
 
-            combined = w_keybert * keybert + w_tfidf * tfidf
-            combined_scores[ngram] = combined
+            # Abstract contribution
+            abstract_keybert = keybert_abstract_scores.get(ngram, 0.0)
+            abstract_tfidf = tfidf_abstract_scores.get(ngram, 0.0)
+            abstract_combined = w_keybert * abstract_keybert + w_tfidf * abstract_tfidf
+            abstract_score = abstract_combined * abstract_weight if abstract_combined > 0 else 0
+
+            # Final score: average if present in both, or just the source that has it
+            sources_count = (1 if title_score > 0 else 0) + (1 if abstract_score > 0 else 0)
+            if sources_count == 2:
+                combined_scores[ngram] = (title_score + abstract_score) / 2
+            else:
+                combined_scores[ngram] = title_score + abstract_score
 
         # Filter out original terms
         filtered_ngrams = [
@@ -356,16 +398,24 @@ class TermExtractor:
         # Build result objects with all scores
         result_terms = []
         for term in ranked_terms:
+            sources = ngram_sources.get(term, {})
+            source_list = []
+            if sources.get("title", 0) > 0:
+                source_list.append("title")
+            if sources.get("abstract", 0) > 0:
+                source_list.append("abstract")
+
             result_terms.append({
                 "term": term,
                 "score": round(combined_scores.get(term, 0), 3),
-                "keybert_score": round(keybert_scores.get(term, 0), 3),
-                "tf_idf_score": round(tfidf_scores.get(term, 0), 3),
+                "keybert_score_title": round(keybert_title_scores.get(term, 0), 3) if title_texts else None,
+                "keybert_score_abstract": round(keybert_abstract_scores.get(term, 0), 3) if abstract_texts else None,
+                "tf_idf_score_title": round(tfidf_title_scores.get(term, 0), 3) if title_texts else None,
+                "tf_idf_score_abstract": round(tfidf_abstract_scores.get(term, 0), 3) if abstract_texts else None,
                 "frequency": ngram_frequency.get(term, 0),
-                "sources": [
-                    "title" if "title" in text_to_result.get(t, {}) else "abstract"
-                    for t in texts
-                ],
+                "sources": source_list,
+                "title_weight": title_weight,
+                "abstract_weight": abstract_weight,
             })
 
         logger.info(
@@ -373,6 +423,8 @@ class TermExtractor:
             total_unique_terms=len(unique_ngrams),
             filtered_terms=len(filtered_ngrams),
             returned_top_k=len(result_terms),
+            title_weight=title_weight,
+            abstract_weight=abstract_weight,
         )
 
         return result_terms
