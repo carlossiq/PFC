@@ -81,7 +81,6 @@ async def check_ops_token_status() -> dict[str, Any]:
         await ops_service._ensure_valid_token()
 
         if not ops_service.token:
-            logger.warning("ops_token_check_no_token")
             return {
                 "success": False,
                 "error": "Failed to obtain OPS token - check consumer_key and consumer_secret",

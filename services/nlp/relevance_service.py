@@ -211,7 +211,6 @@ class RelevanceService:
             )
 
             if doc_embedding is None:
-                logger.debug(f"Failed to embed document {doc.get('id')}")
                 continue
 
             # Computar score

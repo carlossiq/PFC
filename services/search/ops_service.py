@@ -709,12 +709,6 @@ class OPSService:
                         }
                         results.append(result)
 
-                        logger.debug(
-                            "ops_search_abstract_json_document_parsed",
-                            docdb_id=docdb_id,
-                            has_abstract=abstract_text is not None,
-                        )
-
                 except (json.JSONDecodeError, ValueError) as json_error:
                     # Se JSON falhar, tentar como XML
                     logger.info("ops_search_abstract_response_format", format="xml_fallback", json_error=str(json_error))
@@ -820,14 +814,6 @@ class OPSService:
                                     date_elem.text.strip()
                                     if date_elem is not None and date_elem.text
                                     else None
-                                )
-
-                                logger.debug(
-                                    "ops_search_abstract_document_extracted",
-                                    index=idx,
-                                    country=country,
-                                    doc_number=doc_number,
-                                    kind=kind,
                                 )
 
                             docdb_id = (
@@ -1148,11 +1134,8 @@ class OPSService:
                     if name:
                         result["applicants"].append(name)
 
-        except Exception as exc:
-            logger.debug(
-                "biblio_extraction_failed",
-                error=str(exc),
-            )
+        except Exception:
+            pass
 
         return result
 

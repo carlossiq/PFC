@@ -114,7 +114,6 @@ class RAGService:
             for doc_idx, doc in enumerate(documents):
                 text = doc.get("text", "")
                 if not text:
-                    logger.warning("document_missing_text", doc_index=doc_idx)
                     continue
 
                 # Extract metadata
@@ -136,7 +135,6 @@ class RAGService:
                     chunk_count += 1
 
             if not all_chunks:
-                logger.warning("no_chunks_to_index")
                 return 0
 
             # Add to ChromaDB with auto-generated embeddings
@@ -181,7 +179,6 @@ class RAGService:
             )
 
             if not results["documents"] or not results["documents"][0]:
-                logger.warning("no_results_found", query_length=len(query_text))
                 return []
 
             # Format results
@@ -231,7 +228,6 @@ class RAGService:
             results = await self.query(query_text, top_k=top_k)
 
             if not results:
-                logger.warning("no_context_found", section=section_name)
                 return ""
 
             # Format context

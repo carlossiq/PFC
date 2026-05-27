@@ -104,7 +104,6 @@ class PromptLoader:
         """
         # Verificar cache
         if filename in PromptLoader._cache:
-            logger.debug(f"prompt_loaded_from_cache", filename=filename)
             return PromptLoader._cache[filename]
 
         # Construir caminho

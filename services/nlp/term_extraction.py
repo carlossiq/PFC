@@ -287,7 +287,6 @@ class TermExtractor:
             }
 
         if not texts:
-            logger.warning("term_extraction_no_texts")
             return []
 
         # Extract n-grams from all texts
@@ -308,7 +307,6 @@ class TermExtractor:
         unique_ngrams = list(set(all_ngrams))
 
         if not unique_ngrams:
-            logger.warning("term_extraction_no_ngrams")
             return []
 
         logger.info(

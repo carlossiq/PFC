@@ -66,18 +66,10 @@ class EmbeddingService:
             return None
 
         if not self.model:
-            logger.warning("Embedding model not available")
             return None
 
         try:
             embedding = self.model.encode(text, convert_to_numpy=True)
-
-            logger.debug(
-                "text_embedded",
-                text_length=len(text),
-                embedding_shape=embedding.shape,
-            )
-
             return embedding
 
         except Exception as exc:

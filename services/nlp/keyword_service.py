@@ -71,7 +71,6 @@ class KeywordService:
             return []
 
         if not self.model:
-            logger.warning("KeyBERT model not available, returning empty keywords")
             return []
 
         top_k = top_k or self.top_k
@@ -83,12 +82,6 @@ class KeywordService:
                 top_n=top_k,
                 min_df=min_df,
                 max_df=max_df,
-            )
-
-            logger.debug(
-                "keywords_extracted",
-                text_length=len(text),
-                keywords_count=len(keywords),
             )
 
             return keywords
@@ -154,13 +147,6 @@ class KeywordService:
                 key=lambda x: x[1],
                 reverse=True,
             )
-
-        logger.debug(
-            "document_keywords_extracted",
-            title_keywords=len(results["title"]),
-            abstract_keywords=len(results["abstract"]),
-            combined_keywords=len(results["combined"]),
-        )
 
         return results
 
