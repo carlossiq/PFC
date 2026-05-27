@@ -378,4 +378,3 @@ class FieldSchemaService:
         Invalida cache de campos.
         """
         self.cache.clear()
-        logger.info("fields_cache_invalidated")

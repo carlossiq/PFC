@@ -194,8 +194,6 @@ class ReportService:
             # Format section
             formatted_section = f"## {section_name}\n\n{section_text}"
 
-            logger.info("section_generated", section=section_name, length=len(section_text))
-
             return formatted_section
 
         except Exception as exc:

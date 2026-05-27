@@ -74,21 +74,12 @@ async def test_probe_search(
     run_id = str(uuid.uuid4())
 
     try:
-        logger.info(
-            "probe_search_test_started",
-            run_id=run_id,
-            theme=request.theme,
-        )
-
         # Etapa 1: Criar InputIntake a partir da requisição
         intake = InputIntake(
             theme=request.theme,
             objective=request.objective or request.theme,
             initial_keywords=request.initial_keywords or [request.theme],
         )
-
-        logger.info("probe_search_intake_created", run_id=run_id)
-
         # Etapa 2: Gerar estratégia via LLM
         llm_service = LLMServiceFactory.get_instance()
         field_schema_service = FieldSchemaService()
@@ -99,13 +90,6 @@ async def test_probe_search(
         # Obter campos dinâmicos para probe
         probe_fields = field_schema_service.get_fields_for_probe()
         probe_api = getattr(settings, "probe_api", "lens_patent")
-
-        logger.info(
-            "probe_search_llm_started",
-            run_id=run_id,
-            probe_api=probe_api,
-        )
-
         # Processar com LLM
         llm_output = await llm_service.process_intake(
             intake=intake,
@@ -140,24 +124,12 @@ async def test_probe_search(
 
         # Etapa 4: Executar busca
         lens_service = LensService()
-
-        logger.info("probe_search_api_started", run_id=run_id)
-
         search_result = await lens_service.search_patent(
             query=query,
             run_id=run_id,
         )
 
         lens_service.close()
-
-        logger.info(
-            "probe_search_api_completed",
-            run_id=run_id,
-            success=search_result.success,
-            documents_found=search_result.results_returned,
-            total_available=search_result.total_count,
-        )
-
         # Etapa 5: Extrair amostra de documentos
         documents_sample = []
         if search_result.success and search_result.results:
@@ -196,13 +168,6 @@ async def test_probe_search(
             },
             documents_sample=documents_sample,
         )
-
-        logger.info(
-            "probe_search_test_completed",
-            run_id=run_id,
-            success=True,
-        )
-
         return SuccessResponse(
             success=True,
             data=response_data,

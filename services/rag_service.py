@@ -88,7 +88,6 @@ class RAGService:
 
             start = end - overlap
 
-        logger.info("text_chunked", chunks_count=len(chunks), text_length=len(text))
         return chunks
 
     async def index_documents(
@@ -203,7 +202,6 @@ class RAGService:
                     }
                 )
 
-            logger.info("query_executed", results_count=len(formatted_results))
             return formatted_results
 
         except Exception as exc:

@@ -148,33 +148,25 @@ class EmbeddingService:
         # Estratégia 1: Abstract se robusto o suficiente
         if abstract and len(abstract.strip()) > 50:
             embedding = self.embed_text(abstract)
-            if embedding is not None:
-                logger.debug("embedding_from_abstract")
-                return embedding
+            if embedding is not None:                return embedding
 
         # Estratégia 2: Título + Abstract
         if title and abstract:
             combined = f"{title}. {abstract}"
             embedding = self.embed_text(combined)
-            if embedding is not None:
-                logger.debug("embedding_from_title_abstract")
-                return embedding
+            if embedding is not None:                return embedding
 
         # Estratégia 3: Apenas título
         if title:
             embedding = self.embed_text(title)
-            if embedding is not None:
-                logger.debug("embedding_from_title")
-                return embedding
+            if embedding is not None:                return embedding
 
         # Estratégia 4: Texto completo
         if full_text:
             # Truncar para primeiros 512 tokens aproximadamente
             truncated = " ".join(full_text.split()[:200])
             embedding = self.embed_text(truncated)
-            if embedding is not None:
-                logger.debug("embedding_from_full_text")
-                return embedding
+            if embedding is not None:                return embedding
 
         logger.warning("No text available for embedding")
         return None

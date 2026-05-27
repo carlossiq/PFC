@@ -140,7 +140,6 @@ class PromptLoader:
         Útil para recarregar prompts atualizados sem reiniciar a aplicação.
         """
         PromptLoader._cache.clear()
-        logger.info("prompt_cache_cleared")
 
     @staticmethod
     def get_cached_prompts() -> dict[str, str]:
