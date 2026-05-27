@@ -48,11 +48,19 @@ class TermExtractor:
         self.bad_pos_trigrams = []
         self.ngram_boundary_pos = set()
 
+        # Initialize quality filter configs
+        self.boundary_stopwords = set()
+        self.patent_structural_words = set()
+        self.scholarly_structural_words = set()
+
         # Load spaCy model (required)
         self._load_spacy_model()
 
         # Load n-gram boundary tokens
         self._load_ngram_boundary_tokens()
+
+        # Load quality filters
+        self._load_quality_filter_config()
 
         if not self.keybert:
             try:
@@ -136,6 +144,33 @@ class TermExtractor:
             self.bad_pos_trigrams = []
             self.ngram_boundary_pos = set()
 
+    def _load_quality_filter_config(self) -> None:
+        """Load string quality filter rules (boundary stopwords, structural words)."""
+        try:
+            config_path = Path(__file__).parent.parent.parent / "config" / "string_quality_filter.json"
+            with open(config_path, "r", encoding="utf-8") as f:
+                quality_config = json.load(f)
+
+            # Load filter word sets
+            filters = quality_config.get("string_quality_filters", {})
+            self.boundary_stopwords = set(w.lower() for w in filters.get("boundary_stopwords", {}).get("words", []))
+            self.patent_structural_words = set(w.lower() for w in filters.get("patent_structural_words", {}).get("words", []))
+            self.scholarly_structural_words = set(w.lower() for w in filters.get("scholarly_structural_words", {}).get("words", []))
+
+            logger.info(
+                "quality_filter_config_loaded",
+                boundary_stopwords=len(self.boundary_stopwords),
+                patent_words=len(self.patent_structural_words),
+                scholarly_words=len(self.scholarly_structural_words),
+            )
+        except Exception as e:
+            logger.warning(
+                "quality_filter_config_load_failed",
+                error=str(e),
+            )
+            self.boundary_stopwords = set()
+            self.patent_structural_words = set()
+            self.scholarly_structural_words = set()
 
     def _clean_text(self, text: str) -> str:
         """
@@ -540,6 +575,115 @@ class TermExtractor:
 
         return bonus, penalty
 
+    def _apply_quality_filters(self, candidate_terms: list[str]) -> list[str]:
+        """
+        Apply string quality filters to remove low-quality terms.
+
+        Removes terms that:
+        1. Start or end with boundary stopwords (a, an, the, of, etc.)
+        2. Contain patent structural words (wherein, comprising, said, etc.)
+        3. Contain scholarly structural words (proposed, analyzed, novel, etc.)
+
+        Args:
+            candidate_terms: List of terms to filter
+
+        Returns:
+            List of terms that pass quality checks
+        """
+        filtered_terms = []
+
+        for term in candidate_terms:
+            term_lower = term.lower()
+            words = term_lower.split()
+
+            # Check boundary stopwords (start or end)
+            if words and (words[0] in self.boundary_stopwords or words[-1] in self.boundary_stopwords):
+                continue
+
+            # Check patent structural words (anywhere in term)
+            if any(word in self.patent_structural_words for word in words):
+                continue
+
+            # Check scholarly structural words (anywhere in term)
+            if any(word in self.scholarly_structural_words for word in words):
+                continue
+
+            # Term passes all quality filters
+            filtered_terms.append(term)
+
+        return filtered_terms
+
+    def _calculate_mmr_ranking(
+        self,
+        candidates: list[str],
+        scores: dict[str, float],
+        lambda_param: float = 0.6,
+        top_k: int = 20,
+    ) -> list[str]:
+        """
+        Rank terms using Maximal Marginal Relevance (MMR).
+
+        MMR = lambda * relevance_score - (1 - lambda) * max_similarity_to_selected
+
+        Balances relevance with diversity. With lambda=0.6:
+        - 60% weight on relevance (high-scoring terms)
+        - 40% weight on diversity (avoiding similar terms)
+
+        Args:
+            candidates: List of candidate terms to rank
+            scores: Dict mapping term -> relevance_score
+            lambda_param: Weight for relevance vs diversity (0-1)
+            top_k: Number of top terms to return
+
+        Returns:
+            List of top-k terms ranked by MMR
+        """
+        if not candidates or top_k <= 0:
+            return []
+
+        # Use Jaccard similarity for word overlap diversity
+        def jaccard_similarity(term_a: str, term_b: str) -> float:
+            words_a = set(term_a.lower().split())
+            words_b = set(term_b.lower().split())
+            if not words_a or not words_b:
+                return 0.0
+            intersection = len(words_a & words_b)
+            union = len(words_a | words_b)
+            return intersection / union if union > 0 else 0.0
+
+        selected = []
+        remaining = set(candidates)
+
+        # Iteratively select top-k terms by MMR
+        for _ in range(min(top_k, len(candidates))):
+            best_term = None
+            best_mmr = float("-inf")
+
+            for candidate in remaining:
+                relevance = scores.get(candidate, 0.0)
+
+                # Calculate diversity penalty: max similarity to any already selected term
+                if selected:
+                    max_similarity = max(jaccard_similarity(candidate, term) for term in selected)
+                else:
+                    max_similarity = 0.0
+
+                # MMR score = lambda * relevance - (1 - lambda) * diversity_penalty
+                mmr = lambda_param * relevance - (1 - lambda_param) * max_similarity
+
+                if mmr > best_mmr:
+                    best_mmr = mmr
+                    best_term = candidate
+
+            # Add best term to selected and remove from remaining
+            if best_term is not None:
+                selected.append(best_term)
+                remaining.remove(best_term)
+            else:
+                break
+
+        return selected
+
     def extract_and_rank_terms(
         self,
         original_params: dict[str, Any],
@@ -730,12 +874,22 @@ class TermExtractor:
             original_terms_removed=len(unique_ngrams) - len(filtered_ngrams),
         )
 
-        # Sort by combined score
-        ranked_terms = sorted(
-            filtered_ngrams,
-            key=lambda x: combined_scores.get(x, 0),
-            reverse=True,
-        )[:top_k]
+        # Apply string quality filters (remove boilerplate/structural words)
+        filtered_ngrams = self._apply_quality_filters(filtered_ngrams)
+
+        logger.info(
+            "term_extraction_quality_filtered",
+            remaining_terms=len(filtered_ngrams),
+        )
+
+        # Rank by MMR (Maximal Marginal Relevance) with lambda=0.6
+        # Balances relevance (60%) with diversity (40%)
+        ranked_terms = self._calculate_mmr_ranking(
+            candidates=filtered_ngrams,
+            scores=combined_scores,
+            lambda_param=0.6,
+            top_k=top_k,
+        )
 
         # Build result objects with all scores
         result_terms = []

@@ -1,0 +1,43 @@
+{
+  "string_quality_filters": {
+    "boundary_stopwords": {
+      "description": "Remove terms that start or end with these words",
+      "words": [
+        "a", "an", "the", "and", "or", "of", "in", "on", "at", "to",
+        "for", "with", "by", "from", "is", "are", "was", "were", "be",
+        "been", "being", "have", "has", "had", "do", "does", "did",
+        "will", "would", "could", "should", "may", "might", "shall",
+        "this", "that", "these", "those", "it", "its", "as", "up",
+        "free", "standing", "based", "related", "high", "low", "new",
+        "good", "such", "each", "both", "about", "into", "through"
+      ]
+    },
+    "patent_structural_words": {
+      "description": "Remove terms containing these patent language words anywhere in the term",
+      "words": [
+        "wherein", "comprising", "comprises", "comprised",
+        "said", "first", "second", "third", "fourth",
+        "opposing", "planar", "having", "thereof",
+        "therein", "whereby", "herein", "thereby",
+        "configured", "adapted", "provided", "disposed",
+        "coupled", "connected", "attached", "formed",
+        "plurality", "substantially", "approximately"
+      ]
+    },
+    "scholarly_structural_words": {
+      "description": "Remove terms containing these academic/scientific writing words anywhere in the term",
+      "words": [
+        "proposed", "presented", "described", "discussed", "studied",
+        "investigated", "analyzed", "examined", "evaluated", "assessed",
+        "demonstrated", "showed", "found", "observed", "reported",
+        "novel", "new", "improved", "enhanced", "efficient", "effective",
+        "significant", "important", "relevant", "various", "several",
+        "different", "specific", "particular", "general", "overall",
+        "results", "findings", "conclusion", "approach", "method",
+        "technique", "framework", "model", "system", "process",
+        "based", "using", "used", "via", "among", "between",
+        "compared", "contrast", "addition", "furthermore", "however"
+      ]
+    }
+  }
+}
