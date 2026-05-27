@@ -605,59 +605,27 @@ class OPSService:
                 results = []
                 total_count = None
 
-                logger.info(
-                    "ops_search_abstract_response_received",
-                    status_code=response.status_code,
-                    content_type=response.headers.get("content-type"),
-                    response_length=len(response.text),
-                    response_sample=response.text[:2000],
-                )
-
                 try:
                     # Tentar JSON primeiro (OPS retorna JSON serializado de XML)
                     data = response.json()
-                    logger.info("ops_search_abstract_response_format", format="json", data_keys=list(data.keys()) if isinstance(data, dict) else type(data).__name__)
 
                     # Parser para JSON serializado de XML do OPS
                     world_patent_data = data.get("ops:world-patent-data", {})
-                    logger.info(
-                        "ops_search_abstract_json_world_patent_data",
-                        keys=list(world_patent_data.keys()),
-                    )
-
                     biblio_search = world_patent_data.get("ops:biblio-search", {})
-                    logger.info(
-                        "ops_search_abstract_json_biblio_search",
-                        keys=list(biblio_search.keys()) if biblio_search else [],
-                    )
 
                     # Extrair total count
                     total_count_str = biblio_search.get("@total-result-count")
                     if total_count_str:
                         total_count = int(total_count_str)
-                        logger.info(
-                            "ops_search_abstract_json_total_count",
-                            total_count=total_count,
-                        )
 
                     # Extrair search-result que contém os documentos
                     search_result = biblio_search.get("ops:search-result", {})
-                    logger.info(
-                        "ops_search_abstract_json_search_result",
-                        keys=list(search_result.keys()) if search_result else [],
-                    )
 
                     # search-result contém exchange-documents (pode ser list ou dict)
                     exchange_documents_container = search_result.get("exchange-documents", [])
 
                     if not isinstance(exchange_documents_container, list):
                         exchange_documents_container = [exchange_documents_container] if exchange_documents_container else []
-
-                    logger.info(
-                        "ops_search_abstract_json_exchange_documents_found",
-                        count=len(exchange_documents_container),
-                        exchange_docs_type=type(exchange_documents_container).__name__,
-                    )
 
                     results = []
 
