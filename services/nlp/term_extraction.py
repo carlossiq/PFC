@@ -43,11 +43,20 @@ class TermExtractor:
         self.doc_type = doc_type
         self.nlp = None
 
+        # Initialize boundary configs (will be loaded properly later)
+        self.ngram_boundary_tokens = set()
+        self.bad_pos_bigrams = []
+        self.bad_pos_trigrams = []
+        self.ngram_boundary_pos = set()
+
         # Load config with stopwords and penalties
         self._load_stopwords_config()
 
         # Load spaCy model
         self._load_spacy_model()
+
+        # Load n-gram boundary tokens
+        self._load_ngram_boundary_tokens()
 
         if not self.keybert:
             try:
@@ -80,8 +89,30 @@ class TermExtractor:
         # Load POS patterns config
         self._load_pos_patterns_config()
 
+    def _load_ngram_boundary_tokens(self) -> None:
+        """Load n-gram boundary tokens that split n-grams when encountered."""
+        try:
+            config_path = Path(__file__).parent.parent.parent / "config" / "ngram_boundary_tokens.json"
+            with open(config_path, "r", encoding="utf-8") as f:
+                boundary_config = json.load(f)
+
+            self.ngram_boundary_tokens = set(
+                token.lower() for token in boundary_config.get("ngram_boundary_tokens", [])
+            )
+
+            logger.info(
+                "ngram_boundary_tokens_loaded",
+                boundary_tokens=len(self.ngram_boundary_tokens),
+            )
+        except Exception as e:
+            logger.warning(
+                "ngram_boundary_tokens_load_failed",
+                error=str(e),
+            )
+            self.ngram_boundary_tokens = set()
+
     def _load_pos_patterns_config(self) -> None:
-        """Load POS patterns (bad bigrams/trigrams) from config."""
+        """Load POS patterns (bad bigrams/trigrams) and boundary POS tags from config."""
         try:
             config_path = Path(__file__).parent.parent.parent / "config" / "pos_patterns.json"
             with open(config_path, "r", encoding="utf-8") as f:
@@ -91,10 +122,14 @@ class TermExtractor:
             self.bad_pos_bigrams = [tuple(pattern) for pattern in pos_config.get("pos_patterns", {}).get("bad_bigrams", [])]
             self.bad_pos_trigrams = [tuple(pattern) for pattern in pos_config.get("pos_patterns", {}).get("bad_trigrams", [])]
 
+            # Load boundary POS tags that split n-grams
+            self.ngram_boundary_pos = set(pos_config.get("pos_patterns", {}).get("ngram_boundary_pos", []))
+
             logger.info(
                 "pos_patterns_config_loaded",
                 bad_bigrams=len(self.bad_pos_bigrams),
                 bad_trigrams=len(self.bad_pos_trigrams),
+                boundary_pos=len(self.ngram_boundary_pos),
             )
         except Exception as e:
             logger.warning(
@@ -103,6 +138,7 @@ class TermExtractor:
             )
             self.bad_pos_bigrams = []
             self.bad_pos_trigrams = []
+            self.ngram_boundary_pos = set()
 
     def _load_stopwords_config(self) -> None:
         """Load stopwords and filtering rules from config/extract-terms.json."""
@@ -204,6 +240,10 @@ class TermExtractor:
         self.generic_verbs_penalty = set()
         self.generic_adjectives_penalty = set()
         self.top_10000_stopwords = set()
+        self.ngram_boundary_tokens = set()
+        self.bad_pos_bigrams = []
+        self.bad_pos_trigrams = []
+        self.ngram_boundary_pos = set()
 
     def _clean_text(self, text: str) -> str:
         """
@@ -320,6 +360,11 @@ class TermExtractor:
         """
         Extract sub-n-grams (n=1-3) from a noun chunk with POS cleaning.
 
+        Does not generate n-grams that:
+        - Traverse boundary tokens (defined in ngram_boundary_tokens)
+        - Contain boundary POS tags (ADP, CCONJ, SCONJ, PUNCT, SPACE)
+        - Cross punctuation marks at start/end
+
         Args:
             chunk_text: Cleaned noun chunk text
 
@@ -328,6 +373,7 @@ class TermExtractor:
         """
         if not self.nlp:
             tokens = chunk_text.split()
+            pos_tags = ["NOUN"] * len(tokens)
         else:
             try:
                 doc = self.nlp(chunk_text)
@@ -340,17 +386,66 @@ class TermExtractor:
         ngrams = []
         max_n = min(3, len(tokens))
 
-        for n in range(1, max_n + 1):
-            for i in range(len(tokens) - n + 1):
-                subngram_tokens = tokens[i : i + n]
-                if self.nlp and pos_tags:
-                    subngram_pos = pos_tags[i : i + n]
-                    subngram_tokens = self._clean_pos_tags(subngram_tokens, subngram_pos)
+        # Find segments that don't cross boundary tokens/pos
+        segments = self._split_by_boundaries(tokens, pos_tags)
 
-                if subngram_tokens and len(" ".join(subngram_tokens)) > 2:
-                    ngrams.append(" ".join(subngram_tokens))
+        # Extract n-grams from each segment
+        for segment_tokens, segment_pos in segments:
+            segment_n = min(3, len(segment_tokens))
+
+            for n in range(1, segment_n + 1):
+                for i in range(len(segment_tokens) - n + 1):
+                    subngram_tokens = segment_tokens[i : i + n]
+                    subngram_pos = segment_pos[i : i + n]
+
+                    # Clean POS tags from edges
+                    cleaned_tokens = self._clean_pos_tags(subngram_tokens, subngram_pos)
+
+                    if cleaned_tokens and len(" ".join(cleaned_tokens)) > 2:
+                        ngrams.append(" ".join(cleaned_tokens))
 
         return ngrams
+
+    def _split_by_boundaries(self, tokens: list[str], pos_tags: list[str]) -> list[tuple[list[str], list[str]]]:
+        """
+        Split token sequence by boundary tokens and POS tags.
+
+        Returns list of (tokens, pos_tags) tuples for non-boundary segments.
+
+        Args:
+            tokens: List of tokens
+            pos_tags: List of POS tags
+
+        Returns:
+            List of (segment_tokens, segment_pos) tuples
+        """
+        segments = []
+        current_segment = []
+        current_pos = []
+
+        for token, pos in zip(tokens, pos_tags):
+            # Check if this is a boundary token or POS tag
+            is_boundary = (
+                token in self.ngram_boundary_tokens
+                or pos in self.ngram_boundary_pos
+            )
+
+            if is_boundary:
+                # End current segment if not empty
+                if current_segment:
+                    segments.append((current_segment, current_pos))
+                    current_segment = []
+                    current_pos = []
+            else:
+                # Add to current segment
+                current_segment.append(token)
+                current_pos.append(pos)
+
+        # Add final segment
+        if current_segment:
+            segments.append((current_segment, current_pos))
+
+        return segments if segments else [(tokens, pos_tags)]
 
     def _tokenize_ngrams(self, text: str, n_range: tuple = (1, 3)) -> list[str]:
         """

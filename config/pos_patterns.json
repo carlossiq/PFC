@@ -1,0 +1,23 @@
+{
+"pos_patterns": {
+  "bad_bigrams": [
+    ["VERB", "VERB"],
+    ["ADV",  "VERB"],
+    ["VERB", "ADJ"],
+    ["ADJ",  "VERB"]
+  ],
+  "bad_trigrams": [
+    ["VERB", "VERB", "NOUN"],
+    ["ADV",  "VERB", "NOUN"],
+    ["ADV",  "ADJ",  "NOUN"],
+    ["VERB", "NOUN", "VERB"]
+  ],
+  "ngram_boundary_pos": [
+    "ADP",
+    "CCONJ",
+    "SCONJ",
+    "PUNCT",
+    "SPACE"
+  ]
+}
+}

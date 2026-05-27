@@ -52,9 +52,12 @@ async def test_term_extraction():
     print(f"=== EXTRACTED AND RANKED TERMS ({len(extracted_terms)}) ===\n")
 
     for idx, term_data in enumerate(extracted_terms, 1):
+        penalty = term_data.get('penalty_factor', 1.0)
         print(f"[{idx}] {term_data['term']}")
-        print(f"    Score: {term_data['score']} (KeyBERT: {term_data['keybert_score']}, TF-IDF: {term_data['tf_idf_score']})")
-        print(f"    Frequency: {term_data['frequency']} appearances")
+        print(f"    Score: {term_data['score']} (Penalty: {penalty}x)")
+        print(f"    KeyBERT: Title={term_data['keybert_score_title']}, Abstract={term_data['keybert_score_abstract']}")
+        print(f"    TF-IDF: Title={term_data['tf_idf_score_title']}, Abstract={term_data['tf_idf_score_abstract']}")
+        print(f"    Frequency: {term_data['frequency']}, Sources: {term_data['sources']}")
         print()
 
     # Show structure for LLM
