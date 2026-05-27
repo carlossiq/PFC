@@ -104,8 +104,6 @@ class ReportService:
             # Generate each section
             sections_content = []
             for section_name, section_type in REPORT_SECTIONS:
-                logger.info("generating_section", section=section_name)
-
                 try:
                     section_content = await self.generate_section(
                         section_name=section_name,
@@ -116,11 +114,6 @@ class ReportService:
                     )
                     sections_content.append(section_content)
                 except Exception as exc:
-                    logger.warning(
-                        "section_generation_failed",
-                        section=section_name,
-                        error=str(exc),
-                    )
                     # Add placeholder for failed section
                     sections_content.append(f"\n## {section_name}\n\n[Seção não gerada: {str(exc)}]\n")
 

@@ -1251,23 +1251,7 @@ class OPSService:
                     "biblio": extracted_biblio,
                 })
 
-                logger.info(
-                    "ops_result_enriched",
-                    index=idx,
-                    publication_number=publication_number,
-                    has_biblio=extracted_biblio is not None,
-                    has_title=extracted_biblio.get("title") is not None if extracted_biblio else False,
-                    has_abstract=extracted_biblio.get("abstract") is not None if extracted_biblio else False,
-                    run_id=run_id,
-                )
-
-            except Exception as exc:
-                logger.warning(
-                    "ops_enrich_result_failed",
-                    index=idx,
-                    error=str(exc),
-                    run_id=run_id,
-                )
+            except Exception:
                 enriched_results.append({
                     "raw": result,
                     "publication_number": None,
