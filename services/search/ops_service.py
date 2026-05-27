@@ -605,14 +605,22 @@ class OPSService:
                 results = []
                 total_count = None
 
+                logger.info(
+                    "ops_search_abstract_response_received",
+                    status_code=response.status_code,
+                    content_type=response.headers.get("content-type"),
+                    response_length=len(response.text),
+                    response_sample=response.text[:500],
+                )
+
                 try:
                     # Tentar JSON primeiro
                     data = response.json()
-                    logger.debug("ops_search_abstract_response_format", format="json")
+                    logger.info("ops_search_abstract_response_format", format="json", data_keys=list(data.keys()) if isinstance(data, dict) else type(data).__name__)
 
-                except (json.JSONDecodeError, ValueError):
+                except (json.JSONDecodeError, ValueError) as json_error:
                     # API retorna XML - fazer parsing com namespace-agnostic
-                    logger.debug("ops_search_abstract_response_format", format="xml")
+                    logger.info("ops_search_abstract_response_format", format="xml", json_error=str(json_error))
 
                     try:
                         root = ET.fromstring(response.text)
