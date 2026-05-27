@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     # Term Extraction Configuration
     term_extraction_title_weight: float = 3.0  # Peso para termos extraídos de títulos
     term_extraction_abstract_weight: float = 1.0  # Peso para termos extraídos de abstracts
+    term_extraction_score_threshold: float = 0.6  # Score mínimo para retornar termos
+    term_extraction_mmr_lambda: float = 0.4  # Lambda para MMR: 0.4 = 40% relevância, 60% diversidade
+    term_extraction_mmr_similarity_threshold: float = 0.5  # Pula termos >50% similares aos já selecionados
 
     # Feature flags - APIs habilitadas (busca final)
     lens_patent_enabled: bool = True

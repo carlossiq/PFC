@@ -575,6 +575,48 @@ class TermExtractor:
 
         return bonus, penalty
 
+    def _apply_subsumption_filter(
+        self,
+        ranked_terms: list[str],
+    ) -> list[str]:
+        """
+        Apply subsumption filter: remove terms that are subsets of other terms.
+
+        If "ultrafiltration membrane" appears after "composite ultrafiltration membrane",
+        remove the shorter one since it's subsumed by the longer, more specific term.
+
+        Args:
+            ranked_terms: List of terms already sorted by score (descending)
+
+        Returns:
+            List of terms with subsumed terms removed, preserving order and scores
+        """
+        kept_terms = []
+        kept_terms_set = set()
+
+        for term in ranked_terms:
+            term_words = set(term.lower().split())
+            is_subsumed = False
+
+            # Check if this term is subsumed by any already kept term
+            for kept_term in kept_terms:
+                kept_words = set(kept_term.lower().split())
+                # If all words of this term are in a kept term, it's subsumed
+                if term_words.issubset(kept_words) and term_words != kept_words:
+                    is_subsumed = True
+                    logger.debug(
+                        "term_subsumed",
+                        subsumed_term=term,
+                        by_term=kept_term,
+                    )
+                    break
+
+            if not is_subsumed:
+                kept_terms.append(term)
+                kept_terms_set.add(term)
+
+        return kept_terms
+
     def _apply_quality_filters(self, candidate_terms: list[str]) -> list[str]:
         """
         Apply string quality filters to remove low-quality terms.
@@ -697,7 +739,7 @@ class TermExtractor:
         self,
         original_params: dict[str, Any],
         enriched_results: list[dict[str, Any]],
-        top_k: int = 20,
+        top_k: int = None,  # Deprecated: all terms above score threshold are returned
     ) -> list[dict[str, Any]]:
         """
         Extract and rank relevant terms from enriched results.
@@ -709,16 +751,18 @@ class TermExtractor:
         4. Normalize scores separately: KeyBERT and TF-IDF to 0-1 scale
         5. Combine scores: 60% TF-IDF + 40% KeyBERT, weighted by source
         6. Apply configurable weights: title (default 3.0) vs abstract (default 1.0)
-        7. Remove original terms and generic terms
-        8. Rank by combined weighted score
+        7. Apply quality filters (stopwords, structural words)
+        8. Apply MMR ranking (relevance + diversity)
+        9. Apply subsumption filter (remove subset terms)
+        10. Apply score threshold filter (keep only scores >= threshold)
 
         Args:
             original_params: Original search parameters
             enriched_results: Results with enriched biblio data
-            top_k: Number of top terms to return
+            top_k: Deprecated, ignored. All terms above score threshold are returned.
 
         Returns:
-            List of terms with scores, ordered by relevance
+            List of terms with scores, ordered by relevance (filtered by score threshold)
         """
         from core.config import settings
 
@@ -908,19 +952,54 @@ class TermExtractor:
             remaining_terms=len(filtered_ngrams),
         )
 
-        # Rank by MMR (Maximal Marginal Relevance) with lambda=0.4
-        # Balances relevance (40%) with diversity (60%), with hard >50% similarity threshold
+        # Load configuration for MMR and filtering
+        score_threshold = getattr(settings, "term_extraction_score_threshold", 0.6)
+        mmr_lambda = getattr(settings, "term_extraction_mmr_lambda", 0.4)
+        mmr_similarity_threshold = getattr(settings, "term_extraction_mmr_similarity_threshold", 0.5)
+
+        # Rank by MMR (Maximal Marginal Relevance)
+        # Returns all candidates ordered by relevance + diversity (no top_k limit)
         ranked_terms = self._calculate_mmr_ranking(
             candidates=filtered_ngrams,
             scores=combined_scores,
-            lambda_param=0.4,
-            top_k=top_k,
-            similarity_threshold=0.5,
+            lambda_param=mmr_lambda,
+            top_k=len(filtered_ngrams),  # Return all, will filter by score later
+            similarity_threshold=mmr_similarity_threshold,
         )
 
-        # Build result objects with all scores
+        logger.info(
+            "term_extraction_mmr_ranked",
+            mmr_lambda=mmr_lambda,
+            mmr_threshold=mmr_similarity_threshold,
+            candidates_ranked=len(ranked_terms),
+        )
+
+        # Apply subsumption filter: remove terms that are subsets of other terms
+        ranked_terms = self._apply_subsumption_filter(ranked_terms)
+
+        logger.info(
+            "term_extraction_subsumption_filtered",
+            terms_after_subsumption=len(ranked_terms),
+        )
+
+        # Build result objects with all scores, filtering by score threshold
         result_terms = []
+        terms_below_threshold = 0
+
         for term in ranked_terms:
+            term_score = combined_scores.get(term, 0)
+
+            # Filter by score threshold
+            if term_score < score_threshold:
+                terms_below_threshold += 1
+                logger.debug(
+                    "term_below_score_threshold",
+                    term=term,
+                    score=term_score,
+                    threshold=score_threshold,
+                )
+                continue
+
             sources = ngram_sources.get(term, {})
             source_list = []
             if sources.get("title", 0) > 0:
@@ -933,7 +1012,7 @@ class TermExtractor:
 
             result_terms.append({
                 "term": term,
-                "score": round(combined_scores.get(term, 0), 3),
+                "score": round(term_score, 3),
                 "n_words": n_words,
                 "keybert_score_title": round(keybert_title_scores.get(term, 0), 3) if title_texts else None,
                 "keybert_score_abstract": round(keybert_abstract_scores.get(term, 0), 3) if abstract_texts else None,
@@ -950,8 +1029,11 @@ class TermExtractor:
         logger.info(
             "term_extraction_complete",
             total_unique_terms=len(unique_ngrams),
-            filtered_terms=len(filtered_ngrams),
-            returned_top_k=len(result_terms),
+            after_quality_filter=len(filtered_ngrams),
+            after_subsumption=len(ranked_terms),
+            below_score_threshold=terms_below_threshold,
+            returned_count=len(result_terms),
+            score_threshold=score_threshold,
             title_weight=title_weight,
             abstract_weight=abstract_weight,
         )
