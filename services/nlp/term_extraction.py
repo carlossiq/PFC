@@ -247,7 +247,11 @@ class TermExtractor:
 
     def _clean_text(self, text: str) -> str:
         """
-        Clean text: lowercase, remove punctuation, extra spaces, and noise phrases.
+        Clean text: lowercase, remove URLs, normalize hyphens, extra spaces.
+
+        NOTE: Punctuation is NOT removed here - it's kept for spaCy to detect
+        boundary tokens (PUNCT POS tags). The n-gram boundary detector will
+        split n-grams at punctuation marks.
 
         Args:
             text: Raw text
@@ -273,9 +277,8 @@ class TermExtractor:
         if self.rules.get("normalize_hyphen_to_space", True):
             text = text.replace('-', ' ')
 
-        # Strip punctuation if configured
-        if self.rules.get("strip_punctuation", True):
-            text = re.sub(r'[^\w\s]', ' ', text)
+        # NOTE: Do NOT strip punctuation - let spaCy detect it as PUNCT for boundary detection
+        # The boundary splitter will use PUNCT POS tags to split n-grams
 
         # Remove extra spaces
         text = re.sub(r'\s+', ' ', text).strip()
@@ -411,6 +414,7 @@ class TermExtractor:
         Split token sequence by boundary tokens and POS tags.
 
         Returns list of (tokens, pos_tags) tuples for non-boundary segments.
+        Filters out punctuation tokens within segments.
 
         Args:
             tokens: List of tokens
@@ -437,9 +441,11 @@ class TermExtractor:
                     current_segment = []
                     current_pos = []
             else:
-                # Add to current segment
-                current_segment.append(token)
-                current_pos.append(pos)
+                # Add to current segment (skip pure punctuation tokens)
+                # Keep token if it contains alphanumeric chars (allow "don't" but not "-")
+                if any(c.isalnum() for c in token):
+                    current_segment.append(token)
+                    current_pos.append(pos)
 
         # Add final segment
         if current_segment:
