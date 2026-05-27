@@ -819,6 +819,19 @@ async def extract_relevant_terms(
                 "error": "No items provided",
             }
 
+        # Filtrar items que tenham title ou abstract não-vazio
+        valid_items = [
+            item for item in items
+            if (item.get("title") and item.get("title").strip()) or
+               (item.get("abstract") and item.get("abstract").strip())
+        ]
+
+        if not valid_items:
+            return {
+                "success": False,
+                "error": "No valid items with non-empty title or abstract",
+            }
+
         # Usar parâmetros vazios se não fornecidos
         if original_params is None:
             original_params = {}
@@ -827,13 +840,13 @@ async def extract_relevant_terms(
         enriched_results = [
             {
                 "biblio": {
-                    "invention_title": item.get("title", ""),
-                    "title": item.get("title", ""),
-                    "abstract": item.get("abstract", ""),
+                    "invention_title": item.get("title", "").strip() if item.get("title") else "",
+                    "title": item.get("title", "").strip() if item.get("title") else "",
+                    "abstract": item.get("abstract", "").strip() if item.get("abstract") else "",
                 },
                 "publication_number": f"item_{idx}",
             }
-            for idx, item in enumerate(items)
+            for idx, item in enumerate(valid_items)
         ]
 
         # Criar extrator e extrair termos

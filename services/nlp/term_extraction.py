@@ -278,13 +278,15 @@ class TermExtractor:
             if not biblio:
                 continue
 
-            title = biblio.get("invention_title", "") or biblio.get("title", "")
-            abstract = biblio.get("abstract", "")
+            # Extract and clean title and abstract
+            title = (biblio.get("invention_title", "") or biblio.get("title", "")).strip()
+            abstract = (biblio.get("abstract", "") or "").strip()
 
+            # Skip if both title and abstract are empty
             if not title and not abstract:
                 continue
 
-            # Process title separately
+            # Process title separately (if non-empty)
             if title:
                 cleaned_title = self._clean_text(title)
                 title_texts.append(cleaned_title)
@@ -293,7 +295,7 @@ class TermExtractor:
                     "publication_number": result.get("publication_number"),
                 }
 
-            # Process abstract separately
+            # Process abstract separately (if non-empty)
             if abstract:
                 cleaned_abstract = self._clean_text(abstract)
                 abstract_texts.append(cleaned_abstract)
