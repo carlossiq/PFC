@@ -370,26 +370,33 @@ class TermExtractor:
             for keyword, score in keywords:
                 scores[keyword] = float(score)
 
-            # If we got few results, try without candidates (KeyBERT's own extraction)
-            if len(scores) < len(ngrams) * 0.3:  # Less than 30% coverage
+            # If we got few results, use fallback: score unmatched ngrams based on word overlap
+            # with full keyword extraction
+            if len(scores) < len(ngrams) * 0.5:  # Less than 50% coverage
                 all_keywords = self.keybert.extract_keywords(
                     combined_text,
-                    top_n=min(len(ngrams), 50),
+                    top_n=min(len(ngrams), 100),
                 )
 
-                # Score ngrams based on semantic similarity to KeyBERT keywords
+                # Score unmatched ngrams based on word overlap with KeyBERT keywords
                 for ngram in ngrams:
                     if ngram not in scores:
                         ngram_words = set(ngram.lower().split())
+                        best_score = 0.0
 
-                        # Check if ngram partially matches any KeyBERT keyword
-                        for keyword, score in all_keywords:
+                        # Find best matching keyword and use word overlap to score ngram
+                        for keyword, keyword_score in all_keywords:
                             keyword_words = set(keyword.lower().split())
-                            # Calculate word overlap
-                            overlap = len(ngram_words & keyword_words) / max(len(ngram_words), 1)
-                            if overlap > 0.5:  # 50%+ word overlap
-                                # Scale score by overlap ratio
-                                scores[ngram] = max(scores.get(ngram, 0), float(score) * overlap)
+                            # Check if any words overlap
+                            common_words = ngram_words & keyword_words
+                            if common_words:
+                                # Score based on proportion of ngram covered by keyword matches
+                                overlap = len(common_words) / len(ngram_words)
+                                scaled_score = float(keyword_score) * overlap
+                                best_score = max(best_score, scaled_score)
+
+                        if best_score > 0:
+                            scores[ngram] = best_score
 
         except Exception as e:
             logger.warning(
