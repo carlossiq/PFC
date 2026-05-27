@@ -124,11 +124,12 @@ def _find_all_by_local_name(element: ET.Element, local_name: str) -> list[ET.Ele
         if _local_name(descendant.tag) == local_name:
             results.append(descendant)
 
-    logger.debug(
-        "find_all_by_local_name",
-        local_name=local_name,
-        count=len(results),
-    )
+    if len(results) == 0 or local_name in ["exchange-document", "document-id"]:
+        logger.info(
+            "find_all_by_local_name",
+            local_name=local_name,
+            count=len(results),
+        )
 
     return results
 
@@ -660,47 +661,28 @@ class OPSService:
                         for idx, exchange_doc in enumerate(exchange_documents):
                             family_id = exchange_doc.attrib.get("family-id")
 
-                            logger.debug(
-                                "ops_search_abstract_processing_exchange_doc",
-                                index=idx,
-                                family_id=family_id,
-                            )
-
                             # Encontrar publication-reference e depois document-id com type docdb
                             # Tentar buscar document-id recursivamente primeiro (mais robusto)
                             all_doc_ids = _find_all_by_local_name(exchange_doc, "document-id")
-                            logger.debug(
-                                "ops_search_abstract_all_document_ids_found",
-                                index=idx,
-                                count=len(all_doc_ids),
-                            )
 
                             docdb = None
+                            doc_id_types_found = []
                             # Procurar o primeiro document-id com type="docdb"
                             for doc_id_elem in all_doc_ids:
                                 doc_id_type = doc_id_elem.get("document-id-type")
-                                logger.debug(
-                                    "ops_search_abstract_checking_document_id_type",
-                                    exchange_index=idx,
-                                    document_id_type=doc_id_type,
-                                )
+                                doc_id_types_found.append(doc_id_type)
 
                                 if doc_id_type == "docdb":
                                     docdb = doc_id_elem
-                                    logger.debug(
-                                        "ops_search_abstract_docdb_found",
-                                        exchange_index=idx,
-                                    )
                                     break
 
-                            if docdb is None:
-                                logger.warning(
+                            if docdb is None and len(all_doc_ids) > 0:
+                                logger.info(
                                     "ops_search_abstract_no_docdb_found",
                                     exchange_index=idx,
-                                    available_doc_id_types=[
-                                        doc_id_elem.get("document-id-type")
-                                        for doc_id_elem in all_doc_ids
-                                    ],
+                                    family_id=family_id,
+                                    document_ids_count=len(all_doc_ids),
+                                    available_doc_id_types=doc_id_types_found,
                                 )
 
                             country = None
@@ -784,16 +766,6 @@ class OPSService:
                                 "raw": ET.tostring(exchange_doc, encoding="unicode"),
                             }
                             results.append(result)
-
-                            logger.debug(
-                                "ops_search_abstract_result_added",
-                                index=idx,
-                                docdb_id=docdb_id,
-                                has_country=country is not None,
-                                has_doc_number=doc_number is not None,
-                                has_kind=kind is not None,
-                                has_abstract=abstract_text is not None,
-                            )
 
                         logger.info(
                             "ops_search_abstract_xml_parsed",
