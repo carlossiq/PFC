@@ -791,36 +791,50 @@ async def enrich_probe_results(
 
 
 async def extract_relevant_terms(
-    enriched_results: list[dict[str, Any]],
+    items: list[dict[str, Any]],
     original_params: Optional[dict[str, Any]] = None,
     top_k: int = 20,
 ) -> dict[str, Any]:
     """
-    Extrai termos relevantes de resultados enriquecidos usando TermExtractor.
+    Extrai termos relevantes de uma lista de items (title + abstract) usando TermExtractor.
 
+    Processa título e abstract separadamente com pesos configuráveis (título 3.0, abstract 1.0).
     Combina KeyBERT (relevância semântica) e TF-IDF (importância estatística)
     para identificar novos termos não presentes nos parâmetros originais.
 
     Args:
-        enriched_results: Resultados enriquecidos com dados bibliográficos (de run_probe_search).
+        items: Lista de dicts com 'title' e 'abstract' para extração de termos.
         original_params: Parâmetros originais da busca (theme, description, etc) para filtrar termos.
         top_k: Número de termos a extrair.
 
     Returns:
-        Dict com termos relevantes, scores e detalhes.
+        Dict com termos relevantes, scores por fonte (title/abstract), e detalhes.
     """
     try:
         from services.nlp.term_extraction import TermExtractor
 
-        if not enriched_results:
+        if not items:
             return {
                 "success": False,
-                "error": "No enriched results provided",
+                "error": "No items provided",
             }
 
         # Usar parâmetros vazios se não fornecidos
         if original_params is None:
             original_params = {}
+
+        # Converter items simples para formato esperado pelo TermExtractor
+        enriched_results = [
+            {
+                "biblio": {
+                    "invention_title": item.get("title", ""),
+                    "title": item.get("title", ""),
+                    "abstract": item.get("abstract", ""),
+                },
+                "publication_number": f"item_{idx}",
+            }
+            for idx, item in enumerate(items)
+        ]
 
         # Criar extrator e extrair termos
         extractor = TermExtractor()
@@ -833,6 +847,7 @@ async def extract_relevant_terms(
         logger.info(
             "terms_extracted",
             count=len(terms),
+            items_count=len(items),
             top_k=top_k,
         )
 

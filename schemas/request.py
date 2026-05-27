@@ -124,15 +124,22 @@ class TermExtractionRequest(BaseModel):
     """
     Request para extração de termos relevantes.
 
-    Extrai termos dos resultados enriquecidos usando KeyBERT + TF-IDF,
-    removendo termos já presentes nos parâmetros originais.
+    Extrai termos de uma lista de items (title + abstract) usando KeyBERT + TF-IDF,
+    com pesos configuráveis (título 3.0, abstract 1.0 por padrão).
+    Remove termos já presentes nos parâmetros originais.
     """
 
-    enriched_results: list[dict[str, Any]] = Field(
+    items: list[dict[str, Any]] = Field(
         ...,
         min_items=1,
         max_items=1000,
-        description="Resultados enriquecidos retornados por /probe/enrich",
+        description="Lista de items com title e abstract para extração de termos",
+        example=[
+            {
+                "title": "Computer-aided diagnosis method based on deep learning",
+                "abstract": "The invention discloses a computer-aided diagnosis method leveraging neural networks...",
+            }
+        ],
     )
     original_params: dict[str, Any] = Field(
         default={},
@@ -151,16 +158,15 @@ class TermExtractionRequest(BaseModel):
 
         json_schema_extra = {
             "example": {
-                "enriched_results": [
+                "items": [
                     {
-                        "publication_number": "CN121789955.A",
-                        "biblio": {
-                            "title": "Computer-aided diagnosis method based on deep learning",
-                            "abstract": "The invention discloses a computer-aided diagnosis method...",
-                            "inventors": [],
-                            "applicants": [],
-                        },
-                    }
+                        "title": "Deep learning for medical image analysis",
+                        "abstract": "This paper presents a comprehensive review of deep learning techniques applied to medical imaging...",
+                    },
+                    {
+                        "title": "Convolutional neural networks in healthcare",
+                        "abstract": "CNNs have shown remarkable performance in various healthcare applications including diagnosis...",
+                    },
                 ],
                 "original_params": {
                     "theme": "machine learning",

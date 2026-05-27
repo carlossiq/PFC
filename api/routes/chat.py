@@ -370,33 +370,42 @@ async def extract_terms_endpoint(
     extract_request: TermExtractionRequest = Body(...),
 ) -> SuccessResponse[dict[str, Any]]:
     """
-    Extrai termos relevantes de resultados enriquecidos usando KeyBERT e TF-IDF.
+    Extrai termos relevantes de uma lista de items (title + abstract) usando KeyBERT e TF-IDF.
+
+    Processa título e abstract separadamente com pesos configuráveis:
+    - Título: peso 3.0 (padrão) - mais específico e relevante
+    - Abstract: peso 1.0 (padrão) - mais genérico e contextual
 
     Combina:
     - KeyBERT: relevância semântica (60%)
     - TF-IDF: importância estatística (40%)
+    - Pesos por fonte: título 3x mais importante que abstract
 
     Remove automaticamente termos presentes nos parâmetros originais.
 
     Args:
-        extract_request: Resultados enriquecidos, parâmetros originais, e número de termos.
+        extract_request: Lista de items com title/abstract, parâmetros originais, e número de termos.
 
     Returns:
-        Lista de termos com scores:
+        Lista de termos com scores e fonte:
         {
-            "term": "e-commerce",
-            "score": 0.95,
-            "keybert_score": 0.92,
-            "tf_idf_score": 0.89,
+            "term": "machine learning",
+            "score": 2.85,
+            "keybert_score_title": 0.92,
+            "keybert_score_abstract": 0.85,
+            "tf_idf_score_title": 0.88,
+            "tf_idf_score_abstract": 0.72,
             "frequency": 5,
-            "sources": ["title", "abstract"]
+            "sources": ["title", "abstract"],
+            "title_weight": 3.0,
+            "abstract_weight": 1.0
         }
     """
     run_id = getattr(request.state, "run_id", None)
 
     try:
         result = await pipeline.extract_relevant_terms(
-            enriched_results=extract_request.enriched_results,
+            items=extract_request.items,
             original_params=extract_request.original_params,
             top_k=extract_request.top_k,
         )
