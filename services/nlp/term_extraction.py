@@ -404,22 +404,26 @@ class TermExtractor:
         Extract TF-IDF statistical importance scores.
 
         For n-grams, if not in vocabulary, compute as average of component words.
+        Only returns scores for ngrams that actually appear in the texts.
 
         Args:
             texts: List of texts to analyze
             ngrams: List of candidate terms
 
         Returns:
-            Dict mapping term -> tfidf_score (0-1)
+            Dict mapping term -> tfidf_score (0-1). Only includes ngrams found in texts.
         """
         scores = {}
+
+        if not texts:
+            return scores
 
         try:
             vectorizer = TfidfVectorizer(analyzer='word', lowercase=True)
             tfidf_matrix = vectorizer.fit_transform(texts)
             feature_names = set(vectorizer.get_feature_names_out())
 
-            # Calculate scores for each ngram
+            # Only score ngrams that actually appear in these texts
             for ngram in ngrams:
                 ngram_tokens = ngram.split()
 
@@ -428,16 +432,14 @@ class TermExtractor:
                     idx = list(vectorizer.get_feature_names_out()).index(ngram)
                     scores[ngram] = float(tfidf_matrix[:, idx].mean())
                 else:
-                    # For multi-word ngrams, average the component tokens
-                    if len(ngram_tokens) > 1:
+                    # For multi-word ngrams, only score if ALL tokens appear
+                    # (don't average partial matches across sources)
+                    if len(ngram_tokens) > 1 and all(token in feature_names for token in ngram_tokens):
                         component_scores = []
                         for token in ngram_tokens:
-                            if token in feature_names:
-                                idx = list(vectorizer.get_feature_names_out()).index(token)
-                                component_scores.append(float(tfidf_matrix[:, idx].mean()))
-
-                        if component_scores:
-                            scores[ngram] = sum(component_scores) / len(component_scores)
+                            idx = list(vectorizer.get_feature_names_out()).index(token)
+                            component_scores.append(float(tfidf_matrix[:, idx].mean()))
+                        scores[ngram] = sum(component_scores) / len(component_scores)
 
             # Normalize to 0-1
             if scores:
