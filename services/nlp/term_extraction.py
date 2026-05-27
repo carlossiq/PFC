@@ -31,28 +31,24 @@ except ImportError:
 class TermExtractor:
     """Extract and rank relevant terms from search results."""
 
-    def __init__(self, keybert_model: Optional[Any] = None, doc_type: str = "patent"):
+    def __init__(self, keybert_model: Optional[Any] = None):
         """
         Initialize term extractor.
 
+        Requires spaCy (en_core_web_sm) to be installed for linguistic analysis.
+
         Args:
             keybert_model: Pre-loaded KeyBERT model. If None, will load default.
-            doc_type: Document type ('patent' or 'scholarly'). Controls which stopwords to use.
         """
         self.keybert = keybert_model
-        self.doc_type = doc_type
-        self.nlp = None
 
-        # Initialize boundary configs (will be loaded properly later)
+        # Initialize boundary configs (will be loaded in _load_spacy_model)
         self.ngram_boundary_tokens = set()
         self.bad_pos_bigrams = []
         self.bad_pos_trigrams = []
         self.ngram_boundary_pos = set()
 
-        # Load config with stopwords and penalties
-        self._load_stopwords_config()
-
-        # Load spaCy model
+        # Load spaCy model (required)
         self._load_spacy_model()
 
         # Load n-gram boundary tokens
@@ -140,110 +136,6 @@ class TermExtractor:
             self.bad_pos_trigrams = []
             self.ngram_boundary_pos = set()
 
-    def _load_stopwords_config(self) -> None:
-        """Load stopwords and filtering rules from config/extract-terms.json."""
-        try:
-            config_path = Path(__file__).parent.parent.parent / "config" / "extract-terms.json"
-            with open(config_path, "r", encoding="utf-8") as f:
-                self.full_config = json.load(f)
-
-            # Get rules and scoring
-            self.rules = self.full_config.get("rules", {})
-            self.scoring = self.full_config.get("scoring", {})
-
-            # Get document-type specific config
-            doc_config = self.full_config.get(self.doc_type, {})
-            common_config = self.full_config.get("common", {})
-
-            # Hard tokens that remove entire term if present
-            self.hard_token_remove = set(doc_config.get("hard_token_remove", []))
-
-            # Bad n-gram endings to filter (end of n-gram)
-            self.bad_ngram_endings = set(
-                doc_config.get("bad_ngram_endings", []) +
-                common_config.get("bad_ngram_endings", [])
-            )
-
-            # Bad n-gram starts to filter (beginning of n-gram)
-            self.bad_ngram_starts = set(
-                doc_config.get("bad_ngram_starts", []) +
-                common_config.get("bad_ngram_starts", [])
-            )
-
-            # Tokens to remove BEFORE n-gram generation
-            self.remove_before_ngrams = set(doc_config.get("remove_before_ngrams", []))
-
-            # Phrases to remove entirely
-            self.remove_phrases = set(doc_config.get("remove_phrases", []))
-
-            # Generic unigrams that get penalized (but may appear in multiword terms)
-            self.generic_unigrams_penalty = set(
-                doc_config.get("generic_unigrams_penalty", []) +
-                common_config.get("generic_unigrams_penalty", [])
-            )
-
-            # Generic unigrams to remove entirely
-            self.generic_unigrams_remove = set(
-                doc_config.get("generic_unigrams_remove", []) +
-                common_config.get("generic_unigrams_remove", [])
-            )
-
-            # Generic verbs that get penalized
-            self.generic_verbs_penalty = set(
-                doc_config.get("generic_verbs_penalty", [])
-            )
-
-            # Generic adjectives that get penalized (scholarly only)
-            self.generic_adjectives_penalty = set(
-                doc_config.get("generic_adjectives_penalty", [])
-            )
-
-            # Top 10000 English stopwords (optional expansion)
-            if self.rules.get("use_top_10000_english_stopwords", False):
-                self.top_10000_stopwords = set(
-                    common_config.get("top_10000_english_stopwords_remove", [])
-                )
-            else:
-                self.top_10000_stopwords = set()
-
-            logger.info(
-                "extract_terms_config_loaded",
-                doc_type=self.doc_type,
-                hard_tokens=len(self.hard_token_remove),
-                bad_endings=len(self.bad_ngram_endings),
-                bad_starts=len(self.bad_ngram_starts),
-                remove_before=len(self.remove_before_ngrams),
-                penalty_unigrams=len(self.generic_unigrams_penalty),
-                penalty_verbs=len(self.generic_verbs_penalty),
-                penalty_adjectives=len(self.generic_adjectives_penalty),
-                top_10000_enabled=self.rules.get("use_top_10000_english_stopwords", False),
-            )
-        except Exception as e:
-            logger.warning(
-                "extract_terms_config_load_failed",
-                error=str(e),
-            )
-            self._init_default_config()
-
-    def _init_default_config(self) -> None:
-        """Initialize with minimal default config."""
-        self.full_config = {}
-        self.rules = {}
-        self.scoring = {}
-        self.hard_token_remove = set()
-        self.bad_ngram_endings = set()
-        self.bad_ngram_starts = set()
-        self.remove_before_ngrams = set()
-        self.remove_phrases = set()
-        self.generic_unigrams_penalty = set()
-        self.generic_unigrams_remove = set()
-        self.generic_verbs_penalty = set()
-        self.generic_adjectives_penalty = set()
-        self.top_10000_stopwords = set()
-        self.ngram_boundary_tokens = set()
-        self.bad_pos_bigrams = []
-        self.bad_pos_trigrams = []
-        self.ngram_boundary_pos = set()
 
     def _clean_text(self, text: str) -> str:
         """
@@ -265,20 +157,8 @@ class TermExtractor:
         # Remove URLs
         text = re.sub(r'http\S+|www.\S+', '', text)
 
-        # Remove remove_phrases (boilerplate text)
-        for phrase in self.remove_phrases:
-            text = text.replace(phrase, ' ')
-
-        # Remove remove_before_ngrams tokens
-        for token in self.remove_before_ngrams:
-            text = re.sub(r'\b' + re.escape(token) + r'\b', ' ', text)
-
-        # Normalize hyphens to spaces if configured
-        if self.rules.get("normalize_hyphen_to_space", True):
-            text = text.replace('-', ' ')
-
-        # NOTE: Do NOT strip punctuation - let spaCy detect it as PUNCT for boundary detection
-        # The boundary splitter will use PUNCT POS tags to split n-grams
+        # Normalize hyphens to spaces
+        text = text.replace('-', ' ')
 
         # Remove extra spaces
         text = re.sub(r'\s+', ' ', text).strip()
@@ -452,68 +332,6 @@ class TermExtractor:
             segments.append((current_segment, current_pos))
 
         return segments if segments else [(tokens, pos_tags)]
-
-    def _tokenize_ngrams(self, text: str, n_range: tuple = (1, 3)) -> list[str]:
-        """
-        Extract n-grams from text with strict filtering based on config rules.
-
-        Filters based on:
-        - hard_token_remove: removes entire term if token present
-        - bad_ngram_endings: removes if ends with bad word
-        - generic_unigrams_remove: removes single generic words
-        - min token length and ngram structure
-
-        Args:
-            text: Cleaned text
-            n_range: (min_n, max_n) for n-grams
-
-        Returns:
-            List of n-grams
-        """
-        tokens = text.split()
-        ngrams = []
-        max_ngram_size = self.rules.get("max_ngram_size", 3)
-        min_token_length = self.rules.get("min_token_length", 2)
-
-        for n in range(n_range[0], min(n_range[1] + 1, max_ngram_size + 1)):
-            for i in range(len(tokens) - n + 1):
-                ngram_tokens = tokens[i:i + n]
-                ngram = ' '.join(ngram_tokens)
-
-                # 1. Check minimum token length
-                if not all(len(t) >= min_token_length for t in ngram_tokens):
-                    continue
-
-                # 2. Remove term if contains hard_token (config rule)
-                if self.rules.get("remove_term_if_contains_hard_token", True):
-                    if any(t in self.hard_token_remove for t in ngram_tokens):
-                        continue
-
-                # 3. Remove term if starts with bad start
-                if self.rules.get("remove_term_if_starts_with_bad_start", True):
-                    if ngram_tokens[0] in self.bad_ngram_starts:
-                        continue
-
-                # 4. Remove term if contains bad ending anywhere
-                if self.rules.get("remove_term_if_ends_with_bad_ending", True):
-                    # For n-grams: no bad endings allowed at all
-                    if any(t in self.bad_ngram_endings for t in ngram_tokens):
-                        continue
-
-                # 5. Remove single generic unigrams (config rule)
-                if self.rules.get("remove_term_if_single_token_in_generic_unigrams_remove", True):
-                    if len(ngram_tokens) == 1 and ngram_tokens[0] in self.generic_unigrams_remove:
-                        continue
-
-                # 6. For multi-word terms: preserve even if contains generic words (config rule)
-                if not self.rules.get("preserve_multiword_terms_with_generic_words", True):
-                    if len(ngram_tokens) > 1:
-                        if any(t in self.generic_unigrams_penalty for t in ngram_tokens):
-                            continue
-
-                ngrams.append(ngram)
-
-        return ngrams
 
     def _extract_keybert_scores(self, texts: list[str], ngrams: list[str]) -> dict[str, float]:
         """
@@ -693,41 +511,23 @@ class TermExtractor:
             bonus += 0.3  # Trigram bonus
 
         # Apply POS pattern penalties using spaCy
-        if self.nlp:
-            try:
-                doc = self.nlp(ngram)
-                pos_tags = tuple(token.pos_ for token in doc)
+        try:
+            doc = self.nlp(ngram)
+            pos_tags = tuple(token.pos_ for token in doc)
 
-                # Check against bad bigram patterns
-                if n_words == 2 and pos_tags in self.bad_pos_bigrams:
-                    penalty += -0.8
-                # Check against bad trigram patterns
-                elif n_words == 3 and pos_tags in self.bad_pos_trigrams:
-                    penalty += -0.8
+            # Check against bad bigram patterns
+            if n_words == 2 and pos_tags in self.bad_pos_bigrams:
+                penalty += -0.8
+            # Check against bad trigram patterns
+            elif n_words == 3 and pos_tags in self.bad_pos_trigrams:
+                penalty += -0.8
 
-            except Exception as e:
-                logger.warning(
-                    "pos_pattern_check_failed",
-                    error=str(e),
-                    ngram=ngram,
-                )
-
-        # Apply generic unigram penalty (only for single words)
-        if len(tokens) == 1:
-            if ngram in self.generic_unigrams_penalty:
-                penalty += self.scoring.get("generic_unigram_penalty", -0.3)
-            if ngram in self.generic_verbs_penalty:
-                penalty += self.scoring.get("generic_verb_penalty", -0.4)
-            if ngram in self.generic_adjectives_penalty:
-                penalty += self.scoring.get("generic_adjective_penalty", -0.25)
-
-        # Apply hard token penalty
-        if any(t in self.hard_token_remove for t in tokens):
-            penalty += self.scoring.get("hard_token_penalty", -1.0)
-
-        # Apply bad ending penalty
-        if tokens[-1] in self.bad_ngram_endings:
-            penalty += self.scoring.get("bad_ending_penalty", -1.0)
+        except Exception as e:
+            logger.warning(
+                "pos_pattern_check_failed",
+                error=str(e),
+                ngram=ngram,
+            )
 
         return bonus, penalty
 
@@ -817,15 +617,11 @@ class TermExtractor:
 
         # Process titles with spaCy noun_chunks
         for text in title_texts:
-            if self.nlp:
-                # Extract noun chunks and convert to sub-n-grams
-                chunks = self._extract_noun_chunks(text)
-                ngrams = []
-                for chunk in chunks:
-                    ngrams.extend(self._extract_subngramas_from_chunk(chunk))
-            else:
-                # Fallback to regex-based if spaCy unavailable
-                ngrams = self._tokenize_ngrams(text)
+            # Extract noun chunks and convert to sub-n-grams
+            chunks = self._extract_noun_chunks(text)
+            ngrams = []
+            for chunk in chunks:
+                ngrams.extend(self._extract_subngramas_from_chunk(chunk))
 
             all_ngrams.extend(ngrams)
             ngram_frequency.update(ngrams)
@@ -836,15 +632,11 @@ class TermExtractor:
 
         # Process abstracts with spaCy noun_chunks
         for text in abstract_texts:
-            if self.nlp:
-                # Extract noun chunks and convert to sub-n-grams
-                chunks = self._extract_noun_chunks(text)
-                ngrams = []
-                for chunk in chunks:
-                    ngrams.extend(self._extract_subngramas_from_chunk(chunk))
-            else:
-                # Fallback to regex-based if spaCy unavailable
-                ngrams = self._tokenize_ngrams(text)
+            # Extract noun chunks and convert to sub-n-grams
+            chunks = self._extract_noun_chunks(text)
+            ngrams = []
+            for chunk in chunks:
+                ngrams.extend(self._extract_subngramas_from_chunk(chunk))
 
             all_ngrams.extend(ngrams)
             ngram_frequency.update(ngrams)
