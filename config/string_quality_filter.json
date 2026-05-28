@@ -10,7 +10,8 @@
         "this", "that", "these", "those", "it", "its", "as", "up",
         "free", "standing", "based", "related", "high", "low", "new",
         "good", "such", "each", "both", "about", "into", "through",
-        "which", "who", "whom", "whose", "what", "when", "where", "why", "how"
+        "which", "who", "whom", "whose", "what", "when", "where", "why", "how",
+        "flowing", "exiting"
       ]
     },
     "patent_structural_words": {
@@ -22,7 +23,8 @@
         "therein", "whereby", "herein", "thereby",
         "configured", "adapted", "provided", "disposed",
         "coupled", "connected", "attached", "formed",
-        "plurality", "substantially", "approximately"
+        "plurality", "substantially", "approximately",
+        "device"
       ]
     },
     "scholarly_structural_words": {

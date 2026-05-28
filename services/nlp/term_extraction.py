@@ -17,6 +17,7 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 from core.logging import get_logger
+from core.config import settings
 
 logger = get_logger(__name__)
 
@@ -65,7 +66,13 @@ class TermExtractor:
         if not self.keybert:
             try:
                 from keybert import KeyBERT
-                self.keybert = KeyBERT(model="distiluse-base-multilingual-cased-v2")
+                # Load model name from config (default: generic multilingual)
+                model_name = getattr(settings, "llm_keybert_model", "distiluse-base-multilingual-cased-v2")
+                self.keybert = KeyBERT(model=model_name)
+                logger.info(
+                    "keybert_model_loaded",
+                    model=model_name,
+                )
             except Exception as e:
                 logger.warning(
                     "keybert_initialization_failed",
@@ -527,13 +534,14 @@ class TermExtractor:
 
         Returns: (bonus, penalty) where final_score = base_score + bonus + penalty
 
-        Size-based penalties:
-        - 1-gram: -0.4
-        - 2-gram: 0.0
-        - 3-gram: +0.3
+        Size-based adjustments loaded from config:
+        - term_extraction_unigram_penalty
+        - term_extraction_bigram_bonus
+        - term_extraction_trigram_bonus
 
         POS pattern penalties:
-        - Bad bigram/trigram patterns: -0.8
+        - term_extraction_bad_bigram_penalty
+        - term_extraction_bad_trigram_penalty
 
         Args:
             ngram: The n-gram to check
@@ -545,14 +553,21 @@ class TermExtractor:
         bonus = 0.0
         penalty = 0.0
 
-        # Apply n-gram size-based penalties
+        # Load configuration for n-gram size adjustments
+        unigram_penalty = getattr(settings, "term_extraction_unigram_penalty", -0.4)
+        bigram_bonus = getattr(settings, "term_extraction_bigram_bonus", 0.0)
+        trigram_bonus = getattr(settings, "term_extraction_trigram_bonus", 0.3)
+        bad_bigram_penalty = getattr(settings, "term_extraction_bad_bigram_penalty", -0.8)
+        bad_trigram_penalty = getattr(settings, "term_extraction_bad_trigram_penalty", -0.8)
+
+        # Apply n-gram size-based adjustments
         n_words = len(tokens)
         if n_words == 1:
-            penalty += -0.4  # Unigram penalty
+            penalty += unigram_penalty
         elif n_words == 2:
-            bonus += 0.0  # Bigram: no adjustment
+            bonus += bigram_bonus
         elif n_words == 3:
-            bonus += 0.3  # Trigram bonus
+            bonus += trigram_bonus
 
         # Apply POS pattern penalties using spaCy
         try:
@@ -561,10 +576,10 @@ class TermExtractor:
 
             # Check against bad bigram patterns
             if n_words == 2 and pos_tags in self.bad_pos_bigrams:
-                penalty += -0.8
+                penalty += bad_bigram_penalty
             # Check against bad trigram patterns
             elif n_words == 3 and pos_tags in self.bad_pos_trigrams:
-                penalty += -0.8
+                penalty += bad_trigram_penalty
 
         except Exception as e:
             logger.warning(
@@ -578,44 +593,56 @@ class TermExtractor:
     def _apply_subsumption_filter(
         self,
         ranked_terms: list[str],
+        overlap_threshold: float = 0.67,
     ) -> list[str]:
         """
-        Apply subsumption filter: remove terms that are subsets of other terms.
+        Apply overlap filter: remove terms with >67% word overlap with already selected terms.
 
-        If "ultrafiltration membrane" appears after "composite ultrafiltration membrane",
-        remove the shorter one since it's subsumed by the longer, more specific term.
+        Uses overlap ratio: intersection / min(len(term_a), len(term_b))
+        This ensures diversity by eliminating terms that share majority of words.
+
+        Examples with threshold=0.67:
+        - "salt water" vs "water desalination": 1/2 = 0.50 → Keep (below threshold)
+        - "ultrafiltration membrane" vs "composite ultrafiltration membranes": 2/2 = 1.0 → Remove
+        - "desalination" vs "water desalination": 1/1 = 1.0 → Remove
 
         Args:
             ranked_terms: List of terms already sorted by score (descending)
+            overlap_threshold: Reject if overlap_ratio >= threshold (default 0.67)
 
         Returns:
-            List of terms with subsumed terms removed, preserving order and scores
+            List of terms with high-overlap terms removed, preserving order and scores
         """
-        kept_terms = []
-        kept_terms_set = set()
+        def overlap_ratio(term_a: str, term_b: str) -> float:
+            """Calculate overlap ratio: shared words / min term length."""
+            words_a = set(term_a.lower().split())
+            words_b = set(term_b.lower().split())
+            if not words_a or not words_b:
+                return 0.0
+            intersection = len(words_a & words_b)
+            smaller = min(len(words_a), len(words_b))
+            return intersection / smaller if smaller > 0 else 0.0
 
-        for term in ranked_terms:
-            term_words = set(term.lower().split())
-            is_subsumed = False
+        selected = []
 
-            # Check if this term is subsumed by any already kept term
-            for kept_term in kept_terms:
-                kept_words = set(kept_term.lower().split())
-                # If all words of this term are in a kept term, it's subsumed
-                if term_words.issubset(kept_words) and term_words != kept_words:
-                    is_subsumed = True
+        for candidate in ranked_terms:
+            # Check if this term overlaps too much with already selected terms
+            is_dominated = False
+            for selected_term in selected:
+                if overlap_ratio(candidate, selected_term) >= overlap_threshold:
+                    is_dominated = True
                     logger.debug(
-                        "term_subsumed",
-                        subsumed_term=term,
-                        by_term=kept_term,
+                        "term_dominated_by_overlap",
+                        dominated_term=candidate,
+                        dominant_term=selected_term,
+                        overlap_ratio=round(overlap_ratio(candidate, selected_term), 3),
                     )
                     break
 
-            if not is_subsumed:
-                kept_terms.append(term)
-                kept_terms_set.add(term)
+            if not is_dominated:
+                selected.append(candidate)
 
-        return kept_terms
+        return selected
 
     def _apply_quality_filters(self, candidate_terms: list[str]) -> list[str]:
         """
@@ -952,18 +979,30 @@ class TermExtractor:
             remaining_terms=len(filtered_ngrams),
         )
 
+        # Remove 1-grams (unigrams) to ensure overlap filter works on meaningful terms
+        # 2+ word terms are much more informative than single words
+        filtered_ngrams = [
+            term for term in filtered_ngrams
+            if len(term.split()) >= 2
+        ]
+
+        logger.info(
+            "term_extraction_unigrams_removed",
+            remaining_terms=len(filtered_ngrams),
+        )
+
         # Load configuration for MMR and filtering
         score_threshold = getattr(settings, "term_extraction_score_threshold", 0.6)
         mmr_lambda = getattr(settings, "term_extraction_mmr_lambda", 0.4)
         mmr_similarity_threshold = getattr(settings, "term_extraction_mmr_similarity_threshold", 0.5)
+        overlap_threshold = getattr(settings, "term_extraction_overlap_threshold", 0.67)
 
-        # Rank by MMR (Maximal Marginal Relevance)
-        # Returns all candidates ordered by relevance + diversity (no top_k limit)
-        ranked_terms = self._calculate_mmr_ranking(
-            candidates=filtered_ngrams,
+        # MMR Ranking: use pure scores (without bonuses/penalties)
+        ranked_by_mmr = self._calculate_mmr_ranking(
+            candidates=list(filtered_ngrams),
             scores=combined_scores,
             lambda_param=mmr_lambda,
-            top_k=len(filtered_ngrams),  # Return all, will filter by score later
+            top_k=len(filtered_ngrams),  # Return all, filter later by score
             similarity_threshold=mmr_similarity_threshold,
         )
 
@@ -971,34 +1010,52 @@ class TermExtractor:
             "term_extraction_mmr_ranked",
             mmr_lambda=mmr_lambda,
             mmr_threshold=mmr_similarity_threshold,
-            candidates_ranked=len(ranked_terms),
+            candidates_ranked=len(ranked_by_mmr),
         )
 
-        # Apply subsumption filter: remove terms that are subsets of other terms
-        ranked_terms = self._apply_subsumption_filter(ranked_terms)
+        # Apply overlap filter: remove terms with high word overlap (>threshold)
+        after_overlap = self._apply_subsumption_filter(ranked_by_mmr, overlap_threshold)
 
         logger.info(
-            "term_extraction_subsumption_filtered",
-            terms_after_subsumption=len(ranked_terms),
+            "term_extraction_overlap_filtered",
+            terms_after_overlap=len(after_overlap),
         )
 
-        # Build result objects with all scores, filtering by score threshold
+        # Apply bonuses and penalties, then reorder by adjusted scores
+        adjusted_scores = {}
+        for term in after_overlap:
+            pure_score = combined_scores.get(term, 0)
+            bonus, penalty = score_adjustments.get(term, (0.0, 0.0))
+            adjusted_score = pure_score + bonus + penalty
+            adjusted_scores[term] = adjusted_score
+
+        # Reorder by adjusted scores (descending)
+        ranked_terms = sorted(after_overlap, key=lambda t: adjusted_scores.get(t, 0), reverse=True)
+
+        logger.info(
+            "term_extraction_adjusted_and_reordered",
+            terms_reordered=len(ranked_terms),
+        )
+
+        # Apply final score threshold filtering (return only quality terms)
+        ranked_terms = [
+            term for term in ranked_terms
+            if adjusted_scores.get(term, 0) >= score_threshold
+        ]
+        terms_filtered_by_score = len(after_overlap) - len(ranked_terms)
+
+        logger.info(
+            "term_extraction_score_filtered",
+            score_threshold=score_threshold,
+            filtered_by_score=terms_filtered_by_score,
+            final_terms=len(ranked_terms),
+        )
+
+        # Build result objects with all scores
         result_terms = []
-        terms_below_threshold = 0
 
         for term in ranked_terms:
             term_score = combined_scores.get(term, 0)
-
-            # Filter by score threshold
-            if term_score < score_threshold:
-                terms_below_threshold += 1
-                logger.debug(
-                    "term_below_score_threshold",
-                    term=term,
-                    score=term_score,
-                    threshold=score_threshold,
-                )
-                continue
 
             sources = ngram_sources.get(term, {})
             source_list = []
@@ -1030,8 +1087,7 @@ class TermExtractor:
             "term_extraction_complete",
             total_unique_terms=len(unique_ngrams),
             after_quality_filter=len(filtered_ngrams),
-            after_subsumption=len(ranked_terms),
-            below_score_threshold=terms_below_threshold,
+            after_overlap=len(after_overlap),
             returned_count=len(result_terms),
             score_threshold=score_threshold,
             title_weight=title_weight,
