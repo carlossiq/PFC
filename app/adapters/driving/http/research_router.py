@@ -321,7 +321,17 @@ async def generate_report(
             "total_results_count": research.total_results_count or 0,
             "user_input": research.user_input or {},
             "timing": research.timing or {},
-            "metrics": research.metrics.patent_by_year if research.metrics else {},
+            "chosen_candidate": research.chosen_candidate or {},
+            "metrics": {
+                "patent_by_year":         getattr(research.metrics, "patent_by_year", {}) or {},
+                "patent_by_applicant":    getattr(research.metrics, "patent_by_applicant", {}) or {},
+                "patent_by_ipc":          getattr(research.metrics, "patent_by_ipc", {}) or {},
+                "patent_by_legal_status": getattr(research.metrics, "patent_by_legal_status", {}) or {},
+                "article_by_journal":     getattr(research.metrics, "article_by_journal", {}) or {},
+                "article_by_field":       getattr(research.metrics, "article_by_field", {}) or {},
+                "patent_growth_trend":    getattr(research.metrics, "patent_growth_trend", {}) or {},
+                "article_growth_trend":   getattr(research.metrics, "article_growth_trend", {}) or {},
+            } if research.metrics else {},
         }
 
         report_data = report_svc.map_research_data(research_dict, patents, articles)
@@ -383,7 +393,7 @@ async def get_report(
             success=True,
             data={
                 "latex_content": research.latex_content,
-                "generated_at": research.latex_generated_at.isoformat(),
+                "generated_at": research.latex_generated_at.isoformat() if research.latex_generated_at else None,
                 "size_bytes": len(research.latex_content),
             },
             message="Report retrieved successfully",
