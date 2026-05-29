@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import chat, health, reports, research, test
 from api.routes.reports import initialize_services
+from app.adapters.driving.http import chat_router, report_router, research_router
+from app.container import build_container
 from core.config import settings
 from core.logging import configure_logging, get_logger
 from db.init_db import init_db
@@ -56,12 +58,19 @@ def create_app() -> FastAPI:
     # Request logging middleware (deve ser adicionado por último para ser primeiro na cadeia)
     app.add_middleware(RequestLoggingMiddleware)
 
-    # Incluir rotas
+    # Incluir rotas v1 (legado — não modificar)
     app.include_router(health.router, prefix=settings.api_prefix)
     app.include_router(chat.router, prefix=settings.api_prefix)
     app.include_router(research.router, prefix=settings.api_prefix)
     app.include_router(reports.router, prefix=settings.api_prefix)
     app.include_router(test.router, prefix=settings.api_prefix)
+
+    # Incluir rotas v2 (hexágono — coexistem com v1)
+    _container = build_container(settings)
+    app.state.container = _container
+    app.include_router(research_router.router, prefix="/api/v2")
+    app.include_router(report_router.router, prefix="/api/v2")
+    app.include_router(chat_router.router, prefix="/api/v2")
 
     # Event handlers
     @app.on_event("startup")
