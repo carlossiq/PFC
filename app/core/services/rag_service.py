@@ -43,7 +43,7 @@ class RAGService:
             chunk = text[start:end].strip()
             if len(chunk) >= _MIN_CHUNK_LENGTH:
                 chunks.append(chunk)
-            start = end - overlap
+            start = end - overlap if end < len(text) else len(text)
         return chunks
 
     # ------------------------------------------------------------------
