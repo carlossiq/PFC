@@ -58,19 +58,21 @@ def create_app() -> FastAPI:
     # Request logging middleware (deve ser adicionado por último para ser primeiro na cadeia)
     app.add_middleware(RequestLoggingMiddleware)
 
-    # Incluir rotas v1 (legado — não modificar)
-    app.include_router(health.router, prefix=settings.api_prefix)
-    app.include_router(chat.router, prefix=settings.api_prefix)
-    app.include_router(research.router, prefix=settings.api_prefix)
-    app.include_router(reports.router, prefix=settings.api_prefix)
-    app.include_router(test.router, prefix=settings.api_prefix)
-
-    # Incluir rotas v2 (hexágono — coexistem com v1)
+    # Rotas v2 (hexágono) — prefixo principal
     _container = build_container(settings)
     app.state.container = _container
-    app.include_router(research_router.router, prefix="/api/v2")
-    app.include_router(report_router.router, prefix="/api/v2")
-    app.include_router(chat_router.router, prefix="/api/v2")
+    app.include_router(research_router.router, prefix=settings.api_prefix)
+    app.include_router(report_router.router, prefix=settings.api_prefix)
+    app.include_router(chat_router.router, prefix=settings.api_prefix)
+
+    # Rotas sem equivalente v2 — permanecem no prefixo principal
+    app.include_router(health.router, prefix=settings.api_prefix)
+    app.include_router(test.router, prefix=settings.api_prefix)
+
+    # Rotas v1 (legado) — fallback em /api/v1/legacy
+    app.include_router(research.router, prefix="/api/v1/legacy")
+    app.include_router(reports.router, prefix="/api/v1/legacy")
+    app.include_router(chat.router, prefix="/api/v1/legacy")
 
     # Event handlers
     @app.on_event("startup")
