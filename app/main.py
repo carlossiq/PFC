@@ -5,8 +5,9 @@ Main FastAPI application initialization and startup configuration.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import chat, health, reports, research, test
-from api.routes.reports import initialize_services
+from api.routes import health, test
+# from api.routes import chat, reports, research  # legacy — routers comentados
+# from api.routes.reports import initialize_services
 from app.adapters.driving.http import chat_router, report_router, research_router
 from app.container import build_container
 from core.config import settings
@@ -69,10 +70,10 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix=settings.api_prefix)
     app.include_router(test.router, prefix=settings.api_prefix)
 
-    # Rotas v1 (legado) — fallback em /api/v1/legacy
-    app.include_router(research.router, prefix="/api/v1/legacy")
-    app.include_router(reports.router, prefix="/api/v1/legacy")
-    app.include_router(chat.router, prefix="/api/v1/legacy")
+    # Rotas v1 (legado) — desativadas
+    # app.include_router(research.router, prefix="/api/v1/legacy")
+    # app.include_router(reports.router, prefix="/api/v1/legacy")
+    # app.include_router(chat.router, prefix="/api/v1/legacy")
 
     # Event handlers
     @app.on_event("startup")
@@ -96,15 +97,15 @@ def create_app() -> FastAPI:
             logger.error("database_initialization_failed", error=str(exc))
             raise
 
-        # Initialize report generation services (Ollama + RAG)
-        try:
-            success = await initialize_services()
-            if success:
-                logger.info("report_services_initialized")
-            else:
-                logger.warning("report_services_not_available")
-        except Exception as exc:
-            logger.warning("report_services_initialization_failed", error=str(exc))
+        # Initialize report generation services (Ollama + RAG) — desativado com routers legados
+        # try:
+        #     success = await initialize_services()
+        #     if success:
+        #         logger.info("report_services_initialized")
+        #     else:
+        #         logger.warning("report_services_not_available")
+        # except Exception as exc:
+        #     logger.warning("report_services_initialization_failed", error=str(exc))
 
     @app.on_event("shutdown")
     async def shutdown_event() -> None:

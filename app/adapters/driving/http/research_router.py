@@ -10,9 +10,9 @@ from sqlalchemy.orm import selectinload
 
 from api.routes.dependencies import get_db_session
 from core.logging import get_logger
-from db.research_models import Research, ResearchPatentDocument, ResearchScholarlyDocument
+from db.research_models import Research, ResearchPatentDocument, ResearchScholarlyDocument, ResearchTokenUsage
 from schemas.response import SuccessResponse
-from services.metrics_aggregator import MetricsAggregator
+from app.core.services.metrics_aggregator import MetricsAggregator
 
 logger = get_logger(__name__)
 
@@ -417,9 +417,12 @@ async def get_token_usage(
 ) -> SuccessResponse[dict[str, Any]]:
     run_id = getattr(request.state, "run_id", None)
     try:
-        from services.research_service import ResearchService as LegacyResearchService
-
-        usage_records = await LegacyResearchService.get_token_usage(session, research_id)
+        result = await session.execute(
+            select(ResearchTokenUsage)
+            .where(ResearchTokenUsage.research_id == research_id)
+            .order_by(ResearchTokenUsage.created_at)
+        )
+        usage_records = result.scalars().all()
 
         call_history = [
             {
@@ -473,9 +476,61 @@ async def get_token_summary(
 ) -> SuccessResponse[dict[str, Any]]:
     run_id = getattr(request.state, "run_id", None)
     try:
-        from services.research_service import ResearchService as LegacyResearchService
+        result = await session.execute(
+            select(ResearchTokenUsage)
+            .where(ResearchTokenUsage.research_id == research_id)
+            .order_by(ResearchTokenUsage.created_at)
+        )
+        usage_records = result.scalars().all()
 
-        summary = await LegacyResearchService.get_token_summary(session, research_id)
+        if not usage_records:
+            summary: dict[str, Any] = {
+                "total_tokens": 0,
+                "total_cost_usd": 0.0,
+                "by_phase": {},
+                "by_model": {},
+                "call_history": [],
+            }
+        else:
+            by_phase: dict[str, Any] = {}
+            for record in usage_records:
+                if record.phase_name not in by_phase:
+                    by_phase[record.phase_name] = {"tokens": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "calls": 0}
+                by_phase[record.phase_name]["tokens"] += record.total_tokens
+                by_phase[record.phase_name]["input_tokens"] += record.input_tokens
+                by_phase[record.phase_name]["output_tokens"] += record.output_tokens
+                by_phase[record.phase_name]["cost_usd"] += record.total_cost_usd
+                by_phase[record.phase_name]["calls"] += 1
+
+            by_model: dict[str, Any] = {}
+            for record in usage_records:
+                model_key = f"{record.model} ({record.model_variant})" if record.model_variant else record.model
+                if model_key not in by_model:
+                    by_model[model_key] = {"tokens": 0, "cost_usd": 0.0, "calls": 0}
+                by_model[model_key]["tokens"] += record.total_tokens
+                by_model[model_key]["cost_usd"] += record.total_cost_usd
+                by_model[model_key]["calls"] += 1
+
+            summary = {
+                "total_tokens": sum(r.total_tokens for r in usage_records),
+                "total_cost_usd": sum(r.total_cost_usd for r in usage_records),
+                "by_phase": by_phase,
+                "by_model": by_model,
+                "call_history": [
+                    {
+                        "timestamp": record.created_at.isoformat(),
+                        "phase": record.phase_name,
+                        "call_type": record.llm_call_type,
+                        "call_number": record.call_number,
+                        "model": record.model,
+                        "tokens": record.total_tokens,
+                        "cost_usd": record.total_cost_usd,
+                        "latency_ms": record.api_latency_ms,
+                        "status": record.status,
+                    }
+                    for record in usage_records
+                ],
+            }
 
         for phase_data in summary["by_phase"].values():
             phase_data["cost_usd"] = round(phase_data["cost_usd"], 4)
