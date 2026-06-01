@@ -25,3 +25,12 @@ class OPSAdapter:
     ) -> SearchResult:
         result = await self._service.search(query, run_id)
         return to_domain(result)
+
+    async def search_with_biblio(
+        self,
+        query: dict[str, Any],
+        top_k: int = 15,
+        run_id: Optional[str] = None,
+    ) -> SearchResult:
+        result = await self._service.search_with_abstracts(query, top_k=top_k, run_id=run_id)
+        return to_domain(result)

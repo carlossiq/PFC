@@ -32,7 +32,7 @@ class ScopusQueryBuilder(BaseQueryBuilder):
 
     # Configurações da API
     _MAX_QUERY_LENGTH = 10000
-    _FIELD_MAP_FILE = Path(__file__).parent.parent.parent / "schemas_config" / "scopus_fields.json"
+    _FIELD_MAP_FILE = Path(__file__).parent.parent.parent / "config" / "dict" / "scopus_fields.json"
 
     def __init__(self, api_name: str = "scopus", search_mode: str = "general") -> None:
         """

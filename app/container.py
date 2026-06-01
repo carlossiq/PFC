@@ -88,6 +88,14 @@ def build_container(settings: Settings) -> dict[str, Any]:
     # ------------------------------------------------------------------
     from app.core.services.report_service import ReportService
     from app.core.services.dedup_service import DedupService
+    from app.core.services.chat_service import ChatService
+
+    chat_service = ChatService(
+        llm=llm,
+        patent_pairs=patent_pairs,
+        scholarly_pairs=scholarly_pairs,
+        settings=settings,
+    )
 
     return {
         "llm": llm,
@@ -97,6 +105,7 @@ def build_container(settings: Settings) -> dict[str, Any]:
         "services": {
             "report": ReportService(),
             "dedup": DedupService(),
+            "chat": chat_service,
         },
         "_settings": settings,
     }

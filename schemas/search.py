@@ -37,9 +37,9 @@ class SearchRequest(BaseModel):
             "example": {
                 "intake": {
                     "theme": "Machine Learning in Healthcare",
-                    "objective": "Diagnostic AI systems",
-                    "initial_keywords": ["deep learning", "medical imaging"],
-                    "document_type": "both",
+                    "description": "Identify emerging trends in diagnostic AI systems",
+                    "area_of_study": "Healthcare",
+                    "keywords": ["deep learning", "medical imaging"],
                 },
             }
         }
@@ -147,11 +147,24 @@ class SearchResponse(BaseModel):
                     "search_id": "search_550e8400-e29b-41d4-a716",
                     "run_id": "550e8400-e29b-41d4-a716-446655440000",
                     "status": "completed",
+                    "started_at": "2024-03-29T10:30:00Z",
+                    "completed_at": "2024-03-29T10:30:12Z",
+                    "duration_seconds": 12.3,
+                    "query_count": 4,
                     "total_documents_found": 1250,
-                    "documents_returned": 2,
+                    "documents_returned": 10,
                 },
                 "intake": {
                     "theme": "Machine Learning in Healthcare",
+                    "area_of_study": "Healthcare",
+                    "keywords": ["deep learning", "medical imaging"],
+                },
+                "llm_output": {
+                    "title": {
+                        "group_operator": "AND",
+                        "groups": [{"operator": "OR", "terms": ["machine learning", "deep learning"]}],
+                    },
+                    "ipc": {"values": ["G06N3/08", "G16H50/20"]},
                 },
                 "documents": [],
             }
@@ -224,19 +237,30 @@ class ProbeSearchResponse(BaseModel):
             "example": {
                 "run_id": "550e8400-e29b-41d4-a716-446655440000",
                 "intake": {
-                    "theme": "Machine Learning",
+                    "theme": "Machine Learning in Healthcare",
+                    "area_of_study": "Healthcare",
+                    "keywords": ["deep learning", "medical imaging"],
                 },
                 "llm_output": {
                     "title": {
                         "group_operator": "AND",
-                        "groups": [],
+                        "groups": [{"operator": "OR", "terms": ["machine learning", "deep learning"]}],
                     },
+                    "ipc": {"values": ["G06N3/08", "G16H50/20"]},
                 },
                 "query_builder_output": {
-                    "textual_clauses": [],
-                    "simple_clauses": [],
-                    "query_count": 0,
+                    "textual_clauses": [
+                        {
+                            "field": "TITLE",
+                            "group_operator": "AND",
+                            "groups": [{"operator": "OR", "terms": ["machine learning", "deep learning"]}],
+                        }
+                    ],
+                    "simple_clauses": [
+                        {"field": "IPC", "values": ["G06N3/08", "G16H50/20"], "operator": "OR"}
+                    ],
+                    "query_count": 2,
                 },
-                "active_fields": {},
+                "active_fields": {"title": True, "abstract": False, "ipc": True, "cpc": False},
             }
         }

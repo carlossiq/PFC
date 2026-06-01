@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from api.routes.dependencies import get_db_session
+from app.adapters.driving.http.dependencies import get_db_session
 from core.logging import get_logger
 from db.research_models import Research, ResearchPatentDocument, ResearchScholarlyDocument, ResearchTokenUsage
 from schemas.response import SuccessResponse
