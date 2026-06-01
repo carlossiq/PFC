@@ -1,0 +1,227 @@
+
+<h2 class="sr-only">Esquema relacional centrado na sessão de prospecção tecnológica</h2>
+<style>
+#erd2 { width: 100%; overflow-x: auto; }
+#erd2 svg { min-width: 860px; }
+#erd2 svg.erDiagram .divider path { stroke-opacity: 0.5; }
+#erd2 svg.erDiagram .row-rect-odd path,
+#erd2 svg.erDiagram .row-rect-odd rect,
+#erd2 svg.erDiagram .row-rect-even path,
+#erd2 svg.erDiagram .row-rect-even rect { stroke: none !important; }
+</style>
+<div id="erd2"></div>
+<script type="module">
+import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+await document.fonts.ready;
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  fontFamily: '"Anthropic Sans", sans-serif',
+  themeVariables: {
+    darkMode: dark,
+    fontSize: '13px',
+    fontFamily: '"Anthropic Sans", sans-serif',
+    lineColor: dark ? '#9c9a92' : '#73726c',
+    textColor: dark ? '#c2c0b6' : '#3d3d3a',
+    primaryColor: dark ? '#2a2860' : '#EEEDFE',
+    primaryBorderColor: dark ? '#534AB7' : '#534AB7',
+    primaryTextColor: dark ? '#CECBF6' : '#26215C',
+    secondaryColor: dark ? '#043430' : '#E1F5EE',
+    tertiaryColor: dark ? '#3d2800' : '#FAEEDA',
+  },
+});
+
+const diagram = `erDiagram
+
+  research_session {
+    uuid id PK
+    string status
+    string patent_source
+    string scholarly_source
+    timestamp created_at
+    timestamp updated_at
+  }
+
+  session_input {
+    uuid id PK
+    uuid session_id FK
+    string theme
+    text description
+    string area_of_study
+    json keywords
+    int year_from
+    int year_to
+    float relevance_threshold
+  }
+
+  llm_candidate {
+    uuid id PK
+    uuid session_id FK
+    string phase
+    string llm_provider
+    string model
+    json strategy_output
+    boolean is_chosen
+    int input_tokens
+    int output_tokens
+    float cost_usd
+    timestamp created_at
+  }
+
+  search_run {
+    uuid id PK
+    uuid session_id FK
+    uuid llm_candidate_id FK
+    string source
+    string run_type
+    json query_sent
+    int total_found
+    int returned
+    float duration_seconds
+    string error_message
+    timestamp executed_at
+  }
+
+  patent_document {
+    uuid id PK
+    uuid session_id FK
+    uuid search_run_id FK
+    string dedup_key UK
+    string source
+    string publication_number
+    string application_number
+    string family_id
+    string title
+    text abstract
+    json inventors
+    json applicants
+    string country
+    json ipc_codes
+    json cpc_codes
+    date filing_date
+    date publication_date
+    date grant_date
+    string legal_status
+    int cited_by_count
+    float relevance_score
+    boolean passed_filter
+    json raw_payload
+  }
+
+  scholarly_document {
+    uuid id PK
+    uuid session_id FK
+    uuid search_run_id FK
+    string dedup_key UK
+    string source
+    string doi
+    string title
+    text abstract
+    json authors
+    json affiliations
+    string journal
+    string volume
+    string issue
+    int year
+    string country
+    json keywords
+    json field_of_study
+    int cited_by_count
+    int patent_citation_count
+    boolean open_access
+    float relevance_score
+    boolean passed_filter
+    json raw_payload
+  }
+
+  session_metrics {
+    uuid id PK
+    uuid session_id FK
+    json patent_by_year
+    json patent_by_applicant
+    json patent_by_ipc
+    json patent_by_legal_status
+    json article_by_journal
+    json article_by_field
+    json patent_growth_trend
+    json article_growth_trend
+    timestamp calculated_at
+  }
+
+  session_asset {
+    uuid id PK
+    uuid session_id FK
+    string asset_type
+    string label
+    string file_path
+    string mime_type
+    int size_bytes
+    timestamp created_at
+  }
+
+  session_report {
+    uuid id PK
+    uuid session_id FK
+    text latex_content
+    string status
+    timestamp generated_at
+  }
+
+  llm_token_usage {
+    uuid id PK
+    uuid session_id FK
+    string phase
+    string llm_call_type
+    string provider
+    string model
+    int input_tokens
+    int output_tokens
+    int total_tokens
+    float cost_usd
+    int latency_ms
+    string status
+    timestamp created_at
+  }
+
+  research_session ||--|| session_input : "define"
+  research_session ||--o{ llm_candidate : "gera"
+  research_session ||--o{ search_run : "executa"
+  research_session ||--o{ patent_document : "armazena"
+  research_session ||--o{ scholarly_document : "armazena"
+  research_session ||--o| session_metrics : "agrega"
+  research_session ||--o{ session_asset : "possui"
+  research_session ||--o| session_report : "produz"
+  research_session ||--o{ llm_token_usage : "registra"
+  llm_candidate ||--o{ search_run : "origina"
+  search_run ||--o{ patent_document : "retorna"
+  search_run ||--o{ scholarly_document : "retorna"
+`;
+
+const { svg } = await mermaid.render('erd2-svg', diagram);
+document.getElementById('erd2').innerHTML = svg;
+
+document.querySelectorAll('#erd2 svg.erDiagram .node').forEach(node => {
+  const firstPath = node.querySelector('path[d]');
+  if (!firstPath) return;
+  const d = firstPath.getAttribute('d');
+  const nums = d.match(/-?[\d.]+/g)?.map(Number);
+  if (!nums || nums.length < 8) return;
+  const xs = [nums[0], nums[2], nums[4], nums[6]];
+  const ys = [nums[1], nums[3], nums[5], nums[7]];
+  const x = Math.min(...xs), y = Math.min(...ys);
+  const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+  const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  rect.setAttribute('x', x); rect.setAttribute('y', y);
+  rect.setAttribute('width', w); rect.setAttribute('height', h);
+  rect.setAttribute('rx', '8');
+  for (const a of ['fill', 'stroke', 'stroke-width', 'class', 'style']) {
+    if (firstPath.hasAttribute(a)) rect.setAttribute(a, firstPath.getAttribute(a));
+  }
+  firstPath.replaceWith(rect);
+});
+
+document.querySelectorAll('#erd2 svg.erDiagram .row-rect-odd path, #erd2 svg.erDiagram .row-rect-even path').forEach(p => {
+  p.setAttribute('stroke', 'none');
+});
+</script>

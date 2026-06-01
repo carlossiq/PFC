@@ -5,13 +5,21 @@ Main FastAPI application initialization and startup configuration.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.adapters.driving.http import chat_router, health_router, report_router, research_router, test_router
+from app.adapters.driving.http import (
+    chat_router,
+    health_router,
+    report_router,
+    research_router,
+    test_router,
+)
 from app.container import build_container
 from core.config import settings
 from core.logging import configure_logging, get_logger
 from db.init_db import init_db
 from db.session import db_session
-from app.adapters.driving.http.middleware.request_logging import RequestLoggingMiddleware
+from app.adapters.driving.http.middleware.request_logging import (
+    RequestLoggingMiddleware,
+)
 
 logger = get_logger(__name__)
 
@@ -65,11 +73,6 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router.router, prefix=settings.api_prefix)
     app.include_router(test_router.router, prefix=settings.api_prefix)
-
-    # Rotas v1 (legado) — desativadas
-    # app.include_router(research.router, prefix="/api/v1/legacy")
-    # app.include_router(reports.router, prefix="/api/v1/legacy")
-    # app.include_router(chat.router, prefix="/api/v1/legacy")
 
     # Event handlers
     @app.on_event("startup")

@@ -10,7 +10,12 @@ from sqlalchemy.orm import selectinload
 
 from app.adapters.driving.http.dependencies import get_db_session
 from core.logging import get_logger
-from db.research_models import Research, ResearchPatentDocument, ResearchScholarlyDocument, ResearchTokenUsage
+from db.research_models import (
+    Research,
+    ResearchPatentDocument,
+    ResearchScholarlyDocument,
+    ResearchTokenUsage,
+)
 from schemas.response import SuccessResponse
 from app.core.services.metrics_aggregator import MetricsAggregator
 
@@ -71,7 +76,12 @@ async def get_research(
             run_id=run_id,
         )
     except Exception as exc:
-        logger.error("v2_get_research_error", error=str(exc), research_id=research_id, run_id=run_id)
+        logger.error(
+            "v2_get_research_error",
+            error=str(exc),
+            research_id=research_id,
+            run_id=run_id,
+        )
         return SuccessResponse(
             success=False,
             data={"error": str(exc)},
@@ -126,7 +136,12 @@ async def get_research_patents(
 
         return SuccessResponse(
             success=True,
-            data={"patents": patent_list, "total": total, "limit": limit, "offset": offset},
+            data={
+                "patents": patent_list,
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+            },
             message=f"Retrieved {len(patent_list)} patents",
             run_id=run_id,
         )
@@ -186,7 +201,12 @@ async def get_research_articles(
 
         return SuccessResponse(
             success=True,
-            data={"articles": article_list, "total": total, "limit": limit, "offset": offset},
+            data={
+                "articles": article_list,
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+            },
             message=f"Retrieved {len(article_list)} articles",
             run_id=run_id,
         )
@@ -200,7 +220,9 @@ async def get_research_articles(
         )
 
 
-@router.post("/{research_id}/calculate-metrics", response_model=SuccessResponse[dict[str, Any]])
+@router.post(
+    "/{research_id}/calculate-metrics", response_model=SuccessResponse[dict[str, Any]]
+)
 async def calculate_metrics(
     request: Request,
     research_id: int,
@@ -238,7 +260,12 @@ async def calculate_metrics(
             run_id=run_id,
         )
     except Exception as exc:
-        logger.error("v2_calculate_metrics_error", error=str(exc), research_id=research_id, run_id=run_id)
+        logger.error(
+            "v2_calculate_metrics_error",
+            error=str(exc),
+            research_id=research_id,
+            run_id=run_id,
+        )
         return SuccessResponse(
             success=False,
             data={"error": str(exc)},
@@ -247,7 +274,9 @@ async def calculate_metrics(
         )
 
 
-@router.post("/{research_id}/generate-report", response_model=SuccessResponse[dict[str, Any]])
+@router.post(
+    "/{research_id}/generate-report", response_model=SuccessResponse[dict[str, Any]]
+)
 async def generate_report(
     request: Request,
     research_id: int,
@@ -322,16 +351,40 @@ async def generate_report(
             "user_input": research.user_input or {},
             "timing": research.timing or {},
             "chosen_candidate": research.chosen_candidate or {},
-            "metrics": {
-                "patent_by_year":         getattr(research.metrics, "patent_by_year", {}) or {},
-                "patent_by_applicant":    getattr(research.metrics, "patent_by_applicant", {}) or {},
-                "patent_by_ipc":          getattr(research.metrics, "patent_by_ipc", {}) or {},
-                "patent_by_legal_status": getattr(research.metrics, "patent_by_legal_status", {}) or {},
-                "article_by_journal":     getattr(research.metrics, "article_by_journal", {}) or {},
-                "article_by_field":       getattr(research.metrics, "article_by_field", {}) or {},
-                "patent_growth_trend":    getattr(research.metrics, "patent_growth_trend", {}) or {},
-                "article_growth_trend":   getattr(research.metrics, "article_growth_trend", {}) or {},
-            } if research.metrics else {},
+            "metrics": (
+                {
+                    "patent_by_year": getattr(research.metrics, "patent_by_year", {})
+                    or {},
+                    "patent_by_applicant": getattr(
+                        research.metrics, "patent_by_applicant", {}
+                    )
+                    or {},
+                    "patent_by_ipc": getattr(research.metrics, "patent_by_ipc", {})
+                    or {},
+                    "patent_by_legal_status": getattr(
+                        research.metrics, "patent_by_legal_status", {}
+                    )
+                    or {},
+                    "article_by_journal": getattr(
+                        research.metrics, "article_by_journal", {}
+                    )
+                    or {},
+                    "article_by_field": getattr(
+                        research.metrics, "article_by_field", {}
+                    )
+                    or {},
+                    "patent_growth_trend": getattr(
+                        research.metrics, "patent_growth_trend", {}
+                    )
+                    or {},
+                    "article_growth_trend": getattr(
+                        research.metrics, "article_growth_trend", {}
+                    )
+                    or {},
+                }
+                if research.metrics
+                else {}
+            ),
         }
 
         report_data = report_svc.map_research_data(research_dict, patents, articles)
@@ -344,7 +397,11 @@ async def generate_report(
         return SuccessResponse(
             success=True,
             data={
-                "latex_content": latex_content[:1000] + "..." if len(latex_content) > 1000 else latex_content,
+                "latex_content": (
+                    latex_content[:1000] + "..."
+                    if len(latex_content) > 1000
+                    else latex_content
+                ),
                 "size_bytes": len(latex_content),
                 "message": "LaTeX report generated. Use 'pdflatex' to compile to PDF.",
             },
@@ -352,7 +409,12 @@ async def generate_report(
             run_id=run_id,
         )
     except Exception as exc:
-        logger.error("v2_generate_report_error", error=str(exc), research_id=research_id, run_id=run_id)
+        logger.error(
+            "v2_generate_report_error",
+            error=str(exc),
+            research_id=research_id,
+            run_id=run_id,
+        )
         return SuccessResponse(
             success=False,
             data={"error": str(exc)},
@@ -393,7 +455,11 @@ async def get_report(
             success=True,
             data={
                 "latex_content": research.latex_content,
-                "generated_at": research.latex_generated_at.isoformat() if research.latex_generated_at else None,
+                "generated_at": (
+                    research.latex_generated_at.isoformat()
+                    if research.latex_generated_at
+                    else None
+                ),
                 "size_bytes": len(research.latex_content),
             },
             message="Report retrieved successfully",
@@ -409,7 +475,9 @@ async def get_report(
         )
 
 
-@router.get("/{research_id}/token-usage", response_model=SuccessResponse[dict[str, Any]])
+@router.get(
+    "/{research_id}/token-usage", response_model=SuccessResponse[dict[str, Any]]
+)
 async def get_token_usage(
     request: Request,
     research_id: int,
@@ -459,7 +527,12 @@ async def get_token_usage(
             run_id=run_id,
         )
     except Exception as exc:
-        logger.error("v2_get_token_usage_error", error=str(exc), research_id=research_id, run_id=run_id)
+        logger.error(
+            "v2_get_token_usage_error",
+            error=str(exc),
+            research_id=research_id,
+            run_id=run_id,
+        )
         return SuccessResponse(
             success=False,
             data={"error": str(exc)},
@@ -468,7 +541,9 @@ async def get_token_usage(
         )
 
 
-@router.get("/{research_id}/token-summary", response_model=SuccessResponse[dict[str, Any]])
+@router.get(
+    "/{research_id}/token-summary", response_model=SuccessResponse[dict[str, Any]]
+)
 async def get_token_summary(
     request: Request,
     research_id: int,
@@ -495,7 +570,13 @@ async def get_token_summary(
             by_phase: dict[str, Any] = {}
             for record in usage_records:
                 if record.phase_name not in by_phase:
-                    by_phase[record.phase_name] = {"tokens": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "calls": 0}
+                    by_phase[record.phase_name] = {
+                        "tokens": 0,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cost_usd": 0.0,
+                        "calls": 0,
+                    }
                 by_phase[record.phase_name]["tokens"] += record.total_tokens
                 by_phase[record.phase_name]["input_tokens"] += record.input_tokens
                 by_phase[record.phase_name]["output_tokens"] += record.output_tokens
@@ -504,7 +585,11 @@ async def get_token_summary(
 
             by_model: dict[str, Any] = {}
             for record in usage_records:
-                model_key = f"{record.model} ({record.model_variant})" if record.model_variant else record.model
+                model_key = (
+                    f"{record.model} ({record.model_variant})"
+                    if record.model_variant
+                    else record.model
+                )
                 if model_key not in by_model:
                     by_model[model_key] = {"tokens": 0, "cost_usd": 0.0, "calls": 0}
                 by_model[model_key]["tokens"] += record.total_tokens
@@ -545,7 +630,12 @@ async def get_token_summary(
             run_id=run_id,
         )
     except Exception as exc:
-        logger.error("v2_get_token_summary_error", error=str(exc), research_id=research_id, run_id=run_id)
+        logger.error(
+            "v2_get_token_summary_error",
+            error=str(exc),
+            research_id=research_id,
+            run_id=run_id,
+        )
         return SuccessResponse(
             success=False,
             data={"error": str(exc)},
