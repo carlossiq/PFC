@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useFormStore } from '../../stores/useFormStore'
+import { refineTopic } from '../../services/refineTopic'
 
 interface Theme {
   id: string
@@ -9,68 +10,6 @@ interface Theme {
   studyArea?: string[]
 }
 
-const themes1: Theme[] = [
-  {
-    id: 'ai-health',
-    theme: 'AI in Healthcare',
-    description: 'Artificial Intelligence applied to diagnosis and treatment',
-    keywords: ['machine learning', 'diagnosis', 'healthcare'],
-    studyArea: ['healthcare', 'medicine'],
-  },
-  {
-    id: 'blockchain',
-    theme: 'Blockchain',
-    description: 'Distributed ledger and cryptography technologies',
-    keywords: ['cryptocurrencies', 'smart contracts', 'security'],
-    studyArea: ['finance', 'supply chain'],
-  },
-  {
-    id: 'climate-tech',
-    theme: 'ClimaTech',
-    description: 'Technologies for sustainabilitdy and climate',
-    keywords: ['renewable energy', 'environmental monitoring', 'sustainability'],
-    studyArea: ['environment', 'energy'],
-  },
-  {
-    id: 'quantum',
-    theme: 'Quantum Computing',
-    description: 'Quantum computers and algorithms',
-    keywords: ['qubits', 'quantum algorithms', 'simulation'],
-    studyArea: ['computing', 'physics'],
-  },
-]
-
-const themes2: Theme[] = [
-  {
-    id: 'cybersecurity',
-    theme: 'Cybersecurity',
-    description: 'Protection of systems and data from cyber threats',
-    keywords: ['network security', 'encryption', 'threat detection'],
-    studyArea: ['security', 'information technology'],
-  },
-  {
-    id: 'vr-ar',
-    theme: 'VR/AR',
-    description: 'Virtual and Augmented Reality technologies',
-    keywords: ['virtual reality', 'augmented reality', 'mixed reality'],
-    studyArea: ['entertainment', 'education'],
-  },
-  {
-    id: 'autonomous-vehicles',
-    theme: 'Autonomous Vehicles',
-    description: 'Self-driving cars and autonomous transportation',
-    keywords: ['self-driving cars', 'autonomous drones', 'transportation'],
-    studyArea: ['automotive', 'transportation'],
-  },
-  {
-    id: 'space-tech',
-    theme: 'Space Technology',
-    description: 'Technologies for space exploration and satellite systems',
-    keywords: ['space exploration', 'satellites', 'space technology'],
-    studyArea: ['aerospace', 'astronomy'],
-  },
-]
-
 interface Step2Props {
   formData: {
     theme: string
@@ -78,17 +17,50 @@ interface Step2Props {
     keywords: string | null
     studyArea: string | null
   }
+  isSaving?: boolean
   onBack: () => void
   onNext: () => void
 }
 
-export function Step2({ formData, onBack, onNext }: Step2Props) {
-  const { input, step2SelectedTheme, setStep2SelectedTheme, step2ThemeSet, setStep2ThemeSet, setGenerated } = useFormStore()
+export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
+  const { input, step2SelectedTheme, setStep2SelectedTheme, setGenerated } = useFormStore()
 
-  const themes = step2ThemeSet === 1 ? themes1 : themes2
+  const [candidates, setCandidates] = useState<Theme[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const generateCandidates = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const results = await refineTopic(input)
+      setCandidates(
+        results.map((candidate, index) => ({
+          id: `candidate-${index}`,
+          theme: candidate.theme,
+          description: candidate.description ?? '',
+          keywords: candidate.keywords ?? undefined,
+          studyArea: candidate.area_of_study
+            ? candidate.area_of_study.split(',').map((a) => a.trim())
+            : undefined,
+        }))
+      )
+    } catch (err) {
+      console.error('Falha ao gerar parâmetros com IA:', err)
+      setError('Não foi possível gerar parâmetros com IA. Tente novamente.')
+      setCandidates([])
+    } finally {
+      setIsLoading(false)
+    }
+  }, [input])
+
+  useEffect(() => {
+    generateCandidates()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleRetry = () => {
-    setStep2ThemeSet(step2ThemeSet === 1 ? 2 : 1)
+    generateCandidates()
   }
 
   const persistedTheme: Theme = {
@@ -132,6 +104,8 @@ export function Step2({ formData, onBack, onNext }: Step2Props) {
       setStep2SelectedTheme(theme)
     }
   }
+
+  const isBusy = isSaving || isLoading
 
   const cardClass = (themeId: string) => `
     py-2 px-4 rounded-lg border-2 text-left bg-gray-100 shadow-sm
@@ -177,24 +151,50 @@ export function Step2({ formData, onBack, onNext }: Step2Props) {
             Generated Parameters
           </h3>
 
-          <div
-            className={`
-              grid gap-4 transition-all duration-500 ease-in-out
-              ${selectedData ? 'grid-cols-1' : 'grid-cols-2'}
-            `}
-          >
-            {themes.map((theme) => (
+          {isLoading && (
+            <div className="grid grid-cols-2 gap-4">
+              {[0, 1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="py-2 px-4 rounded-lg border-2 border-gray-100 bg-gray-100 animate-pulse h-11"
+                />
+              ))}
+            </div>
+          )}
+
+          {!isLoading && error && (
+            <div className="p-4 rounded-lg border-2 border-red-200 bg-red-50">
+              <p className="text-sm text-red-700 mb-2">{error}</p>
               <button
-                key={theme.id}
-                onClick={() => handleSelectTheme(theme)}
-                className={cardClass(theme.id)}
+                type="button"
+                onClick={handleRetry}
+                className="text-sm font-semibold text-[#0f9448] hover:text-[#0d843f]"
               >
-                <h4 className="font-semibold text-gray-900 mb-1">
-                  {theme.theme}
-                </h4>
+                Tentar novamente
               </button>
-            ))}
-          </div>
+            </div>
+          )}
+
+          {!isLoading && !error && (
+            <div
+              className={`
+                grid gap-4 transition-all duration-500 ease-in-out
+                ${selectedData ? 'grid-cols-1' : 'grid-cols-2'}
+              `}
+            >
+              {candidates.map((theme) => (
+                <button
+                  key={theme.id}
+                  onClick={() => handleSelectTheme(theme)}
+                  className={cardClass(theme.id)}
+                >
+                  <h4 className="font-semibold text-gray-900 mb-1">
+                    {theme.theme}
+                  </h4>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div
@@ -236,9 +236,11 @@ export function Step2({ formData, onBack, onNext }: Step2Props) {
                     <p className="text-xs text-gray-600 font-medium mb-1">
                       Keywords
                     </p>
-                    <p className="text-sm font-semibold text-gray-900">
-                      {selectedData.keywords.join(', ')}
-                    </p>
+                    <ol className="text-sm font-semibold text-gray-900 list-decimal list-inside space-y-0.5">
+                      {selectedData.keywords.map((keyword, index) => (
+                        <li key={`${keyword}-${index}`}>{keyword}</li>
+                      ))}
+                    </ol>
                   </div>
                 )}
 
@@ -261,23 +263,26 @@ export function Step2({ formData, onBack, onNext }: Step2Props) {
       <div className="mt-6 pt-4 border-t border-gray-200 flex gap-4">
         <button
           onClick={onBack}
-          className="flex-1 bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-300"
+          disabled={isBusy}
+          className="flex-1 bg-gray-400 hover:bg-gray-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-300"
         >
           Back
         </button>
 
         <button
           onClick={onNext}
-          className="flex-1 font-semibold py-2 px-4 rounded-lg text-white transition-colors duration-300 bg-[#0f9448] hover:bg-[#0d843f]"
+          disabled={isBusy}
+          className="flex-1 font-semibold py-2 px-4 rounded-lg text-white transition-colors duration-300 bg-[#0f9448] hover:bg-[#0d843f] disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          Confirm
+          {isSaving ? 'Confirming...' : 'Confirm'}
         </button>
 
         <button
           onClick={handleRetry}
-          className="flex-1 bg-[#0f9448] hover:bg-[#0d843f] text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-300"
+          disabled={isBusy}
+          className="flex-1 bg-[#0f9448] hover:bg-[#0d843f] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-300"
         >
-          Generate Others
+          {isLoading ? 'Generating...' : 'Generate Others Parameters'}
         </button>
       </div>
     </div>

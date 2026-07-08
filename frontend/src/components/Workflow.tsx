@@ -9,6 +9,12 @@ import { useFormStore } from "../stores/useFormStore";
 import { useHistoryStore } from "../stores/useHistoryStore";
 import { useSidebarStore } from "../stores/useSidebarStore";
 import { TABS } from "../constants/tabs";
+import {
+  mapInputToParamInitPayload,
+  upsertParamInit,
+  deleteParamInit,
+  deleteParamInitViaBeacon,
+} from "../services/paramInit";
 
 const tabContents = {
   [TABS.WELCOME]: { title: "Welcome", label: "Welcome" },
@@ -29,10 +35,19 @@ export function WorkflowPage() {
   const { tab, setTab } = useWorkflowStore();
   const { setLocked } = useSidebarStore();
   const { step, substep, nextStep, prevStep, reset, setStep } = useProspectingStore();
-  const { input, setInput, step2SelectedTheme, step2ThemeSet, setStep2SelectedTheme, setStep2ThemeSet } = useFormStore();
+  const {
+    input,
+    setInput,
+    step2SelectedTheme,
+    setStep2SelectedTheme,
+    paramInitId,
+    setParamInitId,
+    reset: formReset,
+  } = useFormStore();
   const { push: historyPush, pop: historyPop, reset: historyReset } = useHistoryStore();
   const [topicError, setTopicError] = useState(false);
   const [hasAttempted, setHasAttempted] = useState(false);
+  const [isSavingParams, setIsSavingParams] = useState(false);
 
   useEffect(() => {
     if (tab === TABS.START_PROSPECTION) {
@@ -53,6 +68,20 @@ export function WorkflowPage() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [tab]);
 
+  // pagehide só dispara quando a saída da página de fato acontece (diferente do
+  // beforeunload, que dispara mesmo se o usuário cancelar o prompt de saída) -
+  // por isso é aqui, e não no beforeunload, que descartamos a tupla PARAM_INIT.
+  useEffect(() => {
+    const handlePageHide = () => {
+      if (tab === TABS.START_PROSPECTION && paramInitId) {
+        deleteParamInitViaBeacon(paramInitId);
+      }
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+    return () => window.removeEventListener('pagehide', handlePageHide);
+  }, [tab, paramInitId]);
+
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setInput({ [name as keyof typeof input]: value });
@@ -70,35 +99,66 @@ export function WorkflowPage() {
     return true;
   };
 
+  // Cria ou atualiza a tupla PARAM_INIT no backend com os dados atuais do formStore.
+  // Retorna true se salvou com sucesso (e nesse caso já guardou o id retornado).
+  const saveParamInit = async () => {
+    setIsSavingParams(true);
+    try {
+      const payload = mapInputToParamInitPayload(input);
+      const result = await upsertParamInit(paramInitId, payload);
+      setParamInitId(result.id);
+      return true;
+    } catch (err) {
+      console.error("Falha ao salvar parâmetros iniciais:", err);
+      return false;
+    } finally {
+      setIsSavingParams(false);
+    }
+  };
+
   const handleRefineParameters = () => {
     if (handleValidateTopic()) {
-      // Dados já estão no formStore, apenas avançar no workflow
+      // Apenas navega para o Step2 - o PARAM_INIT só é persistido na confirmação (handleNext).
       setStep(step, 0);
     }
   };
 
-  const handleStartProspection = () => {
+  const handleStartProspection = async () => {
     if (handleValidateTopic()) {
-      console.log("Iniciando prospecção com:", input);
-      nextStep();
+      // "Gerar Query" pula o Step2, então o save precisa acontecer aqui mesmo.
+      const saved = await saveParamInit();
+      if (saved) {
+        nextStep();
+      }
     }
   };
 
   const handleCancel = () => {
+    if (paramInitId) {
+      deleteParamInit(paramInitId).catch((err) =>
+        console.error("Falha ao descartar parâmetros iniciais:", err)
+      );
+    }
     setTab(TABS.WELCOME);
     reset();
+    formReset();
     historyReset();
     setTopicError(false);
     setHasAttempted(false);
   };
 
-  // Avança step e salva o estado atual no histórico antes de sair
-  const handleNext = () => {
+  // Avança step e salva o estado atual no histórico antes de sair.
+  // Ao sair do Step2 (confirmar tema), persiste o PARAM_INIT antes de avançar.
+  const handleNext = async () => {
+    if (step === 0 && substep === 0) {
+      const saved = await saveParamInit();
+      if (!saved) return;
+    }
+
     historyPush({
       step,
       substep,
       selectedTheme: step2SelectedTheme,
-      themeSet: step2ThemeSet,
     });
     nextStep();
   };
@@ -111,7 +171,6 @@ export function WorkflowPage() {
       if (snapshot.selectedTheme) {
         setStep2SelectedTheme(snapshot.selectedTheme);
       }
-      setStep2ThemeSet(snapshot.themeSet);
     } else {
       prevStep();
     }
@@ -134,6 +193,7 @@ export function WorkflowPage() {
                 formData={input}
                 temaError={topicError}
                 hasAttempted={hasAttempted}
+                isSaving={isSavingParams}
                 onFormChange={handleFormChange}
                 onRefinirParametros={handleRefineParameters}
                 onGerar={handleStartProspection}

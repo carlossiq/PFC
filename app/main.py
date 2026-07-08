@@ -5,7 +5,7 @@ Main FastAPI application initialization and startup configuration.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import chat, health, reports, research, test
+from api.routes import chat, health, param_init, reports, research, test
 from api.routes.reports import initialize_services
 from core.config import settings
 from core.logging import configure_logging, get_logger
@@ -61,6 +61,7 @@ def create_app() -> FastAPI:
     app.include_router(chat.router, prefix=settings.api_prefix)
     app.include_router(research.router, prefix=settings.api_prefix)
     app.include_router(reports.router, prefix=settings.api_prefix)
+    app.include_router(param_init.router, prefix=settings.api_prefix)
     app.include_router(test.router, prefix=settings.api_prefix)
 
     # Event handlers

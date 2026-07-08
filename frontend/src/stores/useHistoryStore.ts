@@ -11,7 +11,6 @@ export interface HistorySnapshot {
     keywords?: string[]
     studyArea?: string[]
   } | null
-  themeSet: number
 }
 
 // Stack de histórico de navegação (push ao confirmar, pop ao voltar)

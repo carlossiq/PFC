@@ -34,12 +34,13 @@ interface FormStore {
   generated: GeneratedData
   setGenerated: (data: Partial<GeneratedData>) => void
 
-  // Estado do Step2 (tema selecionado e set de temas)
+  // Estado do Step2 (tema selecionado)
   step2SelectedTheme: SelectedTheme | null
   setStep2SelectedTheme: (theme: SelectedTheme | null) => void
 
-  step2ThemeSet: number
-  setStep2ThemeSet: (themeSet: number) => void
+  // Id da tupla PARAM_INIT já persistida no backend (null se ainda não salva)
+  paramInitId: number | null
+  setParamInitId: (id: number | null) => void
 
   // Utilitários
   getFormData: () => {
@@ -67,7 +68,7 @@ export const useFormStore = create<FormStore>((set, get) => ({
   input: defaultInput,
   generated: defaultGenerated,
   step2SelectedTheme: null,
-  step2ThemeSet: 1,
+  paramInitId: null,
 
   setInput: (data) =>
     set((state) => ({
@@ -84,9 +85,9 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step2SelectedTheme: theme,
     }),
 
-  setStep2ThemeSet: (themeSet) =>
+  setParamInitId: (id) =>
     set({
-      step2ThemeSet: themeSet,
+      paramInitId: id,
     }),
 
   getFormData: () => {
@@ -102,6 +103,6 @@ export const useFormStore = create<FormStore>((set, get) => ({
       input: defaultInput,
       generated: defaultGenerated,
       step2SelectedTheme: null,
-      step2ThemeSet: 1,
+      paramInitId: null,
     }),
 }))

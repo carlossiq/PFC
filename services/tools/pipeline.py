@@ -252,15 +252,17 @@ async def generate_candidate_topics(intake: InputIntake) -> dict[str, Any]:
     """
     Gera 4 tópicos mais específicos usando LLM baseado na entrada do usuário.
 
-    A LLM analisa os parâmetros fornecidos e sugere 4 variações
-    mais específicas e focadas, retornando APENAS os campos que o usuário forneceu.
+    A LLM analisa os parâmetros fornecidos e sugere 4 variações mais específicas
+    e focadas. Campos que o usuário já preencheu são preservados como-são; campos
+    que o usuário deixou em branco são gerados pela própria LLM.
 
     Regras:
-    - area_of_study: Se fornecido pelo usuário, preservado em todos os candidatos
-    - keywords: Se fornecidas pelo usuário, preservadas em todos os candidatos
     - theme: Sempre gerado com 4 variações específicas e diferentes
     - description: Gerado apenas se o usuário forneceu description como entrada
-    - Campos não fornecidos são omitidos da resposta
+    - area_of_study: Se fornecido pelo usuário, preservado em todos os candidatos;
+      caso contrário, gerado pela LLM (pode variar por candidato)
+    - keywords: Se fornecidas pelo usuário, preservadas em todos os candidatos;
+      caso contrário, geradas pela LLM (podem variar por candidato)
 
     Args:
         intake: InputIntake com theme (obrigatório), description, area_of_study, keywords.
@@ -269,8 +271,8 @@ async def generate_candidate_topics(intake: InputIntake) -> dict[str, Any]:
         Dict com 4 tópicos candidatos. Cada candidato contém:
         - theme: Sempre presente (refinado)
         - description: Presente apenas se foi entrada do usuário
-        - area_of_study: Presente apenas se foi entrada (preservado como-é)
-        - keywords: Presente apenas se foi entrada (preservadas como-são)
+        - area_of_study: Sempre presente (preservado se foi entrada, senão gerado pela LLM)
+        - keywords: Sempre presente (preservadas se foram entrada, senão geradas pela LLM)
         - user_input: Campos originais fornecidos pelo usuário
     """
     try:
@@ -336,22 +338,33 @@ async def generate_candidate_topics(intake: InputIntake) -> dict[str, Any]:
                 "message": "LLM retornou candidates vazio",
             }
 
-        # Processar candidatos: remover campos não fornecidos e preservar os que foram
+        # Processar candidatos: preservar campos fornecidos pelo usuário como-são,
+        # e usar o que a LLM gerou para os campos que o usuário deixou em branco.
         processed_candidates = []
         for candidate in candidates:
             processed = {"theme": candidate.get("theme")}
 
-            # description: incluir apenas se foi entrada
+            # description: incluir apenas se foi entrada (não geramos do zero)
             if user_provided_fields["description"] and candidate.get("description"):
                 processed["description"] = candidate["description"]
 
-            # area_of_study: incluir apenas se foi entrada, e preservar o original
+            # area_of_study: preservar o original se fornecido, senão usar o gerado pela LLM
             if user_provided_fields["area_of_study"]:
                 processed["area_of_study"] = intake.area_of_study
+            elif candidate.get("area_of_study"):
+                processed["area_of_study"] = candidate["area_of_study"]
 
-            # keywords: incluir apenas se foi entrada, e preservar os originais
+            # keywords: preservar os originais se fornecidos, senão usar os gerados pela LLM.
+            # A LLM às vezes retorna uma string separada por vírgulas em vez de um array
+            # (apesar da instrução no prompt) - normalizamos para lista aqui como salvaguarda.
             if user_provided_fields["keywords"]:
                 processed["keywords"] = intake.keywords
+            elif candidate.get("keywords"):
+                raw_keywords = candidate["keywords"]
+                if isinstance(raw_keywords, str):
+                    raw_keywords = [kw.strip() for kw in raw_keywords.split(",") if kw.strip()]
+                if raw_keywords:
+                    processed["keywords"] = raw_keywords
 
             # Adicionar contexto do usuário
             processed["user_input"] = intake.model_dump()

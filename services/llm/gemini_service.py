@@ -3,6 +3,7 @@ Google Gemini LLM service implementation.
 """
 
 import json
+import re
 from typing import Any, Optional
 
 from pydantic import ValidationError
@@ -265,11 +266,23 @@ class GeminiLLMService(BaseLLMService):
             Exception: Se chamada à API falhar.
         """
         try:
+            import google.generativeai as genai
+
             # Combinar prompts
             full_prompt = f"{system_prompt}\n\n{user_message}"
 
+            # response_mime_type="application/json" força a API a retornar JSON
+            # sintaticamente válido (sem cercas ```json, sem texto solto ao redor),
+            # reduzindo bastante erros de parsing na resposta do modelo.
+            generation_config = genai.types.GenerationConfig(
+                response_mime_type="application/json",
+            )
+
             # Fazer chamada assíncrona à API
-            response = await self.client.generate_content_async(full_prompt)
+            response = await self.client.generate_content_async(
+                full_prompt,
+                generation_config=generation_config,
+            )
 
             return response.text
 
@@ -303,7 +316,7 @@ class GeminiLLMService(BaseLLMService):
             if end > start:
                 json_str = response[start:end].strip()
                 try:
-                    return json.loads(json_str)
+                    return GeminiLLMService._parse_json_with_repair(json_str)
                 except json.JSONDecodeError as exc:
                     raise ValueError(f"Invalid JSON in ```json block: {exc}")
 
@@ -314,12 +327,33 @@ class GeminiLLMService(BaseLLMService):
             if end > start:
                 json_str = response[start:end].strip()
                 try:
-                    return json.loads(json_str)
+                    return GeminiLLMService._parse_json_with_repair(json_str)
                 except json.JSONDecodeError as exc:
                     raise ValueError(f"Invalid JSON in ``` block: {exc}")
 
         # Tentar parse direto
         try:
-            return json.loads(response)
+            return GeminiLLMService._parse_json_with_repair(response)
         except json.JSONDecodeError as exc:
             raise ValueError(f"Could not parse response as JSON: {exc}. Response preview: {response[:200]}")
+
+    @staticmethod
+    def _parse_json_with_repair(json_str: str) -> dict:
+        """
+        Faz parse de JSON, com uma segunda tentativa removendo vírgulas
+        sobrando antes de ``}``/``]`` (erro comum em respostas de LLM).
+
+        Args:
+            json_str: Texto candidato a JSON.
+
+        Returns:
+            Dicionário parseado.
+
+        Raises:
+            json.JSONDecodeError: Se nem o texto original nem a versão reparada forem JSON válido.
+        """
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            repaired = re.sub(r",\s*([}\]])", r"\1", json_str)
+            return json.loads(repaired)

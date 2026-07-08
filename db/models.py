@@ -159,7 +159,6 @@ class PatentDocument(Base):
         Index("idx_patent_source_record", "source", "source_record_id"),
         Index("idx_patent_year_relevance", "year", "relevance_score"),
         Index("idx_patent_source_year", "source", "year"),
-        Index("idx_patent_applicants_year", "applicants", "year"),
     )
 
     def __repr__(self) -> str:

@@ -12,6 +12,7 @@ interface Step1Props {
   }
   temaError: boolean
   hasAttempted: boolean
+  isSaving?: boolean
   onFormChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void
   onRefinirParametros: () => void
   onGerar: () => void
@@ -26,6 +27,7 @@ export function Step1({
   formData,
   temaError,
   hasAttempted,
+  isSaving,
   onFormChange,
   onRefinirParametros,
   onGerar,
@@ -40,6 +42,7 @@ export function Step1({
     return (
       <Step2
         formData={formData}
+        isSaving={isSaving}
         onBack={onBack}
         onNext={onNext}
       />
@@ -83,6 +86,11 @@ export function Step1({
             onChange={onFormChange}
             placeholder="machine learning, diagnóstico, saúde"
           />
+          <p className="text-gray-500 text-xs mt-1">
+            Separe as keywords por vírgulas. Se deixar em branco, a IA gera
+            keywords para cada parâmetro sugerido; se preencher, o seu valor é
+            mantido como está.
+          </p>
         </div>
 
         <div>
@@ -93,27 +101,34 @@ export function Step1({
             onChange={onFormChange}
             placeholder="Ex: Healthcare, Finance, ou G06F, A61B"
           />
+          <p className="text-gray-500 text-xs mt-1">
+            Se deixar em branco, a IA gera uma área de estudo para cada
+            parâmetro sugerido; se preencher, o seu valor é mantido como está.
+          </p>
         </div>
 
         <div className="flex gap-4 pt-0">
           <button
             type="button"
             onClick={onRefinirParametros}
-            className="flex-1 bg-[#0f9448] hover:bg-[#0d843f] text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+            disabled={isSaving}
+            className="flex-1 bg-[#0f9448] hover:bg-[#0d843f] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors"
           >
             Refinar parâmetros
           </button>
           <button
             type="button"
             onClick={onGerar}
-            className="flex-1 bg-[#0f9448] hover:bg-[#0d843f] text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+            disabled={isSaving}
+            className="flex-1 bg-[#0f9448] hover:bg-[#0d843f] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors"
           >
-            Gerar Query
+            {isSaving ? 'Gerando...' : 'Gerar Query'}
           </button>
           <button
             type="button"
             onClick={onCancel}
-            className="flex-1 bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+            disabled={isSaving}
+            className="flex-1 bg-gray-400 hover:bg-gray-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors"
           >
             Cancelar
           </button>
