@@ -278,7 +278,8 @@ class LensScholarlyQueryBuilder(BaseQueryBuilder):
 
         try:
             with open(self._FIELD_MAP_FILE, "r") as f:
-                return json.load(f)
+                data = json.load(f)
+                return data.get("field_map", data)
         except Exception as exc:
             logger.error(f"Failed to load field map: {exc}")
             return self._get_default_field_map()

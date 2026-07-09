@@ -25,6 +25,7 @@ class ScopusQueryBuilderAdapter:
         year_to: int = 2024,
         search_mode: str = "final",
     ) -> dict[str, Any]:
+        self._builder.search_mode = search_mode
         llm_output = response_to_output(strategy)
         return self._builder.build_query(
             llm_output=llm_output,

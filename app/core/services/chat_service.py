@@ -354,92 +354,166 @@ class ChatService:
             logger.error("build_final_query_error", error=str(exc))
             return {"success": False, "error": str(exc)}
 
+    def _terms_context_suffix(
+        self,
+        extracted_terms: list[dict[str, Any]],
+        variant: str,
+        api: str,
+    ) -> str:
+        doc_type = "PATENT" if api in ("ops", "lens_patent") else "SCHOLARLY"
+        thresholds = {"specific": 0.4, "balanced": 0.3, "generic": 0.2}
+        threshold = thresholds.get(variant, 0.3)
+        terms = [t for t in extracted_terms if t.get("score", 0) > threshold]
+
+        terms_str = (
+            "\n".join(
+                f"- {t.get('term', '')} (score: {t.get('score', 0):.3f}, freq: {t.get('frequency', 0)})"
+                for t in terms[:20]
+            )
+            if terms
+            else "- None available"
+        )
+
+        variant_instructions = {
+            "specific": (
+                "Build a FOCUSED, HIGH-PRECISION query. "
+                "Use only the highest-scoring extracted terms. "
+                "Combine core concepts with AND. Limit OR groups to 3–4 terms."
+            ),
+            "balanced": (
+                "Build a BALANCED query with good recall and precision. "
+                "Use mid-range scoring extracted terms. "
+                "Allow broader OR groups (4–6 terms). Limit AND combinations to 1–2."
+            ),
+            "generic": (
+                "Build a BROAD, HIGH-RECALL query. "
+                "Include all extracted terms above the score threshold. "
+                "Minimize AND operators. Maximize coverage."
+            ),
+        }
+
+        return (
+            f"\n\n## DOCUMENT TYPE\n\n{doc_type}\n\n"
+            f"## SEARCH VARIANT: {variant.upper()}\n\n"
+            f"{variant_instructions.get(variant, '')}\n\n"
+            f"## EXTRACTED TERMS (score > {threshold})\n\n"
+            f"{terms_str}\n"
+        )
+
+    async def _build_final_variant_query(
+        self,
+        intake: Any,
+        api: str,
+        extracted_terms: list[dict[str, Any]],
+        variant: str,
+    ) -> dict[str, Any]:
+        from services.prompt.prompt_loader import PromptLoader
+
+        max_complexity = getattr(self.settings, "llm_max_query_complexity", 0.6)
+        max_score = max_complexity * 100
+        max_attempts = 3
+        attempts_history: list[dict] = []
+        complexity: Optional[dict] = None
+
+        llm_request = self._intake_to_request(intake)
+        qb = _get_qb_adapter(api, search_mode="final")
+        context_suffix = self._terms_context_suffix(extracted_terms, variant, api)
+
+        for attempt in range(1, max_attempts + 1):
+            base_prompt = PromptLoader.load_prompt("final_system_prompt.md")
+            system_prompt = base_prompt + context_suffix
+            if attempt > 1:
+                system_prompt += self._simplification_suffix(complexity, attempt)
+
+            llm_response = await self.llm.process_intake(llm_request, system_prompt)
+
+            query = qb.build_query(
+                strategy=llm_response,
+                year_from=getattr(self.settings, "search_year_from", 2015),
+                year_to=getattr(self.settings, "search_year_to", 2026),
+                search_mode="final",
+            )
+
+            cql_query = query.get("query", "")
+            complexity = self._complexity_from_query(cql_query)
+            passed = complexity["score"] <= max_score
+
+            attempts_history.append({"attempt": attempt, "query": query, "complexity": complexity})
+
+            logger.info(
+                "final_variant_complexity_check",
+                api=api,
+                variant=variant,
+                attempt=attempt,
+                score=complexity["score"],
+                max_score=max_score,
+                passed=passed,
+            )
+
+            if passed:
+                return {
+                    "success": True,
+                    "query": query,
+                    "complexity": complexity,
+                    "attempt": attempt,
+                }
+
+        best = min(attempts_history, key=lambda x: x["complexity"]["score"])
+        logger.warning(
+            "final_variant_complexity_exceeded",
+            api=api,
+            variant=variant,
+            best_attempt=best["attempt"],
+            best_score=best["complexity"]["score"],
+        )
+        return {
+            "success": True,
+            "query": best["query"],
+            "complexity": best["complexity"],
+            "attempt": best["attempt"],
+            "warning": (
+                f"Query complexity ({best['complexity']['score']:.1f}/100) exceeds limit "
+                f"({max_score:.0f}) after {max_attempts} attempts. "
+                f"Returning least complex attempt."
+            ),
+        }
+
     async def build_final_queries_multi(
         self,
         intake: Any,
         extracted_terms: list[dict[str, Any]],
         api: str,
     ) -> dict[str, Any]:
-        from services.prompt.prompt_loader import PromptLoader
-
-        max_score = getattr(self.settings, "llm_max_query_complexity", 0.6) * 100
-
-        top_specific = [t for t in extracted_terms if t.get("score", 0) > 0.4]
-        top_balanced = [t for t in extracted_terms if t.get("score", 0) > 0.3]
-        top_generic = [t for t in extracted_terms if t.get("score", 0) > 0.2]
-
-        def _fmt(terms: list[dict]) -> str:
-            if not terms:
-                return "- None available"
-            return "\n".join(
-                f"- {t.get('term', '')} (score: {t.get('score', 0):.3f}, freq: {t.get('frequency', 0)})"
-                for t in terms[:20]
-            )
-
-        system_prompt = PromptLoader.load_prompt("final_system_prompt.md")
-        user_message = (
-            f"Generate THREE search query variations for {api.upper()} database:\n\n"
-            f"## Original Search Parameters\n"
-            f"- Theme: {intake.theme}\n"
-            f"- Description: {intake.description}\n"
-            f"- Area of Study: {intake.area_of_study}\n"
-            f"- Keywords: {', '.join(intake.keywords) if intake.keywords else 'None'}\n\n"
-            f"## Extracted Relevant Terms\n\n"
-            f"### High-Scoring Terms (score > 0.4) - For SPECIFIC query:\n{_fmt(top_specific)}\n\n"
-            f"### Mid-Scoring Terms (score > 0.3) - For BALANCED query:\n{_fmt(top_balanced)}\n\n"
-            f"### All Relevant Terms (score > 0.2) - For GENERIC query:\n{_fmt(top_generic)}\n\n"
-            f"## Requirements\n"
-            f"- All queries must have complexity score < {max_score:.0f}\n"
-            f"- Prefer extracted terms over original parameters when synonyms exist\n"
-            f"- Use ABSTRACT OR TITLE as primary search fields\n"
-            f"- Return JSON with keys: specific, balanced, generic\n\n"
-            f"Target API: {api}\n"
-            f"Query Syntax: {'CQL' if api == 'ops' else 'Boolean'}\n"
-        )
-
-        try:
-            queries_json = await self.llm.call_raw_json(system_prompt, user_message)
-        except Exception as exc:
-            logger.error("build_final_queries_multi_llm_error", error=str(exc))
-            return {"success": False, "error": f"LLM call failed: {exc}"}
-
+        thresholds = {"specific": 0.4, "balanced": 0.3, "generic": 0.2}
         results: dict[str, Any] = {
             "success": True,
             "api": api,
             "user_input": intake.model_dump(),
             "extracted_terms_summary": {
                 "total": len(extracted_terms),
-                "high_score": len(top_specific),
-                "mid_score": len(top_balanced),
-                "all_score": len(top_generic),
+                "high_score": len([t for t in extracted_terms if t.get("score", 0) > thresholds["specific"]]),
+                "mid_score": len([t for t in extracted_terms if t.get("score", 0) > thresholds["balanced"]]),
+                "all_score": len([t for t in extracted_terms if t.get("score", 0) > thresholds["generic"]]),
             },
             "queries": {},
         }
 
         for variant in ("specific", "balanced", "generic"):
-            query_data = queries_json.get(variant, {})
-            query_str = query_data.get("query", "")
-            if not query_str:
-                results["queries"][variant] = {"success": False, "error": f"No query for {variant}"}
-                continue
-
-            complexity = self._complexity_from_query(query_str)
-            passed = complexity["score"] <= max_score
-
-            entry: dict[str, Any] = {
-                "success": passed or variant == "generic",
-                "query": {"query": query_str, "format": "json"},
-                "rationale": query_data.get("rationale", ""),
-                "expected_precision": query_data.get("expected_precision", ""),
-                "focus_areas": query_data.get("focus_areas", []),
-                "complexity": {**complexity, "passed": passed},
-            }
-            if not passed and variant != "generic":
-                entry["warning"] = (
-                    f"Query complexity ({complexity['score']:.1f}/100) exceeds limit ({max_score:.0f}). "
-                    f"Consider the GENERIC variant."
+            try:
+                results["queries"][variant] = await self._build_final_variant_query(
+                    intake=intake,
+                    api=api,
+                    extracted_terms=extracted_terms,
+                    variant=variant,
                 )
-            results["queries"][variant] = entry
+            except Exception as exc:
+                logger.error(
+                    "build_final_queries_multi_variant_error",
+                    variant=variant,
+                    api=api,
+                    error=str(exc),
+                )
+                results["queries"][variant] = {"success": False, "error": str(exc)}
 
         return results
 
@@ -487,7 +561,10 @@ class ChatService:
             return {"success": False, "api": api, "error": f"API '{api}' not enabled or not found"}
 
         try:
-            result = await adapter.search(query)
+            if api == "ops" and hasattr(adapter, "search_with_biblio"):
+                result = await adapter.search_with_biblio(query, top_k=min(max_results, 100))
+            else:
+                result = await adapter.search(query)
             items = result.results[:max_results] if result.success else []
             return {
                 "success": result.success,

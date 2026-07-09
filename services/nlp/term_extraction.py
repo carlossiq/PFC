@@ -23,10 +23,13 @@ logger = get_logger(__name__)
 
 try:
     import spacy
+
     SPACY_AVAILABLE = True
 except ImportError:
     SPACY_AVAILABLE = False
-    logger.warning("spacy_not_installed", message="Install spacy for better n-gram extraction")
+    logger.warning(
+        "spacy_not_installed", message="Install spacy for better n-gram extraction"
+    )
 
 
 class TermExtractor:
@@ -66,8 +69,13 @@ class TermExtractor:
         if not self.keybert:
             try:
                 from keybert import KeyBERT
+
                 # Load model name from config (default: generic multilingual)
-                model_name = getattr(settings, "llm_keybert_model", "distiluse-base-multilingual-cased-v2")
+                model_name = getattr(
+                    settings,
+                    "llm_keybert_model",
+                    "distiluse-base-multilingual-cased-v2",
+                )
                 self.keybert = KeyBERT(model=model_name)
                 logger.info(
                     "keybert_model_loaded",
@@ -103,12 +111,17 @@ class TermExtractor:
     def _load_ngram_boundary_tokens(self) -> None:
         """Load n-gram boundary tokens that split n-grams when encountered."""
         try:
-            config_path = Path(__file__).parent.parent.parent / "config" / "ngram_boundary_tokens.json"
+            config_path = (
+                Path(__file__).parent.parent.parent
+                / "config"
+                / "ngram_boundary_tokens.json"
+            )
             with open(config_path, "r", encoding="utf-8") as f:
                 boundary_config = json.load(f)
 
             self.ngram_boundary_tokens = set(
-                token.lower() for token in boundary_config.get("ngram_boundary_tokens", [])
+                token.lower()
+                for token in boundary_config.get("ngram_boundary_tokens", [])
             )
 
             logger.info(
@@ -125,16 +138,28 @@ class TermExtractor:
     def _load_pos_patterns_config(self) -> None:
         """Load POS patterns (bad bigrams/trigrams) and boundary POS tags from config."""
         try:
-            config_path = Path(__file__).parent.parent.parent / "config" / "pos_patterns.json"
+            config_path = (
+                Path(__file__).parent.parent.parent / "config" / "pos_patterns.json"
+            )
             with open(config_path, "r", encoding="utf-8") as f:
                 pos_config = json.load(f)
 
             # Convert to tuples for matching
-            self.bad_pos_bigrams = [tuple(pattern) for pattern in pos_config.get("pos_patterns", {}).get("bad_bigrams", [])]
-            self.bad_pos_trigrams = [tuple(pattern) for pattern in pos_config.get("pos_patterns", {}).get("bad_trigrams", [])]
+            self.bad_pos_bigrams = [
+                tuple(pattern)
+                for pattern in pos_config.get("pos_patterns", {}).get("bad_bigrams", [])
+            ]
+            self.bad_pos_trigrams = [
+                tuple(pattern)
+                for pattern in pos_config.get("pos_patterns", {}).get(
+                    "bad_trigrams", []
+                )
+            ]
 
             # Load boundary POS tags that split n-grams
-            self.ngram_boundary_pos = set(pos_config.get("pos_patterns", {}).get("ngram_boundary_pos", []))
+            self.ngram_boundary_pos = set(
+                pos_config.get("pos_patterns", {}).get("ngram_boundary_pos", [])
+            )
 
             logger.info(
                 "pos_patterns_config_loaded",
@@ -154,15 +179,28 @@ class TermExtractor:
     def _load_quality_filter_config(self) -> None:
         """Load string quality filter rules (boundary stopwords, structural words)."""
         try:
-            config_path = Path(__file__).parent.parent.parent / "config" / "string_quality_filter.json"
+            config_path = (
+                Path(__file__).parent.parent.parent
+                / "config"
+                / "string_quality_filter.json"
+            )
             with open(config_path, "r", encoding="utf-8") as f:
                 quality_config = json.load(f)
 
             # Load filter word sets
             filters = quality_config.get("string_quality_filters", {})
-            self.boundary_stopwords = set(w.lower() for w in filters.get("boundary_stopwords", {}).get("words", []))
-            self.patent_structural_words = set(w.lower() for w in filters.get("patent_structural_words", {}).get("words", []))
-            self.scholarly_structural_words = set(w.lower() for w in filters.get("scholarly_structural_words", {}).get("words", []))
+            self.boundary_stopwords = set(
+                w.lower()
+                for w in filters.get("boundary_stopwords", {}).get("words", [])
+            )
+            self.patent_structural_words = set(
+                w.lower()
+                for w in filters.get("patent_structural_words", {}).get("words", [])
+            )
+            self.scholarly_structural_words = set(
+                w.lower()
+                for w in filters.get("scholarly_structural_words", {}).get("words", [])
+            )
 
             logger.info(
                 "quality_filter_config_loaded",
@@ -197,13 +235,13 @@ class TermExtractor:
         text = text.lower()
 
         # Remove URLs
-        text = re.sub(r'http\S+|www.\S+', '', text)
+        text = re.sub(r"http\S+|www.\S+", "", text)
 
         # Normalize hyphens to spaces
-        text = text.replace('-', ' ')
+        text = text.replace("-", " ")
 
         # Remove extra spaces
-        text = re.sub(r'\s+', ' ', text).strip()
+        text = re.sub(r"\s+", " ", text).strip()
 
         return text
 
@@ -331,7 +369,9 @@ class TermExtractor:
 
         return ngrams
 
-    def _split_by_boundaries(self, tokens: list[str], pos_tags: list[str]) -> list[tuple[list[str], list[str]]]:
+    def _split_by_boundaries(
+        self, tokens: list[str], pos_tags: list[str]
+    ) -> list[tuple[list[str], list[str]]]:
         """
         Split token sequence by boundary tokens and POS tags.
 
@@ -352,8 +392,7 @@ class TermExtractor:
         for token, pos in zip(tokens, pos_tags):
             # Check if this is a boundary token or POS tag
             is_boundary = (
-                token in self.ngram_boundary_tokens
-                or pos in self.ngram_boundary_pos
+                token in self.ngram_boundary_tokens or pos in self.ngram_boundary_pos
             )
 
             if is_boundary:
@@ -375,7 +414,9 @@ class TermExtractor:
 
         return segments if segments else [(tokens, pos_tags)]
 
-    def _extract_keybert_scores(self, texts: list[str], ngrams: list[str]) -> dict[str, float]:
+    def _extract_keybert_scores(
+        self, texts: list[str], ngrams: list[str]
+    ) -> dict[str, float]:
         """
         Extract KeyBERT semantic relevance scores.
 
@@ -448,7 +489,9 @@ class TermExtractor:
 
         return scores
 
-    def _extract_tfidf_scores(self, texts: list[str], ngrams: list[str]) -> dict[str, float]:
+    def _extract_tfidf_scores(
+        self, texts: list[str], ngrams: list[str]
+    ) -> dict[str, float]:
         """
         Extract TF-IDF statistical importance scores.
 
@@ -468,7 +511,7 @@ class TermExtractor:
             return scores
 
         try:
-            vectorizer = TfidfVectorizer(analyzer='word', lowercase=True)
+            vectorizer = TfidfVectorizer(analyzer="word", lowercase=True)
             tfidf_matrix = vectorizer.fit_transform(texts)
             feature_names = set(vectorizer.get_feature_names_out())
 
@@ -483,7 +526,9 @@ class TermExtractor:
                 else:
                     # For multi-word ngrams, only score if ALL tokens appear
                     # (don't average partial matches across sources)
-                    if len(ngram_tokens) > 1 and all(token in feature_names for token in ngram_tokens):
+                    if len(ngram_tokens) > 1 and all(
+                        token in feature_names for token in ngram_tokens
+                    ):
                         component_scores = []
                         for token in ngram_tokens:
                             idx = list(vectorizer.get_feature_names_out()).index(token)
@@ -557,8 +602,12 @@ class TermExtractor:
         unigram_penalty = getattr(settings, "term_extraction_unigram_penalty", -0.4)
         bigram_bonus = getattr(settings, "term_extraction_bigram_bonus", 0.0)
         trigram_bonus = getattr(settings, "term_extraction_trigram_bonus", 0.3)
-        bad_bigram_penalty = getattr(settings, "term_extraction_bad_bigram_penalty", -0.8)
-        bad_trigram_penalty = getattr(settings, "term_extraction_bad_trigram_penalty", -0.8)
+        bad_bigram_penalty = getattr(
+            settings, "term_extraction_bad_bigram_penalty", -0.8
+        )
+        bad_trigram_penalty = getattr(
+            settings, "term_extraction_bad_trigram_penalty", -0.8
+        )
 
         # Apply n-gram size-based adjustments
         n_words = len(tokens)
@@ -613,6 +662,7 @@ class TermExtractor:
         Returns:
             List of terms with high-overlap terms removed, preserving order and scores
         """
+
         def overlap_ratio(term_a: str, term_b: str) -> float:
             """Calculate overlap ratio: shared words / min term length."""
             words_a = set(term_a.lower().split())
@@ -666,7 +716,10 @@ class TermExtractor:
             words = term_lower.split()
 
             # Check boundary stopwords (start or end)
-            if words and (words[0] in self.boundary_stopwords or words[-1] in self.boundary_stopwords):
+            if words and (
+                words[0] in self.boundary_stopwords
+                or words[-1] in self.boundary_stopwords
+            ):
                 continue
 
             # Check patent structural words (anywhere in term)
@@ -738,7 +791,9 @@ class TermExtractor:
 
                 # Calculate diversity penalty: max similarity to any already selected term
                 if selected:
-                    max_similarity = max(jaccard_similarity(candidate, term) for term in selected)
+                    max_similarity = max(
+                        jaccard_similarity(candidate, term) for term in selected
+                    )
 
                     # Hard constraint: Skip if too similar to any selected term
                     if max_similarity > similarity_threshold:
@@ -810,11 +865,15 @@ class TermExtractor:
             biblio = result.get("biblio", {})
 
             if biblio:
-                title = (biblio.get("invention_title", "") or biblio.get("title", "")).strip()
+                title = (
+                    biblio.get("invention_title", "") or biblio.get("title", "")
+                ).strip()
                 abstract = (biblio.get("abstract", "") or "").strip()
             else:
                 # Direct access if no biblio key (newer data structure)
-                title = (result.get("invention_title", "") or result.get("title", "")).strip()
+                title = (
+                    result.get("invention_title", "") or result.get("title", "")
+                ).strip()
                 abstract = (result.get("abstract", "") or "").strip()
 
             # Skip if both title and abstract are empty
@@ -827,7 +886,8 @@ class TermExtractor:
                 title_texts.append(cleaned_title)
                 text_to_result[cleaned_title] = {
                     "source": "title",
-                    "publication_number": result.get("publication_number") or result.get("family_id"),
+                    "publication_number": result.get("publication_number")
+                    or result.get("family_id"),
                 }
 
             # Process abstract separately (if non-empty)
@@ -836,7 +896,8 @@ class TermExtractor:
                 abstract_texts.append(cleaned_abstract)
                 text_to_result[cleaned_abstract] = {
                     "source": "abstract",
-                    "publication_number": result.get("publication_number") or result.get("family_id"),
+                    "publication_number": result.get("publication_number")
+                    or result.get("family_id"),
                 }
 
         # Combine all texts for unified n-gram extraction
@@ -893,12 +954,28 @@ class TermExtractor:
         )
 
         # Extract KeyBERT scores separately for title and abstract
-        keybert_title_scores = self._extract_keybert_scores(title_texts, unique_ngrams) if title_texts else {}
-        keybert_abstract_scores = self._extract_keybert_scores(abstract_texts, unique_ngrams) if abstract_texts else {}
+        keybert_title_scores = (
+            self._extract_keybert_scores(title_texts, unique_ngrams)
+            if title_texts
+            else {}
+        )
+        keybert_abstract_scores = (
+            self._extract_keybert_scores(abstract_texts, unique_ngrams)
+            if abstract_texts
+            else {}
+        )
 
         # Extract TF-IDF scores separately for title and abstract
-        tfidf_title_scores = self._extract_tfidf_scores(title_texts, unique_ngrams) if title_texts else {}
-        tfidf_abstract_scores = self._extract_tfidf_scores(abstract_texts, unique_ngrams) if abstract_texts else {}
+        tfidf_title_scores = (
+            self._extract_tfidf_scores(title_texts, unique_ngrams)
+            if title_texts
+            else {}
+        )
+        tfidf_abstract_scores = (
+            self._extract_tfidf_scores(abstract_texts, unique_ngrams)
+            if abstract_texts
+            else {}
+        )
 
         # Normalize scores separately (0-1 scale) to avoid scale mismatch
         # TF-IDF scores are already normalized in _extract_tfidf_scores
@@ -937,9 +1014,9 @@ class TermExtractor:
             # Final score: apply weights during weighted average calculation
             if title_combined > 0 and abstract_combined > 0:
                 # Present in both sources: weighted average
-                base_score = (title_combined * title_weight + abstract_combined * abstract_weight) / (
-                    title_weight + abstract_weight
-                )
+                base_score = (
+                    title_combined * title_weight + abstract_combined * abstract_weight
+                ) / (title_weight + abstract_weight)
             elif title_combined > 0:
                 # Only in title
                 base_score = title_combined
@@ -961,9 +1038,12 @@ class TermExtractor:
         # Filter out original terms: remove only unigrams that match original_params
         # Keep n-grams (2+ words) even if they contain original terms
         filtered_ngrams = [
-            ng for ng in unique_ngrams
+            ng
+            for ng in unique_ngrams
             if ng not in original_terms  # Remove exact matches
-            and not (len(ng.split()) == 1 and any(ot in ng.split() for ot in original_terms))  # Remove unigrams only
+            and not (
+                len(ng.split()) == 1 and any(ot in ng.split() for ot in original_terms)
+            )  # Remove unigrams only
         ]
 
         logger.info(
@@ -979,12 +1059,11 @@ class TermExtractor:
             remaining_terms=len(filtered_ngrams),
         )
 
-        # Remove 1-grams (unigrams) to ensure overlap filter works on meaningful terms
-        # 2+ word terms are much more informative than single words
-        filtered_ngrams = [
-            term for term in filtered_ngrams
-            if len(term.split()) >= 2
-        ]
+        # Unigram removal disabled: penalty (-0.4) + score threshold handles suppression naturally
+        # filtered_ngrams = [
+        #     term for term in filtered_ngrams
+        #     if len(term.split()) >= 2
+        # ]
 
         logger.info(
             "term_extraction_unigrams_removed",
@@ -994,7 +1073,9 @@ class TermExtractor:
         # Load configuration for MMR and filtering
         score_threshold = getattr(settings, "term_extraction_score_threshold", 0.6)
         mmr_lambda = getattr(settings, "term_extraction_mmr_lambda", 0.4)
-        mmr_similarity_threshold = getattr(settings, "term_extraction_mmr_similarity_threshold", 0.5)
+        mmr_similarity_threshold = getattr(
+            settings, "term_extraction_mmr_similarity_threshold", 0.5
+        )
         overlap_threshold = getattr(settings, "term_extraction_overlap_threshold", 0.67)
 
         # MMR Ranking: use pure scores (without bonuses/penalties)
@@ -1030,7 +1111,9 @@ class TermExtractor:
             adjusted_scores[term] = adjusted_score
 
         # Reorder by adjusted scores (descending)
-        ranked_terms = sorted(after_overlap, key=lambda t: adjusted_scores.get(t, 0), reverse=True)
+        ranked_terms = sorted(
+            after_overlap, key=lambda t: adjusted_scores.get(t, 0), reverse=True
+        )
 
         logger.info(
             "term_extraction_adjusted_and_reordered",
@@ -1039,7 +1122,8 @@ class TermExtractor:
 
         # Apply final score threshold filtering (return only quality terms)
         ranked_terms = [
-            term for term in ranked_terms
+            term
+            for term in ranked_terms
             if adjusted_scores.get(term, 0) >= score_threshold
         ]
         terms_filtered_by_score = len(after_overlap) - len(ranked_terms)
@@ -1067,21 +1151,39 @@ class TermExtractor:
             bonus, penalty = score_adjustments.get(term, (0.0, 0.0))
             n_words = len(term.split())
 
-            result_terms.append({
-                "term": term,
-                "score": round(term_score, 3),
-                "n_words": n_words,
-                "keybert_score_title": round(keybert_title_scores.get(term, 0), 3) if title_texts else None,
-                "keybert_score_abstract": round(keybert_abstract_scores.get(term, 0), 3) if abstract_texts else None,
-                "tf_idf_score_title": round(tfidf_title_scores.get(term, 0), 3) if title_texts else None,
-                "tf_idf_score_abstract": round(tfidf_abstract_scores.get(term, 0), 3) if abstract_texts else None,
-                "frequency": ngram_frequency.get(term, 0),
-                "sources": source_list,
-                "score_bonus": round(bonus, 3),
-                "score_penalty": round(penalty, 3),
-                "title_weight": title_weight,
-                "abstract_weight": abstract_weight,
-            })
+            result_terms.append(
+                {
+                    "term": term,
+                    "score": round(term_score, 3),
+                    "n_words": n_words,
+                    "keybert_score_title": (
+                        round(keybert_title_scores.get(term, 0), 3)
+                        if title_texts
+                        else None
+                    ),
+                    "keybert_score_abstract": (
+                        round(keybert_abstract_scores.get(term, 0), 3)
+                        if abstract_texts
+                        else None
+                    ),
+                    "tf_idf_score_title": (
+                        round(tfidf_title_scores.get(term, 0), 3)
+                        if title_texts
+                        else None
+                    ),
+                    "tf_idf_score_abstract": (
+                        round(tfidf_abstract_scores.get(term, 0), 3)
+                        if abstract_texts
+                        else None
+                    ),
+                    "frequency": ngram_frequency.get(term, 0),
+                    "sources": source_list,
+                    "score_bonus": round(bonus, 3),
+                    "score_penalty": round(penalty, 3),
+                    "title_weight": title_weight,
+                    "abstract_weight": abstract_weight,
+                }
+            )
 
         logger.info(
             "term_extraction_complete",

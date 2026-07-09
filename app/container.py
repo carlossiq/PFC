@@ -17,6 +17,8 @@ def build_container(settings: Settings) -> dict[str, Any]:
     Lê credenciais de `settings`; usa Mock/skip quando credenciais estão ausentes
     para que o servidor suba sem erro em qualquer ambiente.
     """
+    _services_to_close: list = []
+
     # ------------------------------------------------------------------
     # LLM — seleção por settings.llm_provider
     # ------------------------------------------------------------------
@@ -45,6 +47,7 @@ def build_container(settings: Settings) -> dict[str, Any]:
         from app.adapters.driven.query_builders.lens_scholarly_query_builder_adapter import LensScholarlyQueryBuilderAdapter
 
         lens_service = LensService(api_token=settings.lens_api_token)
+        _services_to_close.append(lens_service)
 
         if settings.lens_patent_enabled:
             patent_pairs.append((LensPatentAdapter(lens_service), LensPatentQueryBuilderAdapter()))
@@ -62,10 +65,14 @@ def build_container(settings: Settings) -> dict[str, Any]:
         from app.adapters.driven.search.ops_adapter import OPSAdapter
         from app.adapters.driven.query_builders.ops_query_builder_adapter import OPSQueryBuilderAdapter
 
+        from services.search.ops_token_manager import ops_token_manager
+
         ops_service = OPSService(
             consumer_key=settings.ops_consumer_key,
             consumer_secret=settings.ops_consumer_secret,
         )
+        _services_to_close.append(ops_service)
+        _services_to_close.append(ops_token_manager)
         patent_pairs.append((OPSAdapter(ops_service), OPSQueryBuilderAdapter()))
         logger.info("container_ops_enabled")
     else:
@@ -78,6 +85,7 @@ def build_container(settings: Settings) -> dict[str, Any]:
         from app.adapters.driven.query_builders.scopus_query_builder_adapter import ScopusQueryBuilderAdapter
 
         scopus_service = ScopusService(api_key=settings.scopus_api_key)
+        _services_to_close.append(scopus_service)
         scholarly_pairs.append((ScopusAdapter(scopus_service), ScopusQueryBuilderAdapter()))
         logger.info("container_scopus_enabled")
     else:
@@ -108,6 +116,7 @@ def build_container(settings: Settings) -> dict[str, Any]:
             "chat": chat_service,
         },
         "_settings": settings,
+        "_services_to_close": _services_to_close,
     }
 
 
@@ -145,6 +154,16 @@ def build_research_service(container: dict[str, Any], session: AsyncSession):
         year_to=settings.search_year_to,
         relevance_threshold=settings.relevance_threshold,
     )
+
+
+async def shutdown_container(container: dict[str, Any]) -> None:
+    for svc in container.get("_services_to_close", []):
+        try:
+            await svc.close()
+            logger.info("container_service_closed", service=type(svc).__name__)
+        except Exception as exc:
+            logger.warning("container_service_close_failed",
+                           service=type(svc).__name__, error=str(exc))
 
 
 # ------------------------------------------------------------------
