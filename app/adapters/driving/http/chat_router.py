@@ -92,6 +92,33 @@ async def refine_topic(
         return SuccessResponse(success=False, data={"error": str(exc)}, run_id=run_id)
 
 
+@router.post("/specify-topic", response_model=SuccessResponse[dict[str, Any]])
+async def specify_topic(
+    request: Request,
+    intake: InputIntake = Body(
+        ...,
+        example={
+            "theme": "Deep Learning for Medical Image Analysis",
+            "description": "Applying deep learning to diagnostic imaging",
+            "area_of_study": "Healthcare",
+            "keywords": ["deep learning", "medical imaging"],
+        },
+    ),
+) -> SuccessResponse[dict[str, Any]]:
+    run_id = _run_id(request)
+    try:
+        result = await _svc(request).specify_topic(intake)
+        return SuccessResponse(
+            success=result["success"],
+            data=result,
+            message="Topic specified further" if result["success"] else result.get("error", ""),
+            run_id=run_id,
+        )
+    except Exception as exc:
+        logger.error("specify_topic_error", error=str(exc), run_id=run_id)
+        return SuccessResponse(success=False, data={"error": str(exc)}, run_id=run_id)
+
+
 # ------------------------------------------------------------------
 # Query building
 # ------------------------------------------------------------------

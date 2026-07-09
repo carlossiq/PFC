@@ -265,6 +265,18 @@ class ChatService:
     # Topic refinement
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _build_intake_user_input(intake: Any) -> str:
+        """Monta o bloco textual base (Tema/Descrição/Área/Palavras-chave) enviado à LLM."""
+        user_input = f"Tema: {intake.theme}"
+        if intake.description:
+            user_input += f"\nDescrição: {intake.description}"
+        if intake.area_of_study:
+            user_input += f"\nÁrea de Estudo: {intake.area_of_study}"
+        if intake.keywords:
+            user_input += f"\nPalavras-chave: {', '.join(intake.keywords)}"
+        return user_input
+
     async def generate_candidate_topics(self, intake: Any) -> dict[str, Any]:
         from services.prompt.prompt_loader import PromptLoader
 
@@ -275,14 +287,7 @@ class ChatService:
             "keywords": intake.keywords is not None,
         }
 
-        user_input = f"Tema: {intake.theme}"
-        if intake.description:
-            user_input += f"\nDescrição: {intake.description}"
-        if intake.area_of_study:
-            user_input += f"\nÁrea de Estudo: {intake.area_of_study}"
-        if intake.keywords:
-            user_input += f"\nPalavras-chave: {', '.join(intake.keywords)}"
-
+        user_input = self._build_intake_user_input(intake)
         user_input += "\n\nCampos fornecidos pelo usuário (retorne APENAS estes):\n"
         user_input += "- theme: SIM (sempre refine em 4 variações)\n"
         if user_provided["description"]:
@@ -314,6 +319,46 @@ class ChatService:
             processed.append(item)
 
         return {"success": True, "candidates": processed}
+
+    async def specify_topic(self, intake: Any) -> dict[str, Any]:
+        """
+        Aprofunda um único tema já selecionado em uma versão mais específica
+        e estreita do mesmo assunto (ao contrário de generate_candidate_topics,
+        que gera 4 variações diversas). area_of_study/keywords, se existirem,
+        são sempre preservados como estão - a LLM nunca os gera nem os vê como
+        algo a ser modificado.
+        """
+        from services.prompt.prompt_loader import PromptLoader
+
+        user_input = self._build_intake_user_input(intake)
+        user_input += (
+            "\n\nEspecifique o tema acima em uma versão mais estreita e "
+            "aprofundada do mesmo assunto (não uma alternativa diferente)."
+        )
+
+        system_prompt = PromptLoader.load_prompt("specify_topic_system_prompt.txt")
+
+        try:
+            raw = await self.llm.call_raw_json(system_prompt, user_input)
+        except Exception as exc:
+            logger.error("specify_topic_llm_error", error=str(exc))
+            return {"success": False, "error": str(exc)}
+
+        theme = raw.get("theme")
+        if not theme:
+            logger.warning("specify_topic_no_theme", raw_response=raw)
+            return {"success": False, "error": "LLM did not return a theme"}
+
+        result: dict[str, Any] = {"theme": theme}
+        if intake.description and raw.get("description"):
+            result["description"] = raw["description"]
+        if intake.area_of_study:
+            result["area_of_study"] = intake.area_of_study
+        if intake.keywords:
+            result["keywords"] = intake.keywords
+        result["user_input"] = intake.model_dump()
+
+        return {"success": True, **result}
 
     # ------------------------------------------------------------------
     # Query analysis (static, utilitário de debug)
