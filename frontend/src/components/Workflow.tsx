@@ -40,6 +40,7 @@ export function WorkflowPage() {
     setInput,
     step2SelectedTheme,
     setStep2SelectedTheme,
+    setShouldRegenerateStep2,
     paramInitId,
     setParamInitId,
     reset: formReset,
@@ -119,6 +120,8 @@ export function WorkflowPage() {
   const handleRefineParameters = () => {
     if (handleValidateTopic()) {
       // Apenas navega para o Step2 - o PARAM_INIT só é persistido na confirmação (handleNext).
+      // Força a regeneração dos parâmetros, já que o usuário pode ter mudado o input no Step1.
+      setShouldRegenerateStep2(true);
       setStep(step, 0);
     }
   };

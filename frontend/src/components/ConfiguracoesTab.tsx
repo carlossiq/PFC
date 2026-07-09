@@ -28,7 +28,7 @@ const modelGroups: ModelGroup[] = [
         id: 'remota',
         label: 'Remota',
         items: [
-          { id: 'gemini', name: 'Gemini 1.5', enabled: true },
+          { id: 'gemini', name: 'Gemini 2.5', enabled: true },
           { id: 'gpt4', name: 'GPT-4', enabled: false },
         ],
       },
@@ -37,7 +37,7 @@ const modelGroups: ModelGroup[] = [
         label: 'Local',
         items: [
           { id: 'ollama', name: 'Ollama', enabled: false },
-          { id: 'llama2', name: 'Llama 2', enabled: false },
+          { id: 'llama2', name: 'Llama 2', enabled: true },
         ],
       },
     ],
@@ -49,7 +49,9 @@ const modelGroups: ModelGroup[] = [
       {
         id: 'patents',
         label: 'Patentes',
-        items: [{ id: 'lens-patents', name: 'LENS Patents', enabled: true }],
+        items: [{ id: 'lens-patents', name: 'LENS Patents', enabled: true },
+                {id: 'ops', name: 'OPS', enabled: false},
+        ],
       },
       {
         id: 'articles',

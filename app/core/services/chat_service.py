@@ -282,7 +282,6 @@ class ChatService:
 
         user_provided = {
             "theme": True,
-            "description": intake.description is not None,
             "area_of_study": intake.area_of_study is not None,
             "keywords": intake.keywords is not None,
         }
@@ -290,8 +289,7 @@ class ChatService:
         user_input = self._build_intake_user_input(intake)
         user_input += "\n\nCampos fornecidos pelo usuário (retorne APENAS estes):\n"
         user_input += "- theme: SIM (sempre refine em 4 variações)\n"
-        if user_provided["description"]:
-            user_input += "- description: SIM (gere descrições para cada variação)\n"
+        user_input += "- description: SIM (gere sempre uma descrição nova para cada variação, mesmo que nenhuma tenha sido informada)\n"
         if user_provided["area_of_study"]:
             user_input += f"- area_of_study: SIM (PRESERVE exatamente: '{intake.area_of_study}')\n"
         if user_provided["keywords"]:
@@ -309,7 +307,7 @@ class ChatService:
         processed = []
         for candidate in candidates:
             item: dict[str, Any] = {"theme": candidate.get("theme")}
-            if user_provided["description"] and candidate.get("description"):
+            if candidate.get("description"):
                 item["description"] = candidate["description"]
             if user_provided["area_of_study"]:
                 item["area_of_study"] = intake.area_of_study

@@ -22,8 +22,8 @@ export function Sidebar() {
     }
     setTab(TABS.START_PROSPECTION)
   }
-  const usedAi = 'GEMINI 1.5';
-  const usedPatent = 'LENS PATENTS';
+  const usedAi = 'GEMINI 2.5';
+  const usedPatent = 'OPS';
   const usedArticles = 'SCOPUS';
 
   return (

@@ -3,7 +3,7 @@ import { useFormStore } from '../../stores/useFormStore'
 import { refineTopic, specifyTopic } from '../../services/refineTopic'
 import { LoadingScreen } from '../LoadingScreen'
 import { FloatingLabelInput } from '../FloatingLabelInput'
-import { Loading } from '../Loading'
+import { Tooltip } from '../Tooltip'
 
 interface Theme {
   id: string
@@ -26,9 +26,17 @@ interface Step2Props {
 }
 
 export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
-  const { input, step2SelectedTheme, setStep2SelectedTheme, setGenerated } = useFormStore()
+  const {
+    input,
+    step2SelectedTheme,
+    setStep2SelectedTheme,
+    setGenerated,
+    step2Candidates: candidates,
+    setStep2Candidates: setCandidates,
+    shouldRegenerateStep2,
+    setShouldRegenerateStep2,
+  } = useFormStore()
 
-  const [candidates, setCandidates] = useState<Theme[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -63,16 +71,22 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
     } finally {
       if (requestIdRef.current === requestId) setIsLoading(false)
     }
-  }, [input])
+  }, [input, setCandidates])
 
-  // Guarda contra o double-invoke do StrictMode em dev: sem isso, o efeito
-  // roda duas vezes na montagem e dispara duas chamadas reais à IA.
-  const hasGeneratedOnMountRef = useRef(false)
+  // Guarda contra o double-invoke do StrictMode em dev, e contra regenerar os
+  // parâmetros toda vez que o componente remonta (ex: ao navegar para outro
+  // step e voltar). Só gera de novo se for a primeira vez da sessão ou se
+  // shouldRegenerateStep2 foi setado explicitamente (clique em "Refinar
+  // parâmetros" no Step1).
+  const hasCheckedOnMountRef = useRef(false)
 
   useEffect(() => {
-    if (hasGeneratedOnMountRef.current) return
-    hasGeneratedOnMountRef.current = true
-    generateCandidates()
+    if (hasCheckedOnMountRef.current) return
+    hasCheckedOnMountRef.current = true
+    if (shouldRegenerateStep2 || candidates.length === 0) {
+      setShouldRegenerateStep2(false)
+      generateCandidates()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -163,7 +177,7 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
         : undefined,
     }
     setStep2SelectedTheme(updated)
-    setCandidates((prev) => prev.map((c) => (c.id === updated.id ? updated : c)))
+    setCandidates(candidates.map((c) => (c.id === updated.id ? updated : c)))
     setIsEditingSelected(false)
   }
 
@@ -181,7 +195,7 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
         description: result.description ?? selectedData.description,
       }
       setStep2SelectedTheme(updated)
-      setCandidates((prev) => prev.map((c) => (c.id === updated.id ? updated : c)))
+      setCandidates(candidates.map((c) => (c.id === updated.id ? updated : c)))
     } catch (err) {
       console.error('Falha ao especificar o tema com IA:', err)
       setSpecifyError('Não foi possível especificar o tema com IA. Tente novamente.')
@@ -193,27 +207,35 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
   const isBusy = isSaving || isLoading || isSpecifying
 
   const cardClass = (themeId: string) => `
-    py-2 px-3 rounded-lg border-2 text-left bg-gray-100 shadow-sm
+    py-2 px-3 rounded-lg border-2 text-left bg-white shadow-sm
     transition-all duration-300 ease-in-out
     ${
       selectedData?.id === themeId
         ? 'border-[#0f9448] ring-2 ring-[#0f9448]/10 border-2'
-        : 'border-gray-100 hover:border-[#0f9448]'
+        : 'border-gray-200 hover:border-[#0f9448]'
     }
   `
 
   return (
     <div className="w-full flex flex-col h-full">
-      <div className="flex-1 flex gap-6 overflow-hidden ">
+      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+        Escolha qual parâmetro utilizaremos
+      </h3>
+
+      <div className="flex-1 flex gap-6 overflow-hidden">
         <div
           className={`
-            overflow-y-auto pr-2 transition-all duration-500 ease-in-out
+            bg-gray-100 rounded-xl border border-gray-200 p-4 overflow-y-auto
+            transition-all duration-500 ease-in-out
             ${selectedData ? 'w-1/2' : 'w-full'}
           `}
         >
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Initial Parameters
-          </h3>
+          <p className="text-xs font-semibold text-black uppercase tracking-wide mb-2">
+            Parâmetro inicial
+          </p>
+          <p className="text-xs text-gray-500 mb-3">
+            O tema (e demais campos) exatamente como você preencheu no passo anterior.
+          </p>
 
           <div
             className={`
@@ -232,9 +254,12 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
             </button>
           </div>
 
-          <h3 className="text-lg font-semibold text-gray-900 mt-6 mb-4">
-            Generated Parameters
-          </h3>
+          <p className="text-xs font-semibold text-black uppercase tracking-wide mt-6 mb-2">
+            Parâmetros gerados por IA
+          </p>
+          <p className="text-xs text-gray-500 mb-3">
+            4 variações mais específicas do seu tema, geradas automaticamente.
+          </p>
 
           {isLoading && (
             <LoadingScreen message="Gerando parâmetros com IA..." />
@@ -277,7 +302,7 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
 
         <div
           className={`
-            bg-gray-100 rounded-xl border border-gray-200 p-4 overflow-y-auto mt-10.5 mb-16.5 mx-4
+            bg-gray-100 rounded-xl border border-gray-200 p-4 overflow-y-auto
             transition-all duration-500 ease-in-out
             ${
               selectedData
@@ -286,22 +311,20 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
             }
           `}
         >
+          {selectedData && (
+            <p className="text-xs font-semibold text-black uppercase tracking-wide mb-2">
+              Detalhes do parâmetro selecionado
+            </p>
+          )}
+
           {selectedData && isSpecifying && (
             <LoadingScreen message="Especificando tema com IA..." />
           )}
 
           {selectedData && !isSpecifying && !isEditingSelected && (
             <>
-              <div className="flex justify-end gap-2 mb-2 p-2">
-                <button
-                  type="button"
-                  onClick={handleSpecify}
-                  disabled={isBusy}
-                  className="text-xs p-4 font-semibold text-white bg-[#0f9448] rounded-lg hover:bg-[#0d843f] disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  Especificar
-                </button>
-                <button
+              <div className="flex justify-end gap-4 mb-2 p-2">
+                  <button
                   type="button"
                   onClick={handleStartEdit}
                   disabled={isBusy}
@@ -309,6 +332,22 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
                 >
                   Editar
                 </button>
+                <div className="flex items-center ">
+                  <Tooltip
+                    position="top"
+                    label="Quanto maior a especificação, mais afunilado o resultado. Pode gerar uma consulta que retorne poucos ou nenhum resultado."
+                  >
+                    <button
+                      type="button"
+                      onClick={handleSpecify}
+                      disabled={isBusy}
+                      className="text-xs p-4 font-semibold text-white bg-green-600 rounded-lg hover:bg-[#0d843f] disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      Especificar
+                    </button>
+                  </Tooltip>
+                </div>
+              
               </div>
 
               {specifyError && (

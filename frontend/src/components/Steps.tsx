@@ -16,9 +16,9 @@ export function StepsBar() {
       stepIndex,
       substepIndex: null,
     },
-    ...step.substeps.map((_, substepIndex) => ({
+    ...step.substeps.map((substep, substepIndex) => ({
       type: 'sub' as const,
-      label: '',
+      label: substep.name,
       stepIndex,
       substepIndex,
     })),
@@ -95,19 +95,30 @@ export function StepsBar() {
                     </span>
                   </>
                 ) : (
-                  <div className="h-8 flex items-center">
-                    <div
+                  <>
+                    <div className="h-8 flex items-center">
+                      <div
+                        className={`
+                          w-4 h-4 rounded-full transition-all duration-300 border-2
+                          ${isActive
+                            ? 'bg-[#0f9448] border-[#0f9448]'
+                            : isDone
+                              ? 'bg-[#185f37] border-[#185f37]'
+                              : 'bg-white border-gray-300'
+                          }
+                        `}
+                      />
+                    </div>
+
+                    <span
                       className={`
-                        w-4 h-4 rounded-full transition-all duration-300 border-2
-                        ${isActive
-                          ? 'bg-[#0f9448] border-[#0f9448]'
-                          : isDone
-                            ? 'bg-[#185f37] border-[#185f37]'
-                            : 'bg-white border-gray-300'
-                        }
+                        text-[10px] font-semibold mt-2 whitespace-nowrap transition-colors
+                        ${isActive || isDone ? 'text-gray-900' : 'text-gray-500'}
                       `}
-                    />
-                  </div>
+                    >
+                      {item.label}
+                    </span>
+                  </>
                 )}
               </div>
             )

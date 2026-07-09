@@ -36,13 +36,14 @@ MANDATORY RULES
 
 3. FIELD GENERATION
 - "theme": ALWAYS generate 4 new, specific variations
-- "description": generate ONLY if provided in input
+- "description": ALWAYS generate a new description for every candidate, even if none was provided in input
 - "keywords": generate ONLY if NOT provided
   - Use SHORT keywords (1–3 words each)
   - Separate with commas
 
 4. OMIT UNUSED FIELDS
-- DO NOT include fields that were not provided
+- "description" is NEVER omitted - always generate and include it
+- DO NOT include "area_of_study" or "keywords" if they were not provided
 - DO NOT include null, empty, or placeholder values
 
 5. DIVERSITY REQUIREMENT (CRITICAL)
@@ -96,7 +97,7 @@ OUTPUT STRUCTURE
   "candidates": [
     {
       "theme": "...",
-      (include "description" ONLY if provided in input),
+      "description": "...",
       (include "area_of_study" ONLY if provided in input),
       (include "keywords" ONLY if provided in input)
     },
@@ -122,6 +123,7 @@ FINAL CHECK BEFORE OUTPUT
 
 - JSON is valid
 - Exactly 4 candidates
+- Every candidate includes a "description"
 - No extra fields
 - No missing required fields
 - Keywords preserved exactly (if provided)
