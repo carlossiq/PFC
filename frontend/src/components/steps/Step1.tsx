@@ -87,9 +87,7 @@ export function Step1({
             placeholder="machine learning, diagnóstico, saúde"
           />
           <p className="text-gray-500 text-xs mt-1">
-            Separe as keywords por vírgulas. Se deixar em branco, a IA gera
-            keywords para cada parâmetro sugerido; se preencher, o seu valor é
-            mantido como está.
+            Separe as keywords por vírgulas
           </p>
         </div>
 
@@ -101,10 +99,6 @@ export function Step1({
             onChange={onFormChange}
             placeholder="Ex: Healthcare, Finance, ou G06F, A61B"
           />
-          <p className="text-gray-500 text-xs mt-1">
-            Se deixar em branco, a IA gera uma área de estudo para cada
-            parâmetro sugerido; se preencher, o seu valor é mantido como está.
-          </p>
         </div>
 
         <div className="flex gap-4 pt-0">

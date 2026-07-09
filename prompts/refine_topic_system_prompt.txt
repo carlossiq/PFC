@@ -32,22 +32,17 @@ MANDATORY RULES
 2. FIELD PRESERVATION
 - If "area_of_study" is provided → COPY EXACTLY in all candidates
 - If "keywords" are provided → COPY EXACTLY in all candidates
-- NEVER modify, translate, or expand provided keywords or area_of_study
+- NEVER modify, translate, or expand provided keywords
 
 3. FIELD GENERATION
 - "theme": ALWAYS generate 4 new, specific variations
 - "description": generate ONLY if provided in input
-- "area_of_study": if NOT provided in input, GENERATE a fitting area of study/domain
-  for each candidate (may differ per candidate if it fits the variation better)
-- "keywords": if NOT provided in input, GENERATE 3-6 short keywords for each candidate
+- "keywords": generate ONLY if NOT provided
   - Use SHORT keywords (1–3 words each)
-  - MUST be a JSON array of strings, e.g. ["term one", "term two", "term three"]
-  - NEVER output keywords as a single comma-separated string
+  - Separate with commas
 
-4. FIELD OMISSION
-- "description" must be omitted entirely if the user did not provide one
-- "area_of_study" and "keywords" must ALWAYS be present in every candidate — either
-  preserved exactly from input, or freshly generated per rule 3
+4. OMIT UNUSED FIELDS
+- DO NOT include fields that were not provided
 - DO NOT include null, empty, or placeholder values
 
 5. DIVERSITY REQUIREMENT (CRITICAL)
@@ -102,8 +97,8 @@ OUTPUT STRUCTURE
     {
       "theme": "...",
       (include "description" ONLY if provided in input),
-      "area_of_study": "...",
-      "keywords": ["keyword one", "keyword two", "keyword three"]
+      (include "area_of_study" ONLY if provided in input),
+      (include "keywords" ONLY if provided in input)
     },
     {
       "theme": "...",
@@ -120,9 +115,6 @@ OUTPUT STRUCTURE
   ]
 }
 
-Note: "area_of_study" is a single string. "keywords" is ALWAYS a JSON array of strings,
-never a comma-separated string, whether preserved from input or freshly generated.
-
 
 ========================
 FINAL CHECK BEFORE OUTPUT
@@ -131,7 +123,6 @@ FINAL CHECK BEFORE OUTPUT
 - JSON is valid
 - Exactly 4 candidates
 - No extra fields
-- "area_of_study" and "keywords" are present in every candidate (preserved or generated)
-- "description" is present only if the user provided one
-- Keywords/area_of_study preserved exactly (if provided) — otherwise freshly generated
+- No missing required fields
+- Keywords preserved exactly (if provided)
 - All themes are clearly distinct and non-overlapping
