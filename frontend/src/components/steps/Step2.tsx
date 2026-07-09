@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useFormStore } from '../../stores/useFormStore'
 import { refineTopic } from '../../services/refineTopic'
+import { Loading } from '../Loading'
 
 interface Theme {
   id: string
@@ -152,13 +153,8 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
           </h3>
 
           {isLoading && (
-            <div className="grid grid-cols-2 gap-4">
-              {[0, 1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="py-2 px-4 rounded-lg border-2 border-gray-100 bg-gray-100 animate-pulse h-11"
-                />
-              ))}
+            <div className="min-h-55">
+              <Loading message="Generating parameters with AI..." transparent />
             </div>
           )}
 
