@@ -1,6 +1,8 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useFormStore } from '../../stores/useFormStore'
-import { refineTopic } from '../../services/refineTopic'
+import { refineTopic, specifyTopic } from '../../services/refineTopic'
+import { LoadingScreen } from '../LoadingScreen'
+import { FloatingLabelInput } from '../FloatingLabelInput'
 import { Loading } from '../Loading'
 
 interface Theme {
@@ -30,11 +32,18 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Evita que uma chamada antiga (ex: o double-invoke do StrictMode em dev,
+  // ou um clique duplo em "Generate Others") sobrescreva o resultado de uma
+  // chamada mais recente quando ambas resolverem fora de ordem.
+  const requestIdRef = useRef(0)
+
   const generateCandidates = useCallback(async () => {
+    const requestId = ++requestIdRef.current
     setIsLoading(true)
     setError(null)
     try {
       const results = await refineTopic(input)
+      if (requestIdRef.current !== requestId) return
       setCandidates(
         results.map((candidate, index) => ({
           id: `candidate-${index}`,
@@ -47,15 +56,22 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
         }))
       )
     } catch (err) {
+      if (requestIdRef.current !== requestId) return
       console.error('Falha ao gerar parâmetros com IA:', err)
       setError('Não foi possível gerar parâmetros com IA. Tente novamente.')
       setCandidates([])
     } finally {
-      setIsLoading(false)
+      if (requestIdRef.current === requestId) setIsLoading(false)
     }
   }, [input])
 
+  // Guarda contra o double-invoke do StrictMode em dev: sem isso, o efeito
+  // roda duas vezes na montagem e dispara duas chamadas reais à IA.
+  const hasGeneratedOnMountRef = useRef(false)
+
   useEffect(() => {
+    if (hasGeneratedOnMountRef.current) return
+    hasGeneratedOnMountRef.current = true
     generateCandidates()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -106,10 +122,78 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
     }
   }
 
-  const isBusy = isSaving || isLoading
+  const [isEditingSelected, setIsEditingSelected] = useState(false)
+  const [editTheme, setEditTheme] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editKeywords, setEditKeywords] = useState('')
+  const [editStudyArea, setEditStudyArea] = useState('')
+
+  const [isSpecifying, setIsSpecifying] = useState(false)
+  const [specifyError, setSpecifyError] = useState<string | null>(null)
+
+  // Sair do modo de edição e limpar erro de especificação ao trocar de card
+  // selecionado, pra não misturar estado de um card com os campos de outro.
+  useEffect(() => {
+    setIsEditingSelected(false)
+    setSpecifyError(null)
+  }, [selectedData.id])
+
+  function handleStartEdit() {
+    setEditTheme(selectedData.theme)
+    setEditDescription(selectedData.description)
+    setEditKeywords(selectedData.keywords?.join(', ') ?? '')
+    setEditStudyArea(selectedData.studyArea?.join(', ') ?? '')
+    setIsEditingSelected(true)
+  }
+
+  function handleCancelEdit() {
+    setIsEditingSelected(false)
+  }
+
+  function handleSaveEdit() {
+    const updated: Theme = {
+      ...selectedData,
+      theme: editTheme.trim() || selectedData.theme,
+      description: editDescription.trim(),
+      keywords: editKeywords.trim()
+        ? editKeywords.split(',').map((k) => k.trim()).filter(Boolean)
+        : undefined,
+      studyArea: editStudyArea.trim()
+        ? editStudyArea.split(',').map((a) => a.trim()).filter(Boolean)
+        : undefined,
+    }
+    setStep2SelectedTheme(updated)
+    setCandidates((prev) => prev.map((c) => (c.id === updated.id ? updated : c)))
+    setIsEditingSelected(false)
+  }
+
+  // Pede pra IA aprofundar o tema atualmente selecionado numa versão mais
+  // específica do mesmo assunto. Reenvia sempre o selectedData corrente, então
+  // clicar de novo aprofunda a partir do resultado anterior (progressivo).
+  async function handleSpecify() {
+    setIsSpecifying(true)
+    setSpecifyError(null)
+    try {
+      const result = await specifyTopic(selectedData)
+      const updated: Theme = {
+        ...selectedData,
+        theme: result.theme,
+        description: result.description ?? selectedData.description,
+      }
+      setStep2SelectedTheme(updated)
+      setCandidates((prev) => prev.map((c) => (c.id === updated.id ? updated : c)))
+    } catch (err) {
+      console.error('Falha ao especificar o tema com IA:', err)
+      setSpecifyError('Não foi possível especificar o tema com IA. Tente novamente.')
+    } finally {
+      setIsSpecifying(false)
+    }
+  }
+
+  const isBusy = isSaving || isLoading || isSpecifying
 
   const cardClass = (themeId: string) => `
-    py-2 px-4 rounded-lg border-2 text-left bg-gray-100 shadow-sm
+    py-2 px-3 rounded-lg border-2 text-left bg-gray-100 shadow-sm
     transition-all duration-300 ease-in-out
     ${
       selectedData?.id === themeId
@@ -120,10 +204,10 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
 
   return (
     <div className="w-full flex flex-col h-full">
-      <div className="flex-1 flex gap-6 overflow-hidden">
+      <div className="flex-1 flex gap-6 overflow-hidden ">
         <div
           className={`
-            transition-all duration-500 ease-in-out
+            overflow-y-auto pr-2 transition-all duration-500 ease-in-out
             ${selectedData ? 'w-1/2' : 'w-full'}
           `}
         >
@@ -133,7 +217,7 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
 
           <div
             className={`
-              grid gap-4 transition-all duration-500 ease-in-out
+              grid gap-3 transition-all duration-500 ease-in-out
               ${selectedData ? 'grid-cols-1' : 'grid-cols-2'}
             `}
           >
@@ -142,7 +226,7 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
               onClick={() => handleSelectTheme(persistedTheme)}
               className={cardClass(persistedTheme.id)}
             >
-              <h4 className="font-semibold text-gray-900 mb-1">
+              <h4 className="font-semibold text-sm text-gray-900 mb-1">
                 {persistedTheme.theme}
               </h4>
             </button>
@@ -153,9 +237,7 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
           </h3>
 
           {isLoading && (
-            <div className="min-h-55">
-              <Loading message="Generating parameters with AI..." transparent />
-            </div>
+            <LoadingScreen message="Gerando parâmetros com IA..." />
           )}
 
           {!isLoading && error && (
@@ -174,7 +256,7 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
           {!isLoading && !error && (
             <div
               className={`
-                grid gap-4 transition-all duration-500 ease-in-out
+                grid gap-3 transition-all duration-500 ease-in-out
                 ${selectedData ? 'grid-cols-1' : 'grid-cols-2'}
               `}
             >
@@ -184,7 +266,7 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
                   onClick={() => handleSelectTheme(theme)}
                   className={cardClass(theme.id)}
                 >
-                  <h4 className="font-semibold text-gray-900 mb-1">
+                  <h4 className="font-semibold text-sm text-gray-900 mb-1">
                     {theme.theme}
                   </h4>
                 </button>
@@ -204,8 +286,44 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
             }
           `}
         >
-          {selectedData && (
+          {selectedData && isSpecifying && (
+            <LoadingScreen message="Especificando tema com IA..." />
+          )}
+
+          {selectedData && !isSpecifying && !isEditingSelected && (
             <>
+              <div className="flex justify-end gap-2 mb-2 p-2">
+                <button
+                  type="button"
+                  onClick={handleSpecify}
+                  disabled={isBusy}
+                  className="text-xs p-4 font-semibold text-white bg-[#0f9448] rounded-lg hover:bg-[#0d843f] disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Especificar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStartEdit}
+                  disabled={isBusy}
+                  className="text-xs p-4 font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Editar
+                </button>
+              </div>
+
+              {specifyError && (
+                <div className="mx-2 mb-3 p-3 rounded-lg border-2 border-red-200 bg-red-50">
+                  <p className="text-sm text-red-700 mb-2">{specifyError}</p>
+                  <button
+                    type="button"
+                    onClick={handleSpecify}
+                    className="text-sm font-semibold text-[#0f9448] hover:text-[#0d843f]"
+                  >
+                    Tentar novamente
+                  </button>
+                </div>
+              )}
+
               <div className="space-y-5 mt-1 mx-1">
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-xs text-gray-600 font-medium mb-1">
@@ -252,6 +370,56 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
                 )}
               </div>
             </>
+          )}
+
+          {selectedData && isEditingSelected && (
+            <div className="space-y-4 mt-1 mx-1">
+              <FloatingLabelInput
+                label="Theme"
+                name="editTheme"
+                value={editTheme}
+                onChange={(e) => setEditTheme(e.target.value)}
+              />
+              <FloatingLabelInput
+                label="Description"
+                name="editDescription"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                isTextarea
+                rows={3}
+              />
+              <FloatingLabelInput
+                label="Keywords"
+                name="editKeywords"
+                value={editKeywords}
+                onChange={(e) => setEditKeywords(e.target.value)}
+                placeholder="separadas por vírgula"
+              />
+              <FloatingLabelInput
+                label="Study Area"
+                name="editStudyArea"
+                value={editStudyArea}
+                onChange={(e) => setEditStudyArea(e.target.value)}
+                placeholder="separadas por vírgula"
+              />
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  className="flex-1 bg-gray-400 hover:bg-gray-500 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEdit}
+                  className="flex-1 bg-[#0f9448] hover:bg-[#0d843f] text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors"
+                >
+                  Salvar
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>

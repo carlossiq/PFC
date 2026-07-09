@@ -41,3 +41,36 @@ export async function refineTopic(input: FormInput): Promise<RefineTopicCandidat
 
   return data.data?.candidates ?? []
 }
+
+interface ThemeInput {
+  theme: string
+  description: string
+  keywords?: string[]
+  studyArea?: string[]
+}
+
+// Converte um tema já selecionado (shape usado em Step2.tsx) para o InputIntake
+// esperado por /chat/specify-topic. Aqui keywords/studyArea já são arrays (diferente
+// de mapInputToIntakePayload, que parte de strings separadas por vírgula do Step1).
+function mapThemeToIntakePayload(theme: ThemeInput) {
+  return {
+    theme: theme.theme,
+    description: theme.description || null,
+    area_of_study: theme.studyArea && theme.studyArea.length > 0 ? theme.studyArea.join(', ') : null,
+    keywords: theme.keywords && theme.keywords.length > 0 ? theme.keywords : null,
+  }
+}
+
+// Chama a LLM (via backend) para aprofundar um único tema já selecionado em uma
+// versão mais específica/estreita do mesmo assunto (ao contrário de refineTopic,
+// que gera 4 variações diversas).
+export async function specifyTopic(theme: ThemeInput): Promise<RefineTopicCandidate> {
+  const payload = mapThemeToIntakePayload(theme)
+  const { data } = await apiClient.post('/chat/specify-topic', payload)
+
+  if (!data.success) {
+    throw new Error(data.message || 'Falha ao especificar o tema com IA')
+  }
+
+  return data.data
+}
