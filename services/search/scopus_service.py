@@ -2,6 +2,7 @@
 Search service for Scopus API with pagination.
 """
 
+import asyncio
 import time
 from typing import Any, Optional
 
@@ -38,7 +39,6 @@ class ScopusService:
         """
         self.api_key = api_key or getattr(settings, "scopus_api_key", None)
         self.async_client = httpx.AsyncClient(timeout=self._TIMEOUT_SECONDS)
-        self.sync_client = httpx.Client(timeout=self._TIMEOUT_SECONDS)
 
     async def search(
         self,
@@ -293,7 +293,7 @@ class ScopusService:
                         run_id=run_id,
                     )
 
-                time.sleep(self._RETRY_DELAY_SECONDS * (attempt + 1))
+                await asyncio.sleep(self._RETRY_DELAY_SECONDS * (attempt + 1))
 
             except Exception as exc:
                 logger.error(
@@ -364,9 +364,8 @@ class ScopusService:
 
     async def close(self) -> None:
         """
-        Fecha clientes httpx (síncrono e assíncrono).
+        Fecha cliente httpx.
         """
-        self.sync_client.close()
         await self.async_client.aclose()
 
     async def __aenter__(self):

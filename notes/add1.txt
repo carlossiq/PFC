@@ -1,0 +1,7 @@
+modelo back end ports and adapters
+Por que o seu domínio pede esse modelo
+Prospecção tecnológica tem uma característica rara: você depende pesadamente de fontes externas que mudam com frequência e que você não controla. A Lens muda seu esquema de resposta, a OPS depreca endpoints, a Scopus altera limites de requisição, a Anthropic lança novos modelos. Cada uma dessas mudanças, hoje, pode quebrar seu research_service.py ou seus query_builders. No hexagonal, essas mudanças ficam contidas nos driven/adapters — o core/ não sabe que aconteceu nada.
+O que você ganha concretamente
+O core/services/research_service.py recebe um PatentSourcePort e um LLMPort por parâmetro. Isso significa que nos seus testes em tests/unit/ você instancia o serviço com MockLLM() e MockPatentSource() — sem subir ChromaDB, sem chamar a API da USPTO, sem gastar tokens. Seus testes de hoje em tests/test_llm.py provavelmente precisam de credenciais reais ou mocks frágeis justamente porque não há essa separação.
+O que o hexagonal resolve que os outros modelos não resolvem tão bem
+A Clean Architecture (B) tem a mesma separação de camadas, mas não formaliza a distinção entre quem chama o core (HTTP, CLI) e o que o core usa (Lens, ChromaDB, spaCy). No Ports & Adapters essa distinção é explícita nas pastas driving/ e driven/ — o que importa quando você tem tantas dependências de saída quanto o PFC tem.

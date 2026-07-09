@@ -31,7 +31,7 @@ class FieldSchemaService:
     """
 
     # Diretório de esquemas
-    SCHEMA_DIR = Path(__file__).parent.parent.parent / "schemas_config"
+    SCHEMA_DIR = Path(__file__).parent.parent.parent / "config" / "dict"
 
     def __init__(self) -> None:
         """

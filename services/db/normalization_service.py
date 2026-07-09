@@ -6,7 +6,7 @@ from typing import Any, Optional, Union
 
 from core.logging import get_logger
 from schemas.normalized_metadata import StandardizedPatentMetadata, StandardizedScholarlyMetadata
-from services.dedup.dedup_service import DedupService
+from app.core.services.dedup_service import DedupService
 
 logger = get_logger(__name__)
 

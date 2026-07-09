@@ -32,7 +32,7 @@ class ScopusQueryBuilder(BaseQueryBuilder):
 
     # Configurações da API
     _MAX_QUERY_LENGTH = 10000
-    _FIELD_MAP_FILE = Path(__file__).parent.parent.parent / "schemas_config" / "scopus_fields.json"
+    _FIELD_MAP_FILE = Path(__file__).parent.parent.parent / "config" / "dict" / "scopus_fields.json"
 
     def __init__(self, api_name: str = "scopus", search_mode: str = "general") -> None:
         """
@@ -234,12 +234,8 @@ class ScopusQueryBuilder(BaseQueryBuilder):
 
         escaped_values = [self._escape_scopus_term(val) for val in field.values]
 
-        if len(escaped_values) == 1:
-            return f'{scopus_field}("{escaped_values[0]}")'
-        else:
-            # TODO: Definir estratégia final para múltiplos valores
-            values_query = f'" OR "{scopus_field}("'.join(escaped_values)
-            return f'{scopus_field}("{values_query}")'
+        parts = [f'{scopus_field}("{v}")' for v in escaped_values]
+        return " OR ".join(parts)
 
     def _build_date_query(self, year_from: int, year_to: int) -> Optional[str]:
         """
@@ -291,7 +287,8 @@ class ScopusQueryBuilder(BaseQueryBuilder):
 
         try:
             with open(self._FIELD_MAP_FILE, "r") as f:
-                return json.load(f)
+                data = json.load(f)
+                return data.get("field_map", data)
         except Exception as exc:
             logger.error(f"Failed to load field map: {exc}")
             return self._get_default_field_map()

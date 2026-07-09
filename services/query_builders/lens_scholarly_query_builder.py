@@ -28,7 +28,7 @@ class LensScholarlyQueryBuilder(BaseQueryBuilder):
 
     # Configurações da API
     _MAX_QUERY_LENGTH = 50000
-    _FIELD_MAP_FILE = Path(__file__).parent.parent.parent / "schemas_config" / "lens_scholarly_fields.json"
+    _FIELD_MAP_FILE = Path(__file__).parent.parent.parent / "config" / "dict" / "lens_scholarly_fields.json"
 
     def __init__(self, api_name: str = "lens_scholarly", search_mode: str = "general") -> None:
         """
@@ -278,7 +278,8 @@ class LensScholarlyQueryBuilder(BaseQueryBuilder):
 
         try:
             with open(self._FIELD_MAP_FILE, "r") as f:
-                return json.load(f)
+                data = json.load(f)
+                return data.get("field_map", data)
         except Exception as exc:
             logger.error(f"Failed to load field map: {exc}")
             return self._get_default_field_map()

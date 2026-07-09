@@ -19,7 +19,7 @@ class PromptLoader:
     """
 
     # Diretório de prompts (relativo ao raiz do projeto)
-    PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
+    PROMPTS_DIR = Path(__file__).parent.parent.parent / "config" / "prompts"
 
     # Cache de prompts em memória
     _cache: dict[str, str] = {}

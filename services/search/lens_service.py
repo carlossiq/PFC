@@ -2,6 +2,7 @@
 Search service for Google Lens API (Patents and Scholarly).
 """
 
+import asyncio
 import time
 from typing import Any, Literal, Optional
 
@@ -37,7 +38,7 @@ class LensService:
             api_token: Token de API do Lens (se None, tenta obter de config).
         """
         self.api_token = api_token or getattr(settings, "lens_api_token", None)
-        self.client = httpx.Client(timeout=self._TIMEOUT_SECONDS)
+        self.client = httpx.AsyncClient(timeout=self._TIMEOUT_SECONDS)
 
     async def search_patent(
         self,
@@ -115,7 +116,7 @@ class LensService:
                 )
 
                 # Fazer requisição
-                response = self.client.post(
+                response = await self.client.post(
                     url,
                     json=query,
                     headers=self._get_headers(),
@@ -192,7 +193,7 @@ class LensService:
                     )
 
                 # Aguardar antes de retentarr
-                time.sleep(self._RETRY_DELAY_SECONDS * (attempt + 1))
+                await asyncio.sleep(self._RETRY_DELAY_SECONDS * (attempt + 1))
 
             except httpx.TimeoutException:
                 retry_count = attempt
@@ -217,7 +218,7 @@ class LensService:
                         run_id=run_id,
                     )
 
-                time.sleep(self._RETRY_DELAY_SECONDS * (attempt + 1))
+                await asyncio.sleep(self._RETRY_DELAY_SECONDS * (attempt + 1))
 
             except Exception as exc:
                 duration = time.time() - start_time
@@ -270,11 +271,11 @@ class LensService:
 
         return headers
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """
         Fecha cliente httpx.
         """
-        self.client.close()
+        await self.client.aclose()
 
     async def __aenter__(self):
         """
@@ -286,4 +287,4 @@ class LensService:
         """
         Context manager exit.
         """
-        self.close()
+        await self.close()

@@ -4,7 +4,7 @@ Tests for deduplication service.
 
 import pytest
 
-from services.dedup import DedupService
+from app.core.services.dedup_service import DedupService
 
 
 def test_dedup_service_deduplicates_patents():

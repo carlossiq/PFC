@@ -130,13 +130,20 @@ class PatentDocument(DocumentMetadata):
                 "retrieved_at": "2024-03-29T10:30:00Z",
                 "language": "en",
                 "confidence_score": 0.95,
-                "title": "Machine Learning System",
-                "abstract": "A system and method for...",
-                "ipc": ["G06F"],
-                "cpc": ["G06F17/18"],
+                "title": "Machine Learning System for Medical Diagnosis",
+                "abstract": "A system and method for automated medical diagnosis using convolutional neural networks...",
+                "claims": [
+                    "A computer-implemented method comprising: receiving medical image data...",
+                    "The method of claim 1, wherein the neural network comprises at least three convolutional layers...",
+                ],
+                "ipc": ["G06N3/08", "G16H50/20"],
+                "cpc": ["G06N3/084", "G16H50/20", "G06T7/0012"],
                 "inventors": ["John Doe", "Jane Smith"],
+                "applicants": ["MedTech Corp"],
                 "filing_date": "2020-01-15",
                 "publication_date": "2021-06-22",
+                "grant_date": "2022-03-08",
+                "priority_date": "2019-12-01",
             }
         }
 
@@ -248,9 +255,30 @@ class DocumentBatch(BaseModel):
 
         json_schema_extra = {
             "example": {
-                "documents": [],
-                "total_count": 0,
-                "batch_size": 0,
+                "documents": [
+                    {
+                        "document_id": "US10123456B2",
+                        "source": "USPTO",
+                        "document_type": "patent",
+                        "title": "Machine Learning System for Medical Diagnosis",
+                        "ipc": ["G06N3/08", "G16H50/20"],
+                        "inventors": ["John Doe"],
+                        "publication_date": "2021-06-22",
+                        "confidence_score": 0.95,
+                    },
+                    {
+                        "document_id": "10.1234/example.doi",
+                        "source": "SCOPUS",
+                        "document_type": "publication",
+                        "title": "Deep Learning Applications in Healthcare",
+                        "authors": ["Dr. Jane Smith"],
+                        "publication_year": 2023,
+                        "journal_title": "IEEE Transactions on Medical Imaging",
+                        "confidence_score": 0.88,
+                    },
+                ],
+                "total_count": 1250,
+                "batch_size": 2,
                 "retrieved_at": "2024-03-29T10:30:00Z",
             }
         }

@@ -165,7 +165,7 @@ class SimpleFieldQuery(BaseModel):
 
         json_schema_extra = {
             "example": {
-                "values": ["IPC:G06F", "IPC:H04L"],
+                "values": ["G06N3/08", "G16H50/20"],
             }
         }
 
@@ -268,23 +268,25 @@ class LLMOutput(BaseModel):
                 "title": {
                     "group_operator": "AND",
                     "groups": [
-                        {
-                            "operator": "OR",
-                            "terms": ["machine learning", "deep learning"],
-                        }
+                        {"operator": "OR", "terms": ["machine learning", "deep learning", "neural network"]},
+                        {"operator": "OR", "terms": ["healthcare", "medical diagnosis", "clinical"]},
                     ],
                 },
                 "abstract": {
                     "group_operator": "AND",
                     "groups": [
-                        {
-                            "operator": "OR",
-                            "terms": ["healthcare", "diagnosis"],
-                        }
+                        {"operator": "OR", "terms": ["diagnostic system", "disease detection", "image segmentation"]},
                     ],
                 },
-                "ipc": {"values": ["G06F", "G06N"]},
-                "year": {"values": ["2020", "2021", "2022"]},
+                "claims": {
+                    "group_operator": "AND",
+                    "groups": [
+                        {"operator": "OR", "terms": ["convolutional neural network", "image classification"]},
+                    ],
+                },
+                "ipc": {"values": ["G06N3/08", "G16H50/20", "G06T7/00"]},
+                "cpc": {"values": ["G06N3/084", "G16H50/20"]},
+                "keywords": {"values": ["deep learning", "medical imaging", "CNN", "diagnosis"]},
             }
         }
 

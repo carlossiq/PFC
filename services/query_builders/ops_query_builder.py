@@ -33,7 +33,7 @@ class OPSQueryBuilder(BaseQueryBuilder):
 
     # Configurações
     _MAX_QUERY_LENGTH = 10000
-    _FIELD_MAP_FILE = Path(__file__).parent.parent.parent / "schemas_config" / "ops.fields.json"
+    _FIELD_MAP_FILE = Path(__file__).parent.parent.parent / "config" / "dict" / "ops.fields.json"
 
     # Mapeamento de atributos LLMOutput para tipos
     _TEXTUAL_ATTRS = ["title", "abstract", "claims", "full_text"]
@@ -183,9 +183,12 @@ class OPSQueryBuilder(BaseQueryBuilder):
         """
         Constrói cláusula CQL para campo textual.
 
+        Cada termo vira um predicado independente (field = "term") e os
+        predicados são combinados com os operadores do grupo/grupo-operator.
+
         Exemplo com group_operator=AND e 2 grupos:
         Input:  groups=[["machine learning", "deep learning"], ["healthcare"]]
-        Output: ti = (("machine learning" OR "deep learning") AND ("healthcare"))
+        Output: (ti = "machine learning" OR ti = "deep learning") AND (ti = "healthcare")
 
         Args:
             field: Estrutura TextualFieldQuery com grupos de termos.
@@ -203,23 +206,26 @@ class OPSQueryBuilder(BaseQueryBuilder):
             if not group.terms:
                 continue
 
-            # Escapar e combinar termos do grupo
-            escaped_terms = [self._escape_cql_term(term) for term in group.terms]
-            operator = " OR " if group.operator.value == "OR" else " AND "
-            term_clause = operator.join(escaped_terms)
-            group_clauses.append(f"({term_clause})")
+            # Cada termo: field = "term"
+            term_clauses = [
+                f'{ops_field} = {self._escape_cql_term(term)}'
+                for term in group.terms
+            ]
+
+            if len(term_clauses) == 1:
+                group_clauses.append(term_clauses[0])
+            else:
+                operator = " OR " if group.operator.value == "OR" else " AND "
+                group_clauses.append(f"({operator.join(term_clauses)})")
 
         if not group_clauses:
             return None
 
-        # Combinar grupos entre si
         if len(group_clauses) == 1:
-            combined = group_clauses[0]
-        else:
-            group_op = " AND " if field.group_operator.value == "AND" else " OR "
-            combined = group_op.join(group_clauses)
+            return group_clauses[0]
 
-        return f'{ops_field} = ({combined})'
+        group_op = " AND " if field.group_operator.value == "AND" else " OR "
+        return group_op.join(group_clauses)
 
     def _build_simple_cql(
         self,
@@ -229,9 +235,11 @@ class OPSQueryBuilder(BaseQueryBuilder):
         """
         Constrói cláusula CQL para campo simples.
 
+        Cada valor vira um predicado independente (field = value).
+
         Exemplo com múltiplos valores:
         Input:  values=["Samsung", "Apple"]
-        Output: pa = ("Samsung" OR "Apple")
+        Output: (pa = "Samsung" OR pa = "Apple")
 
         Valor único:
         Output: pa = Samsung
@@ -246,13 +254,15 @@ class OPSQueryBuilder(BaseQueryBuilder):
         if not field.values:
             return None
 
-        escaped_values = [self._escape_cql_term(val) for val in field.values]
+        term_clauses = [
+            f'{ops_field} = {self._escape_cql_term(val)}'
+            for val in field.values
+        ]
 
-        if len(escaped_values) == 1:
-            return f'{ops_field} = {escaped_values[0]}'
-        else:
-            value_clause = " OR ".join(escaped_values)
-            return f'{ops_field} = ({value_clause})'
+        if len(term_clauses) == 1:
+            return term_clauses[0]
+
+        return "(" + " OR ".join(term_clauses) + ")"
 
     def _build_date_cql(self, year_from: int, year_to: int, year_values: Optional[list[str]] = None) -> Optional[str]:
         """
