@@ -4,18 +4,26 @@ import { Tooltip } from './Tooltip';
 import { Modal } from './Modal'
 import { useSidebarStore } from '../stores/useSidebarStore'
 import { useWorkflowStore } from '../stores/useWorkflowStore'
+import { useFormStore } from '../stores/useFormStore'
 import { TABS } from '../constants/tabs'
 
 export function Sidebar() {
   const { collapsed, toggleCollapsed, setCollapsed, locked } = useSidebarStore()
   const { tab, setTab } = useWorkflowStore()
+  const { sessionName, setSessionName } = useFormStore()
   const [showConfirm, setShowConfirm] = useState(false)
+  const [nameError, setNameError] = useState(false)
 
   const handleStartProspection = () => {
+    setNameError(false)
     setShowConfirm(true)
   }
 
   const handleConfirmProspection = () => {
+    if (!sessionName.trim()) {
+      setNameError(true)
+      return
+    }
     setShowConfirm(false)
     if (!collapsed) {
       setCollapsed(true)
@@ -125,11 +133,22 @@ export function Sidebar() {
       <Modal
         isOpen={showConfirm}
         title="Start Prospection"
-        message="Are you sure you want to start a new prospection? The sidebar will be locked during the process."
+        message="Dê um nome para essa sessão de prospecção antes de começar."
         confirmText="Start"
         cancelText="Cancel"
         onConfirm={handleConfirmProspection}
         onCancel={() => setShowConfirm(false)}
+        input={{
+          label: "Nome da sessão",
+          value: sessionName,
+          onChange: (value) => {
+            setSessionName(value)
+            if (value.trim()) setNameError(false)
+          },
+          placeholder: "Ex: Drones militares 2026",
+          error: nameError,
+          errorMessage: "Nome da sessão é obrigatório",
+        }}
       />
     </aside>
   )

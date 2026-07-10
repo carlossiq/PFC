@@ -26,6 +26,12 @@ interface SelectedTheme {
 
 // Gerencia dados de entrada e parâmetros gerados
 interface FormStore {
+  // Nome da sessão, definido pelo usuário ao clicar em "Start" na sidebar,
+  // antes mesmo de preencher o Step1. Enviado ao backend junto com o resto
+  // do session_input quando a sessão é finalizada.
+  sessionName: string
+  setSessionName: (name: string) => void
+
   // Dados em edição/persistidos
   input: InputData
   setInput: (data: Partial<InputData>) => void
@@ -54,9 +60,14 @@ interface FormStore {
   shouldRegenerateStep2: boolean
   setShouldRegenerateStep2: (value: boolean) => void
 
-  // Id da tupla PARAM_INIT já persistida no backend (null se ainda não salva)
-  paramInitId: number | null
-  setParamInitId: (id: number | null) => void
+  // Contador de iterações de refinamento por IA da sessão atual: +1 ao clicar
+  // "Refinar parâmetros" (Step1), +1 a cada "Generate Others Parameters" e +1 a
+  // cada "Especializar" (Step2). Resetado a 0 quando o usuário edita o input
+  // original do Step1. Não é enviado ao backend a cada ação - só quando a sessão
+  // é finalizada, junto com o restante do session_input.
+  step2Iterations: number
+  incrementStep2Iterations: () => void
+  resetStep2Iterations: () => void
 
   // Utilitários
   getFormData: () => {
@@ -81,12 +92,18 @@ const defaultGenerated: GeneratedData = {
 }
 
 export const useFormStore = create<FormStore>((set, get) => ({
+  sessionName: '',
   input: defaultInput,
   generated: defaultGenerated,
   step2SelectedTheme: null,
   step2Candidates: [],
   shouldRegenerateStep2: true,
-  paramInitId: null,
+  step2Iterations: 0,
+
+  setSessionName: (name) =>
+    set({
+      sessionName: name,
+    }),
 
   setInput: (data) =>
     set((state) => ({
@@ -113,9 +130,14 @@ export const useFormStore = create<FormStore>((set, get) => ({
       shouldRegenerateStep2: value,
     }),
 
-  setParamInitId: (id) =>
+  incrementStep2Iterations: () =>
+    set((state) => ({
+      step2Iterations: state.step2Iterations + 1,
+    })),
+
+  resetStep2Iterations: () =>
     set({
-      paramInitId: id,
+      step2Iterations: 0,
     }),
 
   getFormData: () => {
@@ -128,11 +150,12 @@ export const useFormStore = create<FormStore>((set, get) => ({
 
   reset: () =>
     set({
+      sessionName: '',
       input: defaultInput,
       generated: defaultGenerated,
       step2SelectedTheme: null,
       step2Candidates: [],
       shouldRegenerateStep2: true,
-      paramInitId: null,
+      step2Iterations: 0,
     }),
 }))

@@ -35,6 +35,7 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
     setStep2Candidates: setCandidates,
     shouldRegenerateStep2,
     setShouldRegenerateStep2,
+    incrementStep2Iterations,
   } = useFormStore()
 
   const [isLoading, setIsLoading] = useState(false)
@@ -91,6 +92,7 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
   }, [])
 
   const handleRetry = () => {
+    incrementStep2Iterations()
     generateCandidates()
   }
 
@@ -185,6 +187,7 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
   // específica do mesmo assunto. Reenvia sempre o selectedData corrente, então
   // clicar de novo aprofunda a partir do resultado anterior (progressivo).
   async function handleSpecify() {
+    incrementStep2Iterations()
     setIsSpecifying(true)
     setSpecifyError(null)
     try {

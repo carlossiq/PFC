@@ -30,7 +30,8 @@
 
     const baseInput = `
     w-full px-4 rounded-lg border
-    bg-gray-100
+    bg-gray-100 text-black
+    placeholder:text-gray-500
     focus:outline-none transition-all duration-200
     ${isTextarea
         ? 'pt-5 pb-2'

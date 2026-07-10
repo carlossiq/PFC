@@ -28,8 +28,6 @@ async def init_db() -> None:
         # Importar os modelos para registar os metadados
         from db.models import Base as ModelsBase
         from db.models import PatentDedupRegistry, PatentDocument, ScholarlyDedupRegistry, ScholarlyDocument
-        from db.param_init_models import Base as ParamInitBase
-        from db.param_init_models import ParamInit
         from db.research_models import (
             Base as ResearchBase,
             Research,
@@ -39,7 +37,7 @@ async def init_db() -> None:
             ResearchScholarlyDocument,
         )
 
-        logger.info("database_init_starting", models_loaded=10)
+        logger.info("database_init_starting", models_loaded=9)
 
         # Usar engine já inicializado em db_session
         if db_session.engine is None:
@@ -57,22 +55,17 @@ async def init_db() -> None:
             logger.info("database_init_creating_research_tables")
             await conn.run_sync(ResearchBase.metadata.create_all)
 
-        # Criar tabelas do param_init_models.py
-        async with engine.begin() as conn:
-            logger.info("database_init_creating_param_init_tables")
-            await conn.run_sync(ParamInitBase.metadata.create_all)
+        # research_session_models.py (research_session/session_input) é gerido
+        # pelo Alembic, não pelo create_all daqui.
 
         logger.info(
             "database_init_completed",
-            models_count=len(ModelsBase.metadata.tables)
-            + len(ResearchBase.metadata.tables)
-            + len(ParamInitBase.metadata.tables),
+            models_count=len(ModelsBase.metadata.tables) + len(ResearchBase.metadata.tables),
         )
 
         print("\n[OK] Database initialized successfully!")
         print(f"[OK] Created {len(ModelsBase.metadata.tables)} tables from models.py")
         print(f"[OK] Created {len(ResearchBase.metadata.tables)} tables from research_models.py")
-        print(f"[OK] Created {len(ParamInitBase.metadata.tables)} tables from param_init_models.py")
 
     except Exception as exc:
         logger.error("database_init_error", error=str(exc))

@@ -16,7 +16,7 @@ interface FormInput {
 
 // Converte o shape do useFormStore.input para o InputIntake esperado por /chat/refine-topic.
 // studyArea é um campo de texto livre (não uma lista real), por isso vai como string única
-// em area_of_study, igual ao já feito em mapInputToParamInitPayload.
+// em area_of_study, igual ao já feito em mapInputToSessionInputRoot.
 function mapInputToIntakePayload(input: FormInput) {
   const keywordsArray = input.keywords
     ? input.keywords.split(',').map((k) => k.trim()).filter(Boolean)
