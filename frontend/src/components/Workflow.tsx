@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { StepsBar } from "./Steps";
 import { ConfiguracoesTab } from "./ConfiguracoesTab";
-import { SearchTab } from "./SearchTab";
+import { SearchPage } from "../pages/SearchPage";
 import { Step1 } from "./steps/Step1";
 import { Step3 } from "./steps/Step3";
 import { OutrosSteps } from "./steps/OutrosSteps";
@@ -188,7 +188,7 @@ export function WorkflowPage() {
           ) : tab === TABS.SETTINGS ? (
             <ConfiguracoesTab />
           ) : tab === TABS.SEARCH ? (
-            <SearchTab />
+            <SearchPage />
           ) : (
             <>
               <h2 className="text-2xl font-bold mb-4">{currentTab.title}</h2>

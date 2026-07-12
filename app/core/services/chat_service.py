@@ -519,13 +519,20 @@ class ChatService:
         # em paralelo em vez de sequencialmente evita serializar até 3N chamadas
         # de LLM (cada tentativa já retenta até 3x internamente por complexidade).
         queries = await asyncio.gather(*(_attempt(i) for i in range(count)))
+        success = any(q.get("success") for q in queries)
 
-        return {
-            "success": any(q.get("success") for q in queries),
+        result: dict[str, Any] = {
+            "success": success,
             "api": api,
             "user_input": intake.model_dump(),
             "queries": queries,
         }
+        if not success:
+            # Nenhuma tentativa deu certo - propaga o erro real (ex: rate
+            # limit da IA) em vez de deixar o chamador sem detalhe nenhum.
+            errors = [q["error"] for q in queries if q.get("error")]
+            result["error"] = errors[0] if errors else "Falha ao gerar queries com IA."
+        return result
 
     async def rebuild_probe_query(self, fields: dict[str, list[str]], api: str = "ops") -> dict[str, Any]:
         """

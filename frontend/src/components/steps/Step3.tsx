@@ -10,6 +10,7 @@ import { LoadingScreen } from '../LoadingScreen'
 import { FloatingLabelInput } from '../FloatingLabelInput'
 import { Tooltip } from '../Tooltip'
 import { CandidatePickerLayout, selectableCardClass, toCsv, parseCsv } from '../CandidatePicker'
+import { FieldCard } from '../FieldCard'
 import { STEPS } from '../../constants/steps'
 
 interface Step3Props {
@@ -46,8 +47,8 @@ const emptyFields: StructuredQueryFields = {
 // A API da IA (Gemini/Anthropic) pode devolver mensagens de erro brutas e
 // longas (ex: 429 com detalhes de quota) — resume pros casos conhecidos em
 // vez de despejar o texto cru no card.
-function friendlyErrorMessage(error?: string): string {
-  if (!error) return 'Falha ao gerar esta opção.'
+function friendlyErrorMessage(error?: string, fallback = 'Falha ao gerar esta opção.'): string {
+  if (!error) return fallback
   if (/429|quota|rate.?limit/i.test(error)) {
     return 'Limite de requisições da IA atingido no momento. Tente novamente em instantes.'
   }
@@ -99,7 +100,12 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
     } catch (err) {
       if (requestIdRef.current !== requestId) return
       console.error('Falha ao gerar queries com IA:', err)
-      setError('Não foi possível gerar as queries com IA. Tente novamente.')
+      setError(
+        friendlyErrorMessage(
+          err instanceof Error ? err.message : undefined,
+          'Não foi possível gerar as queries com IA. Tente novamente.'
+        )
+      )
     } finally {
       if (requestIdRef.current === requestId) setIsLoading(false)
     }
@@ -276,27 +282,24 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
           )}
 
           <div className="space-y-5 mt-1 mx-1">
-            <div className="p-3 bg-gray-50 rounded-lg">
-              <p className="text-xs text-gray-600 font-medium mb-1">Query (CQL)</p>
+            <FieldCard label="Query (CQL)">
               <p className="text-sm font-mono text-gray-900 break-all">
                 {selected.query?.query}
               </p>
-            </div>
+            </FieldCard>
 
             {FIELD_ORDER.filter((f) => f !== 'year' && (selected.fields?.[f]?.length ?? 0) > 0).map((f) => (
-              <div key={f} className="p-3 bg-gray-50 rounded-lg">
-                <p className="text-xs text-gray-600 font-medium mb-1">{FIELD_LABELS[f]}</p>
+              <FieldCard key={f} label={FIELD_LABELS[f]}>
                 <p className="text-sm font-semibold text-gray-900">
                   {selected.fields![f].join(', ')}
                 </p>
-              </div>
+              </FieldCard>
             ))}
 
             {/* Year sempre aparece, mesmo sem edição - mostra o padrão do
                 backend quando o campo está vazio, deixando claro que a busca
                 não é irrestrita por data. */}
-            <div className="p-3 bg-gray-50 rounded-lg">
-              <p className="text-xs text-gray-600 font-medium mb-1">{FIELD_LABELS.year}</p>
+            <FieldCard label={FIELD_LABELS.year}>
               <p className="text-sm font-semibold text-gray-900">
                 {selected.fields?.year && selected.fields.year.length > 0
                   ? selected.fields.year.join(', ')
@@ -304,15 +307,14 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
                     ? `${selected.year_range.from} - ${selected.year_range.to} (padrão)`
                     : '—'}
               </p>
-            </div>
+            </FieldCard>
 
             {selected.complexity && (
-              <div className="p-3 bg-gray-50 rounded-lg">
-                <p className="text-xs text-gray-600 font-medium mb-1">Complexidade</p>
+              <FieldCard label="Complexidade">
                 <p className="text-sm font-semibold text-gray-900">
                   {selected.complexity.level} ({selected.complexity.score.toFixed(1)}/100)
                 </p>
-              </div>
+              </FieldCard>
             )}
 
             {selected.warning && (

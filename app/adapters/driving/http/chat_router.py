@@ -200,7 +200,7 @@ async def build_probe_queries_multi(
         return SuccessResponse(
             success=result["success"],
             data=result,
-            message="Probe queries built (specific/balanced/generic)" if result["success"] else result.get("error", ""),
+            message="Probe queries built" if result["success"] else result.get("error", ""),
             run_id=run_id,
         )
     except Exception as exc:

@@ -5,6 +5,7 @@ import { LoadingScreen } from '../LoadingScreen'
 import { FloatingLabelInput } from '../FloatingLabelInput'
 import { Tooltip } from '../Tooltip'
 import { CandidatePickerLayout, selectableCardClass, toCsv, parseCsv } from '../CandidatePicker'
+import { FieldCard } from '../FieldCard'
 
 interface Theme {
   id: string
@@ -341,48 +342,36 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
                 )}
 
                 <div className="space-y-5 mt-1 mx-1">
-                  <div className="p-3 bg-gray-50 rounded-lg">
-                    <p className="text-xs text-gray-600 font-medium mb-1">
-                      Theme
-                    </p>
+                  <FieldCard label="Theme">
                     <p className="text-sm font-semibold text-gray-900">
                       {selectedData.theme}
                     </p>
-                  </div>
+                  </FieldCard>
 
                   {selectedData.description && (
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      <p className="text-xs text-gray-600 font-medium mb-1">
-                        Description
-                      </p>
+                    <FieldCard label="Description">
                       <p className="text-sm font-semibold text-gray-900">
                         {selectedData.description}
                       </p>
-                    </div>
+                    </FieldCard>
                   )}
 
                   {selectedData.keywords && selectedData.keywords.length > 0 && (
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      <p className="text-xs text-gray-600 font-medium mb-1">
-                        Keywords
-                      </p>
+                    <FieldCard label="Keywords">
                       <ol className="text-sm font-semibold text-gray-900 list-decimal list-inside space-y-0.5">
                         {selectedData.keywords.map((keyword, index) => (
                           <li key={`${keyword}-${index}`}>{keyword}</li>
                         ))}
                       </ol>
-                    </div>
+                    </FieldCard>
                   )}
 
                   {selectedData.studyArea && selectedData.studyArea.length > 0 && (
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      <p className="text-xs text-gray-600 font-medium mb-1">
-                        Study Area
-                      </p>
+                    <FieldCard label="Study Area">
                       <p className="text-sm font-semibold text-gray-900">
                         {selectedData.studyArea.join(', ')}
                       </p>
-                    </div>
+                    </FieldCard>
                   )}
                 </div>
               </>
