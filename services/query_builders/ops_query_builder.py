@@ -271,8 +271,10 @@ class OPSQueryBuilder(BaseQueryBuilder):
         Usa o campo "pd" (publication date) do OPS.
         Formato: pd within "YYYYMMDD YYYYMMDD" (com espaço, não vírgula)
 
-        Se year_values for fornecido e não vazio, usa o primeiro valor como ano base.
-        Caso contrário, usa year_from e year_to.
+        Se year_values for fornecido: com 1 valor, usa esse ano como início E
+        fim (busca de um ano só); com 2 ou mais valores, usa o menor como
+        início e o maior como fim (intervalo). Caso contrário, usa year_from
+        e year_to.
 
         Args:
             year_from: Ano inicial (ex: 2020).
@@ -282,13 +284,11 @@ class OPSQueryBuilder(BaseQueryBuilder):
         Returns:
             String CQL no formato "pd within \"YYYYMMDD YYYYMMDD\"" ou None.
         """
-        # Se year_values foi fornecido, tenta usar o primeiro valor
         if year_values:
             try:
-                year_base = int(year_values[0])
-                # Usar esse ano como ponto de partida
-                year_from = year_base
-                year_to = year_base
+                parsed_years = [int(v) for v in year_values[:2]]
+                year_from = min(parsed_years)
+                year_to = max(parsed_years)
             except (ValueError, IndexError):
                 # Se houver erro na conversão, fallback para os parâmetros
                 pass

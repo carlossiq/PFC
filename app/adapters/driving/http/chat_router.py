@@ -180,6 +180,70 @@ async def build_final_query(
         return SuccessResponse(success=False, data={"error": str(exc)}, run_id=run_id)
 
 
+@router.post("/probe/queries-multi", response_model=SuccessResponse[dict[str, Any]])
+async def build_probe_queries_multi(
+    request: Request,
+    intake: InputIntake = Body(
+        ...,
+        example={
+            "theme": "e-commerce and digital payments",
+            "description": "Online shopping platforms with secure payment processing",
+            "area_of_study": "Information Technology",
+            "keywords": ["blockchain", "payment gateway"],
+        },
+    ),
+    api: str = "ops",
+) -> SuccessResponse[dict[str, Any]]:
+    run_id = _run_id(request)
+    try:
+        result = await _svc(request).build_probe_queries_multi(intake, api)
+        return SuccessResponse(
+            success=result["success"],
+            data=result,
+            message="Probe queries built (specific/balanced/generic)" if result["success"] else result.get("error", ""),
+            run_id=run_id,
+        )
+    except Exception as exc:
+        logger.error("probe_queries_multi_error", error=str(exc), run_id=run_id)
+        return SuccessResponse(success=False, data={"error": str(exc)}, run_id=run_id)
+
+
+@router.post("/probe/rebuild-query", response_model=SuccessResponse[dict[str, Any]])
+async def rebuild_probe_query(
+    request: Request,
+    fields: dict[str, list[str]] = Body(
+        ...,
+        description=(
+            "Campos estruturados (title, abstract, claims, ipc, cpc, applicant, "
+            "inventor, year), cada um como lista OR de termos."
+        ),
+        example={
+            "title": ["machine learning"],
+            "abstract": [],
+            "claims": [],
+            "ipc": ["G06N3/08"],
+            "cpc": [],
+            "applicant": [],
+            "inventor": [],
+            "year": ["2023"],
+        },
+    ),
+    api: str = "ops",
+) -> SuccessResponse[dict[str, Any]]:
+    run_id = _run_id(request)
+    try:
+        result = await _svc(request).rebuild_probe_query(fields, api)
+        return SuccessResponse(
+            success=result["success"],
+            data=result,
+            message="Query reconstruída a partir dos campos estruturados" if result["success"] else result.get("error", ""),
+            run_id=run_id,
+        )
+    except Exception as exc:
+        logger.error("rebuild_probe_query_error", error=str(exc), run_id=run_id)
+        return SuccessResponse(success=False, data={"error": str(exc)}, run_id=run_id)
+
+
 @router.post("/final/queries-multi", response_model=SuccessResponse[dict[str, Any]])
 async def build_final_queries_multi(
     request: Request,

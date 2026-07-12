@@ -3,6 +3,7 @@ import { StepsBar } from "./Steps";
 import { ConfiguracoesTab } from "./ConfiguracoesTab";
 import { SearchTab } from "./SearchTab";
 import { Step1 } from "./steps/Step1";
+import { Step3 } from "./steps/Step3";
 import { OutrosSteps } from "./steps/OutrosSteps";
 import { useWorkflowStore } from "../stores/useWorkflowStore";
 import { useProspectingStore } from "../stores/useProspectingStore";
@@ -10,6 +11,7 @@ import { useFormStore } from "../stores/useFormStore";
 import { useHistoryStore } from "../stores/useHistoryStore";
 import { useSidebarStore } from "../stores/useSidebarStore";
 import { TABS } from "../constants/tabs";
+import { STEPS } from "../constants/steps";
 
 const tabContents = {
   [TABS.WELCOME]: { title: "Welcome", label: "Welcome" },
@@ -96,15 +98,21 @@ export function WorkflowPage() {
 
   const handleStartProspection = () => {
     if (handleValidateTopic()) {
-      // "Gerar Query" pula o Step2 (sem refinamento por IA) e a Exploração
-      // Inicial, indo direto pro passo 3 (Exploração Final) - nada é
-      // persistido no backend até a sessão ser finalizada.
+      // "Gerar Query" pula o Step2 (sem refinamento por IA), indo direto pra
+      // Exploração Inicial (mesmo destino que "Confirm" já usa) - nada é
+      // persistido no backend até a sessão ser finalizada. O Step3 trata o
+      // input cru da mesma forma que um tema refinado pela IA.
       historyPush({
         step,
         substep,
         selectedTheme: step2SelectedTheme,
       });
-      setStep(2, null);
+      // Limpa uma seleção do Step2 de uma visita anterior - sem isso,
+      // resolveIntakePayload usaria o tema (possivelmente editado) de uma
+      // visita anterior ao Step2 em vez do input cru que o usuário acabou de
+      // preencher, contrariando a intenção de "Gerar Query" (pular a IA).
+      setStep2SelectedTheme(null);
+      setStep(STEPS.INITIAL_EXPLORATION, null);
     }
   };
 
@@ -161,6 +169,12 @@ export function WorkflowPage() {
                 onRefinirParametros={handleRefineParameters}
                 onGerar={handleStartProspection}
                 onCancel={handleCancel}
+                onBack={handlePrevStep}
+                onNext={handleNext}
+              />
+              <Step3
+                step={step}
+                substep={substep}
                 onBack={handlePrevStep}
                 onNext={handleNext}
               />

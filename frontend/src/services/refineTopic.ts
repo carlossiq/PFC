@@ -7,7 +7,7 @@ export interface RefineTopicCandidate {
   keywords?: string[] | null
 }
 
-interface FormInput {
+export interface FormInput {
   theme: string
   description: string | null
   keywords: string | null
@@ -17,7 +17,7 @@ interface FormInput {
 // Converte o shape do useFormStore.input para o InputIntake esperado por /chat/refine-topic.
 // studyArea é um campo de texto livre (não uma lista real), por isso vai como string única
 // em area_of_study, igual ao já feito em mapInputToSessionInputRoot.
-function mapInputToIntakePayload(input: FormInput) {
+export function mapInputToIntakePayload(input: FormInput) {
   const keywordsArray = input.keywords
     ? input.keywords.split(',').map((k) => k.trim()).filter(Boolean)
     : null
@@ -42,7 +42,7 @@ export async function refineTopic(input: FormInput): Promise<RefineTopicCandidat
   return data.data?.candidates ?? []
 }
 
-interface ThemeInput {
+export interface ThemeInput {
   theme: string
   description: string
   keywords?: string[]
@@ -52,13 +52,25 @@ interface ThemeInput {
 // Converte um tema já selecionado (shape usado em Step2.tsx) para o InputIntake
 // esperado por /chat/specify-topic. Aqui keywords/studyArea já são arrays (diferente
 // de mapInputToIntakePayload, que parte de strings separadas por vírgula do Step1).
-function mapThemeToIntakePayload(theme: ThemeInput) {
+export function mapThemeToIntakePayload(theme: ThemeInput) {
   return {
     theme: theme.theme,
     description: theme.description || null,
     area_of_study: theme.studyArea && theme.studyArea.length > 0 ? theme.studyArea.join(', ') : null,
     keywords: theme.keywords && theme.keywords.length > 0 ? theme.keywords : null,
   }
+}
+
+// Decide se o intake enviado à IA deve vir do tema selecionado/refinado no
+// Step2 (id !== 'input', ou seja, uma variação gerada por IA ou editada) ou
+// do input cru do Step1 (quando o usuário pula o refinamento, ex: "Gerar
+// Query"). Mesma lógica de decisão já usada em OutrosSteps.handleFinalize.
+export function resolveIntakePayload(
+  input: FormInput,
+  step2SelectedTheme: (ThemeInput & { id: string }) | null
+) {
+  const wasRefinedByAI = !!step2SelectedTheme && step2SelectedTheme.id !== 'input'
+  return wasRefinedByAI ? mapThemeToIntakePayload(step2SelectedTheme!) : mapInputToIntakePayload(input)
 }
 
 // Chama a LLM (via backend) para aprofundar um único tema já selecionado em uma

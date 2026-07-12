@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useFormStore } from '../../stores/useFormStore'
 import { finalizeSession } from '../../services/sessionInput'
+import { STEPS } from '../../constants/steps'
 
 interface OutrosStepsProps {
   step: number
@@ -16,7 +17,12 @@ export function OutrosSteps({ step, substep, onBack, onNext }: OutrosStepsProps)
   const [finalizeResult, setFinalizeResult] = useState<string | null>(null)
   const [finalizeError, setFinalizeError] = useState<string | null>(null)
 
-  if (step === 0) return null
+  // Step0 (Input Inicial) é todo tratado por Step1/Step2. Step1 (Exploração
+  // Inicial) tem sua tela "principal" (escolha/edição da query) tratada pelo
+  // Step3 quando substep===null; o substep "Resultados Iniciais" ainda não
+  // tem tela própria, então cai neste placeholder genérico.
+  if (step === STEPS.INPUT) return null
+  if (step === STEPS.INITIAL_EXPLORATION && substep === null) return null
 
   // Botão de teste: os passos 2-4 ainda são placeholder, então isso só serve
   // pra exercitar a rota POST /session-input enquanto o fluxo real de

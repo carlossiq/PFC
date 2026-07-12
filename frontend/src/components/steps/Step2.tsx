@@ -4,6 +4,7 @@ import { refineTopic, specifyTopic } from '../../services/refineTopic'
 import { LoadingScreen } from '../LoadingScreen'
 import { FloatingLabelInput } from '../FloatingLabelInput'
 import { Tooltip } from '../Tooltip'
+import { CandidatePickerLayout, selectableCardClass, toCsv, parseCsv } from '../CandidatePicker'
 
 interface Theme {
   id: string
@@ -157,8 +158,8 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
   function handleStartEdit() {
     setEditTheme(selectedData.theme)
     setEditDescription(selectedData.description)
-    setEditKeywords(selectedData.keywords?.join(', ') ?? '')
-    setEditStudyArea(selectedData.studyArea?.join(', ') ?? '')
+    setEditKeywords(toCsv(selectedData.keywords))
+    setEditStudyArea(toCsv(selectedData.studyArea))
     setIsEditingSelected(true)
   }
 
@@ -171,12 +172,8 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
       ...selectedData,
       theme: editTheme.trim() || selectedData.theme,
       description: editDescription.trim(),
-      keywords: editKeywords.trim()
-        ? editKeywords.split(',').map((k) => k.trim()).filter(Boolean)
-        : undefined,
-      studyArea: editStudyArea.trim()
-        ? editStudyArea.split(',').map((a) => a.trim()).filter(Boolean)
-        : undefined,
+      keywords: editKeywords.trim() ? parseCsv(editKeywords) : undefined,
+      studyArea: editStudyArea.trim() ? parseCsv(editStudyArea) : undefined,
     }
     setStep2SelectedTheme(updated)
     setCandidates(candidates.map((c) => (c.id === updated.id ? updated : c)))
@@ -209,262 +206,240 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
 
   const isBusy = isSaving || isLoading || isSpecifying
 
-  const cardClass = (themeId: string) => `
-    py-2 px-3 rounded-lg border-2 text-left bg-white shadow-sm
-    transition-all duration-300 ease-in-out
-    ${
-      selectedData?.id === themeId
-        ? 'border-[#0f9448] ring-2 ring-[#0f9448]/10 border-2'
-        : 'border-gray-200 hover:border-[#0f9448]'
-    }
-  `
-
   return (
     <div className="w-full flex flex-col h-full">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">
         Escolha qual parâmetro utilizaremos
       </h3>
 
-      <div className="flex-1 flex gap-6 overflow-hidden">
-        <div
-          className={`
-            bg-gray-100 rounded-xl border border-gray-200 p-4 overflow-y-auto
-            transition-all duration-500 ease-in-out
-            ${selectedData ? 'w-1/2' : 'w-full'}
-          `}
-        >
-          <p className="text-xs font-semibold text-black uppercase tracking-wide mb-2">
-            Parâmetro inicial
-          </p>
-          <p className="text-xs text-gray-500 mb-3">
-            O tema (e demais campos) exatamente como você preencheu no passo anterior.
-          </p>
+      <CandidatePickerLayout
+        hasSelection={!!selectedData}
+        left={
+          <>
+            <p className="text-xs font-semibold text-black uppercase tracking-wide mb-2">
+              Parâmetro inicial
+            </p>
+            <p className="text-xs text-gray-500 mb-3">
+              O tema (e demais campos) exatamente como você preencheu no passo anterior.
+            </p>
 
-          <div
-            className={`
-              grid gap-3 transition-all duration-500 ease-in-out
-              ${selectedData ? 'grid-cols-1' : 'grid-cols-2'}
-            `}
-          >
-            <button
-              key={persistedTheme.id}
-              onClick={() => handleSelectTheme(persistedTheme)}
-              className={cardClass(persistedTheme.id)}
-            >
-              <h4 className="font-semibold text-sm text-gray-900 mb-1">
-                {persistedTheme.theme}
-              </h4>
-            </button>
-          </div>
-
-          <p className="text-xs font-semibold text-black uppercase tracking-wide mt-6 mb-2">
-            Parâmetros gerados por IA
-          </p>
-          <p className="text-xs text-gray-500 mb-3">
-            4 variações mais específicas do seu tema, geradas automaticamente.
-          </p>
-
-          {isLoading && (
-            <LoadingScreen message="Gerando parâmetros com IA..." />
-          )}
-
-          {!isLoading && error && (
-            <div className="p-4 rounded-lg border-2 border-red-200 bg-red-50">
-              <p className="text-sm text-red-700 mb-2">{error}</p>
-              <button
-                type="button"
-                onClick={handleRetry}
-                className="text-sm font-semibold text-[#0f9448] hover:text-[#0d843f]"
-              >
-                Tentar novamente
-              </button>
-            </div>
-          )}
-
-          {!isLoading && !error && (
             <div
               className={`
                 grid gap-3 transition-all duration-500 ease-in-out
                 ${selectedData ? 'grid-cols-1' : 'grid-cols-2'}
               `}
             >
-              {candidates.map((theme) => (
-                <button
-                  key={theme.id}
-                  onClick={() => handleSelectTheme(theme)}
-                  className={cardClass(theme.id)}
-                >
-                  <h4 className="font-semibold text-sm text-gray-900 mb-1">
-                    {theme.theme}
-                  </h4>
-                </button>
-              ))}
+              <button
+                key={persistedTheme.id}
+                onClick={() => handleSelectTheme(persistedTheme)}
+                className={selectableCardClass(selectedData?.id === persistedTheme.id)}
+              >
+                <h4 className="font-semibold text-sm text-gray-900 mb-1">
+                  {persistedTheme.theme}
+                </h4>
+              </button>
             </div>
-          )}
-        </div>
 
-        <div
-          className={`
-            bg-gray-100 rounded-xl border border-gray-200 p-4 overflow-y-auto
-            transition-all duration-500 ease-in-out
-            ${
-              selectedData
-                ? 'w-1/2 opacity-100 translate-x-0'
-                : 'w-0 opacity-0 translate-x-4 p-0 border-transparent pointer-events-none'
-            }
-          `}
-        >
-          {selectedData && (
-            <p className="text-xs font-semibold text-black uppercase tracking-wide mb-2">
-              Detalhes do parâmetro selecionado
+            <p className="text-xs font-semibold text-black uppercase tracking-wide mt-6 mb-2">
+              Parâmetros gerados por IA
             </p>
-          )}
+            <p className="text-xs text-gray-500 mb-3">
+              4 variações mais específicas do seu tema, geradas automaticamente.
+            </p>
 
-          {selectedData && isSpecifying && (
-            <LoadingScreen message="Especificando tema com IA..." />
-          )}
+            {isLoading && (
+              <LoadingScreen message="Gerando parâmetros com IA..." />
+            )}
 
-          {selectedData && !isSpecifying && !isEditingSelected && (
-            <>
-              <div className="flex justify-end gap-4 mb-2 p-2">
-                  <button
+            {!isLoading && error && (
+              <div className="p-4 rounded-lg border-2 border-red-200 bg-red-50">
+                <p className="text-sm text-red-700 mb-2">{error}</p>
+                <button
                   type="button"
-                  onClick={handleStartEdit}
-                  disabled={isBusy}
-                  className="text-xs p-4 font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  onClick={handleRetry}
+                  className="text-sm font-semibold text-[#0f9448] hover:text-[#0d843f]"
                 >
-                  Editar
+                  Tentar novamente
                 </button>
-                <div className="flex items-center ">
-                  <Tooltip
-                    position="top"
-                    label="Quanto maior a especificação, mais afunilado o resultado. Pode gerar uma consulta que retorne poucos ou nenhum resultado."
+              </div>
+            )}
+
+            {!isLoading && !error && (
+              <div
+                className={`
+                  grid gap-3 transition-all duration-500 ease-in-out
+                  ${selectedData ? 'grid-cols-1' : 'grid-cols-2'}
+                `}
+              >
+                {candidates.map((theme) => (
+                  <button
+                    key={theme.id}
+                    onClick={() => handleSelectTheme(theme)}
+                    className={selectableCardClass(selectedData?.id === theme.id)}
                   >
+                    <h4 className="font-semibold text-sm text-gray-900 mb-1">
+                      {theme.theme}
+                    </h4>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        }
+        right={
+          <>
+            {selectedData && (
+              <p className="text-xs font-semibold text-black uppercase tracking-wide mb-2">
+                Detalhes do parâmetro selecionado
+              </p>
+            )}
+
+            {selectedData && isSpecifying && (
+              <LoadingScreen message="Especificando tema com IA..." />
+            )}
+
+            {selectedData && !isSpecifying && !isEditingSelected && (
+              <>
+                <div className="flex justify-end gap-4 mb-2 p-2">
+                    <button
+                    type="button"
+                    onClick={handleStartEdit}
+                    disabled={isBusy}
+                    className="text-xs p-4 font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    Editar
+                  </button>
+                  <div className="flex items-center ">
+                    <Tooltip
+                      position="top"
+                      label="Quanto maior a especificação, mais afunilado o resultado. Pode gerar uma consulta que retorne poucos ou nenhum resultado."
+                    >
+                      <button
+                        type="button"
+                        onClick={handleSpecify}
+                        disabled={isBusy}
+                        className="text-xs p-4 font-semibold text-white bg-green-600 rounded-lg hover:bg-[#0d843f] disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        Especificar
+                      </button>
+                    </Tooltip>
+                  </div>
+
+                </div>
+
+                {specifyError && (
+                  <div className="mx-2 mb-3 p-3 rounded-lg border-2 border-red-200 bg-red-50">
+                    <p className="text-sm text-red-700 mb-2">{specifyError}</p>
                     <button
                       type="button"
                       onClick={handleSpecify}
-                      disabled={isBusy}
-                      className="text-xs p-4 font-semibold text-white bg-green-600 rounded-lg hover:bg-[#0d843f] disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="text-sm font-semibold text-[#0f9448] hover:text-[#0d843f]"
                     >
-                      Especificar
+                      Tentar novamente
                     </button>
-                  </Tooltip>
-                </div>
-              
-              </div>
+                  </div>
+                )}
 
-              {specifyError && (
-                <div className="mx-2 mb-3 p-3 rounded-lg border-2 border-red-200 bg-red-50">
-                  <p className="text-sm text-red-700 mb-2">{specifyError}</p>
+                <div className="space-y-5 mt-1 mx-1">
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p className="text-xs text-gray-600 font-medium mb-1">
+                      Theme
+                    </p>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {selectedData.theme}
+                    </p>
+                  </div>
+
+                  {selectedData.description && (
+                    <div className="p-3 bg-gray-50 rounded-lg">
+                      <p className="text-xs text-gray-600 font-medium mb-1">
+                        Description
+                      </p>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {selectedData.description}
+                      </p>
+                    </div>
+                  )}
+
+                  {selectedData.keywords && selectedData.keywords.length > 0 && (
+                    <div className="p-3 bg-gray-50 rounded-lg">
+                      <p className="text-xs text-gray-600 font-medium mb-1">
+                        Keywords
+                      </p>
+                      <ol className="text-sm font-semibold text-gray-900 list-decimal list-inside space-y-0.5">
+                        {selectedData.keywords.map((keyword, index) => (
+                          <li key={`${keyword}-${index}`}>{keyword}</li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+
+                  {selectedData.studyArea && selectedData.studyArea.length > 0 && (
+                    <div className="p-3 bg-gray-50 rounded-lg">
+                      <p className="text-xs text-gray-600 font-medium mb-1">
+                        Study Area
+                      </p>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {selectedData.studyArea.join(', ')}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {selectedData && isEditingSelected && (
+              <div className="space-y-4 mt-1 mx-1">
+                <FloatingLabelInput
+                  label="Theme"
+                  name="editTheme"
+                  value={editTheme}
+                  onChange={(e) => setEditTheme(e.target.value)}
+                />
+                <FloatingLabelInput
+                  label="Description"
+                  name="editDescription"
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  isTextarea
+                  rows={3}
+                />
+                <FloatingLabelInput
+                  label="Keywords"
+                  name="editKeywords"
+                  value={editKeywords}
+                  onChange={(e) => setEditKeywords(e.target.value)}
+                  placeholder="separadas por vírgula"
+                />
+                <FloatingLabelInput
+                  label="Study Area"
+                  name="editStudyArea"
+                  value={editStudyArea}
+                  onChange={(e) => setEditStudyArea(e.target.value)}
+                  placeholder="separadas por vírgula"
+                />
+
+                <div className="flex gap-3 pt-1">
                   <button
                     type="button"
-                    onClick={handleSpecify}
-                    className="text-sm font-semibold text-[#0f9448] hover:text-[#0d843f]"
+                    onClick={handleCancelEdit}
+                    className="flex-1 bg-gray-400 hover:bg-gray-500 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors"
                   >
-                    Tentar novamente
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveEdit}
+                    className="flex-1 bg-[#0f9448] hover:bg-[#0d843f] text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors"
+                  >
+                    Salvar
                   </button>
                 </div>
-              )}
-
-              <div className="space-y-5 mt-1 mx-1">
-                <div className="p-3 bg-gray-50 rounded-lg">
-                  <p className="text-xs text-gray-600 font-medium mb-1">
-                    Theme
-                  </p>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {selectedData.theme}
-                  </p>
-                </div>
-
-                {selectedData.description && (
-                  <div className="p-3 bg-gray-50 rounded-lg">
-                    <p className="text-xs text-gray-600 font-medium mb-1">
-                      Description
-                    </p>
-                    <p className="text-sm font-semibold text-gray-900">
-                      {selectedData.description}
-                    </p>
-                  </div>
-                )}
-
-                {selectedData.keywords && selectedData.keywords.length > 0 && (
-                  <div className="p-3 bg-gray-50 rounded-lg">
-                    <p className="text-xs text-gray-600 font-medium mb-1">
-                      Keywords
-                    </p>
-                    <ol className="text-sm font-semibold text-gray-900 list-decimal list-inside space-y-0.5">
-                      {selectedData.keywords.map((keyword, index) => (
-                        <li key={`${keyword}-${index}`}>{keyword}</li>
-                      ))}
-                    </ol>
-                  </div>
-                )}
-
-                {selectedData.studyArea && selectedData.studyArea.length > 0 && (
-                  <div className="p-3 bg-gray-50 rounded-lg">
-                    <p className="text-xs text-gray-600 font-medium mb-1">
-                      Study Area
-                    </p>
-                    <p className="text-sm font-semibold text-gray-900">
-                      {selectedData.studyArea.join(', ')}
-                    </p>
-                  </div>
-                )}
               </div>
-            </>
-          )}
-
-          {selectedData && isEditingSelected && (
-            <div className="space-y-4 mt-1 mx-1">
-              <FloatingLabelInput
-                label="Theme"
-                name="editTheme"
-                value={editTheme}
-                onChange={(e) => setEditTheme(e.target.value)}
-              />
-              <FloatingLabelInput
-                label="Description"
-                name="editDescription"
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-                isTextarea
-                rows={3}
-              />
-              <FloatingLabelInput
-                label="Keywords"
-                name="editKeywords"
-                value={editKeywords}
-                onChange={(e) => setEditKeywords(e.target.value)}
-                placeholder="separadas por vírgula"
-              />
-              <FloatingLabelInput
-                label="Study Area"
-                name="editStudyArea"
-                value={editStudyArea}
-                onChange={(e) => setEditStudyArea(e.target.value)}
-                placeholder="separadas por vírgula"
-              />
-
-              <div className="flex gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={handleCancelEdit}
-                  className="flex-1 bg-gray-400 hover:bg-gray-500 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveEdit}
-                  className="flex-1 bg-[#0f9448] hover:bg-[#0d843f] text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors"
-                >
-                  Salvar
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+            )}
+          </>
+        }
+      />
 
       <div className="mt-6 pt-4 border-t border-gray-200 flex gap-4">
         <button

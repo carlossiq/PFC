@@ -88,6 +88,11 @@ GOOD EXAMPLE:
 8. LANGUAGE
 - All outputs MUST be in English
 
+9. STRING SAFETY (CRITICAL)
+- NEVER use unescaped double quotes (") inside a string value (e.g. to emphasize a word) — if quoting is needed, escape it properly (\") or rephrase to avoid quotes entirely
+- NEVER include raw line breaks inside a string value
+- Every string must be properly closed and escaped so the JSON parses without errors
+
 
 ========================
 OUTPUT STRUCTURE
@@ -122,6 +127,7 @@ FINAL CHECK BEFORE OUTPUT
 ========================
 
 - JSON is valid
+- No unescaped quotes or raw line breaks inside string values
 - Exactly 4 candidates
 - Every candidate includes a "description"
 - No extra fields

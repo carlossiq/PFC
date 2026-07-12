@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { QueryOptionResult } from '../services/probeQuery'
 
 // Dados de entrada do formulário (durante edição ou persistidos)
 interface InputData {
@@ -69,6 +70,28 @@ interface FormStore {
   incrementStep2Iterations: () => void
   resetStep2Iterations: () => void
 
+  // Estado do Step3 (queries geradas por IA): N tentativas independentes (não
+  // são variantes nomeadas - só chamadas repetidas com a mesma instrução, ver
+  // ChatService.build_probe_queries_multi), qual delas está selecionada (por
+  // índice), e o intake (tema/descrição/keywords resolvido) que gerou essas
+  // queries - usado pra comparar com o intake atual e decidir se regenera ao
+  // reentrar no Step3, em vez de um flag manual que os callers precisariam
+  // lembrar de setar. Assim as queries (e edições feitas nelas) sobrevivem à
+  // navegação Voltar/Próximo e só são recriadas se o parâmetro realmente
+  // mudou, ou se o usuário clicar em "Gerar outras".
+  step3Queries: QueryOptionResult[] | null
+  setStep3Queries: (queries: QueryOptionResult[], generatedForIntake: string) => void
+  updateStep3QueryAt: (index: number, patch: Partial<QueryOptionResult>) => void
+
+  step3SelectedIndex: number | null
+  setStep3SelectedIndex: (index: number | null) => void
+
+  step3GeneratedForIntake: string | null
+
+  step3Iterations: number
+  incrementStep3Iterations: () => void
+  resetStep3Iterations: () => void
+
   // Utilitários
   getFormData: () => {
     input: InputData
@@ -99,6 +122,10 @@ export const useFormStore = create<FormStore>((set, get) => ({
   step2Candidates: [],
   shouldRegenerateStep2: true,
   step2Iterations: 0,
+  step3Queries: null,
+  step3SelectedIndex: null,
+  step3GeneratedForIntake: null,
+  step3Iterations: 0,
 
   setSessionName: (name) =>
     set({
@@ -140,6 +167,35 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step2Iterations: 0,
     }),
 
+  setStep3Queries: (queries, generatedForIntake) =>
+    set({
+      step3Queries: queries,
+      step3GeneratedForIntake: generatedForIntake,
+    }),
+
+  updateStep3QueryAt: (index, patch) =>
+    set((state) => {
+      if (!state.step3Queries) return {}
+      return {
+        step3Queries: state.step3Queries.map((q, i) => (i === index ? { ...q, ...patch } : q)),
+      }
+    }),
+
+  setStep3SelectedIndex: (index) =>
+    set({
+      step3SelectedIndex: index,
+    }),
+
+  incrementStep3Iterations: () =>
+    set((state) => ({
+      step3Iterations: state.step3Iterations + 1,
+    })),
+
+  resetStep3Iterations: () =>
+    set({
+      step3Iterations: 0,
+    }),
+
   getFormData: () => {
     const state = get()
     return {
@@ -157,5 +213,9 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step2Candidates: [],
       shouldRegenerateStep2: true,
       step2Iterations: 0,
+      step3Queries: null,
+      step3SelectedIndex: null,
+      step3GeneratedForIntake: null,
+      step3Iterations: 0,
     }),
 }))
