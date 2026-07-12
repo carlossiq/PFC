@@ -3,7 +3,7 @@ import { Trash2, ChevronDown } from 'lucide-react'
 import { selectableCardClass } from './CandidatePicker'
 import { FieldCard } from './FieldCard'
 import { PROBE_FIELDS_BY_API } from '../constants/probeFields'
-import type { ResearchSessionSummary } from '../services/researchSession'
+import { getSessionTotalIterations, type ResearchSessionSummary } from '../services/researchSession'
 import type { SessionInputRow, SessionProbeQueryRow } from '../services/sessionInput'
 
 function formatDate(iso: string): string {
@@ -126,6 +126,7 @@ export function SessionCard({ session, isExpanded, onToggle, onDeleteClick }: Se
   const generated = session.inputs.find((i) => i.parent_id !== null)
   const patentQuery = session.probe_queries.find((q) => q.fonte === 'ops')
   const articleQuery = session.probe_queries.find((q) => q.fonte === 'scopus')
+  const totalIterations = getSessionTotalIterations(session)
 
   // Independentes: os dois podem ficar abertos ao mesmo tempo, cada um
   // ocupando metade da grid.
@@ -168,7 +169,7 @@ export function SessionCard({ session, isExpanded, onToggle, onDeleteClick }: Se
             <div className="flex flex-col items-end gap-1 shrink-0">
               <span className="text-xs text-gray-400">{formatDate(session.created_at)}</span>
               <span className="text-xs font-semibold text-[#0f9448] bg-[#0f9448]/10 rounded-full px-2 py-0.5">
-                {generated?.iterations ?? 0} {(generated?.iterations ?? 0) === 1 ? 'iteração' : 'iterações'}
+                {totalIterations} {totalIterations === 1 ? 'iteração total' : 'iterações totais'}
               </span>
             </div>
           </div>

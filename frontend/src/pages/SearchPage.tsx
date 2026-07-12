@@ -49,7 +49,11 @@ export function SearchPage() {
 
   return (
     <div className="w-full">
-      <h2 className="text-2xl font-bold mb-6">Search</h2>
+      <h2 className="text-2xl font-bold mb-1">Sessões de Prospecção</h2>
+      <p className="text-sm text-gray-500 mb-6">
+        Busque, pelo tema pesquisado, sessões de prospecção já iniciadas.Clique num card pra ver os detalhes, ou use o ícone de lixeira
+        pra apagar a sessão (e tudo o que ela guarda) permanentemente.
+      </p>
 
       <SessionSearchFilter value={query} onChange={setQuery} />
 

@@ -24,3 +24,14 @@ export async function searchSessions(theme?: string): Promise<ResearchSessionSum
 export async function deleteSession(sessionId: number): Promise<void> {
   await apiClient.delete(`/research-session/${sessionId}`)
 }
+
+// Soma as iterações dos três estágios de IA de uma sessão: refinamento de
+// parâmetros (Step2, na linha de session_input gerada) + geração da query de
+// patente + geração da query de artigos (Step3). Mesmo cálculo usado no badge
+// do SessionCard e no gráfico de estatísticas, centralizado aqui pra não duplicar.
+export function getSessionTotalIterations(session: ResearchSessionSummary): number {
+  const generated = session.inputs.find((i) => i.parent_id !== null)
+  const patentQuery = session.probe_queries.find((q) => q.fonte === 'ops')
+  const articleQuery = session.probe_queries.find((q) => q.fonte === 'scopus')
+  return (generated?.iterations ?? 0) + (patentQuery?.iterations ?? 0) + (articleQuery?.iterations ?? 0)
+}
