@@ -128,7 +128,8 @@ class ScopusQueryBuilder(BaseQueryBuilder):
                         query_parts.append(query_part)
 
         # Adicionar intervalo de anos
-        date_query = self._build_date_query(year_from, year_to)
+        year_values = llm_output.year.values if llm_output.year and not llm_output.year.is_empty() else None
+        date_query = self._build_date_query(year_from, year_to, year_values=year_values)
         if date_query:
             query_parts.append(date_query)
 
@@ -237,17 +238,33 @@ class ScopusQueryBuilder(BaseQueryBuilder):
         parts = [f'{scopus_field}("{v}")' for v in escaped_values]
         return " OR ".join(parts)
 
-    def _build_date_query(self, year_from: int, year_to: int) -> Optional[str]:
+    def _build_date_query(
+        self, year_from: int, year_to: int, year_values: Optional[list[str]] = None
+    ) -> Optional[str]:
         """
         Constrói cláusula de intervalo de anos Scopus.
 
+        Se year_values for fornecido: com 1 valor, usa esse ano como início E
+        fim (busca de um ano só); com 2 ou mais valores, usa o menor como
+        início e o maior como fim (intervalo). Caso contrário, usa year_from
+        e year_to (mesma lógica do OPSQueryBuilder._build_date_cql).
+
         Args:
-            year_from: Ano inicial.
-            year_to: Ano final.
+            year_from: Ano inicial (fallback).
+            year_to: Ano final (fallback).
+            year_values: Valores de ano do LLMOutput (opcional).
 
         Returns:
             String de query ou None se inválido.
         """
+        if year_values:
+            try:
+                parsed_years = [int(v) for v in year_values[:2]]
+                year_from = min(parsed_years)
+                year_to = max(parsed_years)
+            except (ValueError, IndexError):
+                pass
+
         if year_from <= 0 or year_to <= 0 or year_from > year_to:
             return None
 

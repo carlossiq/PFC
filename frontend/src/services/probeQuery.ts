@@ -2,16 +2,10 @@ import { apiClient } from './api'
 import { resolveIntakePayload } from './refineTopic'
 import type { FormInput, ThemeInput } from './refineTopic'
 
-export interface StructuredQueryFields {
-  title: string[]
-  abstract: string[]
-  claims: string[]
-  ipc: string[]
-  cpc: string[]
-  applicant: string[]
-  inventor: string[]
-  year: string[]
-}
+// Genérico porque os campos variam por API (patente: title/abstract/ipc/year;
+// artigo: title/abstract/field_of_study/year) — ver PROBE_FIELDS_BY_API em
+// constants/probeFields.ts, que define quais chaves aparecem na UI.
+export type StructuredQueryFields = Record<string, string[]>
 
 export interface QueryComplexity {
   score: number
@@ -27,7 +21,10 @@ export interface YearRange {
 
 export interface QueryOptionResult {
   success: boolean
-  query?: { query: string; range: string; format: string }
+  // OPS retorna {query,range,format}; Scopus retorna {query,count,start,sort,
+  // view} — só `query` (a string de busca) é comum aos dois e de fato
+  // exibida na UI hoje.
+  query?: { query: string } & Record<string, unknown>
   fields?: StructuredQueryFields
   complexity?: QueryComplexity
   // Intervalo de anos usado na busca quando o campo "year" está vazio (padrão

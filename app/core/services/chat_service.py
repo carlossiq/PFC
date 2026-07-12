@@ -97,14 +97,61 @@ class ChatService:
             f"Keep it simple and focused!"
         )
 
+    # Instrui a LLM sobre quais campos preencher dependendo do tipo de
+    # documento buscado (a mesma chamada de _build_query_with_retry é usada
+    # tanto pra patentes quanto pra artigos - só muda o `api`). O prompt base
+    # (probe_system_prompt.txt) é cross-domain por natureza, mas o exemplo de
+    # saída dele só mostra campos de patente, então sem essa dica a LLM tende
+    # a nunca preencher os campos relevantes pra artigos (authors, keywords,
+    # field_of_study etc).
+    _API_FIELD_HINTS: dict[str, str] = {
+        "ops": (
+            "This search targets PATENT documents. Populate TITLE, ABSTRACT, and "
+            "IPC (technology classification) based on the theme. Leave other "
+            "fields (CPC, APPLICANT, INVENTOR, AUTHORS, KEYWORDS, etc) empty "
+            "unless explicitly mentioned in the input."
+        ),
+        "scopus": (
+            "This search targets SCHOLARLY ARTICLES, not patents. Populate TITLE, "
+            "ABSTRACT, and FIELD_OF_STUDY (subject area) based on the theme. Do "
+            "NOT populate patent-only fields (IPC, CPC, APPLICANT, INVENTOR, "
+            "CLAIMS). Leave AUTHORS, AFFILIATION, KEYWORDS, SOURCE_TITLE empty "
+            "unless explicitly mentioned in the input."
+        ),
+    }
+
+    def _api_field_hint(self, api: str) -> str:
+        hint = self._API_FIELD_HINTS.get(api)
+        if not hint:
+            return ""
+        return f"\n\n## RELEVANT FIELDS FOR THIS SEARCH\n\n{hint}\n"
+
+    # Campos textuais no LLMResponse/LLMOutput (grupos AND/OR); todo o resto é
+    # campo simples (lista de valores).
+    _TEXTUAL_LLM_FIELDS = {"title", "abstract", "claims", "description", "full_text"}
+
+    # Quais campos são relevantes pra edição/exibição na busca probe, por API
+    # - patentes (ops) usam IPC como classificação ampla de tecnologia;
+    # artigos (scopus) usam Field of Study como classificação ampla de área.
+    # Os demais campos (cpc/applicant/inventor pra patente, authors/
+    # affiliation/keywords/source_title pra artigo) são específicos demais
+    # pra uma exploração inicial - ficam de fora daqui, mas continuam
+    # disponíveis pra IA usar internamente se fizer sentido.
+    _PROBE_FIELDS_BY_API: dict[str, list[str]] = {
+        "ops": ["title", "abstract", "ipc", "year"],
+        "scopus": ["title", "abstract", "field_of_study", "year"],
+    }
+    _DEFAULT_PROBE_FIELDS = ["title", "abstract", "year"]
+
     @staticmethod
-    def _flatten_llm_response_fields(llm_response: Any) -> dict[str, list[str]]:
+    def _flatten_llm_response_fields(llm_response: Any, fields: list[str]) -> dict[str, list[str]]:
         """
         Achata um LLMResponse (domain, retornado por llm.process_intake) em
-        {campo: [termos]} plano. Perde a granularidade de múltiplos grupos
-        AND/OR entre grupos textuais — simplificação aceita para permitir
-        edição estruturada simples no frontend (mesmo espírito do Step2
-        tratar keywords/studyArea como listas simples).
+        {campo: [termos]} plano, só pros campos pedidos. Perde a
+        granularidade de múltiplos grupos AND/OR entre grupos textuais —
+        simplificação aceita para permitir edição estruturada simples no
+        frontend (mesmo espírito do Step2 tratar keywords/studyArea como
+        listas simples).
         """
         def flat(tq: Any) -> list[str]:
             seen: list[str] = []
@@ -115,23 +162,19 @@ class ChatService:
             return seen
 
         return {
-            "title": flat(llm_response.title),
-            "abstract": flat(llm_response.abstract),
-            "claims": flat(llm_response.claims),
-            "ipc": list(llm_response.ipc),
-            "cpc": list(llm_response.cpc),
-            "applicant": list(llm_response.applicant),
-            "inventor": list(llm_response.inventor),
-            "year": list(llm_response.year),
+            name: (flat(getattr(llm_response, name)) if name in ChatService._TEXTUAL_LLM_FIELDS
+                   else list(getattr(llm_response, name)))
+            for name in fields
         }
 
     @staticmethod
     def _query_fields_to_llm_output(fields: dict[str, list[str]]) -> Any:
         """
         Reconstrói um schemas.llm.LLMOutput a partir dos campos estruturados
-        simplificados editados pelo usuário. Cada campo vira um único grupo OR
-        (mesma simplificação de _flatten_llm_response_fields, no sentido
-        inverso). Usado só pelo rebuild síncrono (sem LLM).
+        simplificados editados pelo usuário (quaisquer que sejam - varia por
+        API). Cada campo vira um único grupo OR (mesma simplificação de
+        _flatten_llm_response_fields, no sentido inverso). Usado só pelo
+        rebuild síncrono (sem LLM).
         """
         from schemas.llm import LLMOutput, SimpleFieldQuery, TermGroup, TextualFieldQuery
 
@@ -144,16 +187,11 @@ class ChatService:
         def simple(values: Optional[list[str]]) -> SimpleFieldQuery:
             return SimpleFieldQuery(values=[v.strip() for v in (values or []) if isinstance(v, str) and v.strip()])
 
-        return LLMOutput(
-            title=textual(fields.get("title")),
-            abstract=textual(fields.get("abstract")),
-            claims=textual(fields.get("claims")),
-            ipc=simple(fields.get("ipc")),
-            cpc=simple(fields.get("cpc")),
-            applicant=simple(fields.get("applicant")),
-            inventor=simple(fields.get("inventor")),
-            year=simple(fields.get("year")),
-        )
+        kwargs = {
+            name: (textual(values) if name in ChatService._TEXTUAL_LLM_FIELDS else simple(values))
+            for name, values in fields.items()
+        }
+        return LLMOutput(**kwargs)
 
     async def _build_query_with_retry(
         self,
@@ -186,9 +224,11 @@ class ChatService:
         llm_request = self._intake_to_request(intake)
         qb = _get_qb_adapter(api, search_mode)
 
+        probe_fields = self._PROBE_FIELDS_BY_API.get(api, self._DEFAULT_PROBE_FIELDS)
+
         for attempt in range(1, max_attempts + 1):
             base_prompt = getattr(PromptLoader, prompt_loader_method)()
-            system_prompt = base_prompt
+            system_prompt = base_prompt + self._api_field_hint(api)
             if attempt > 1 and complexity is not None:
                 system_prompt += self._simplification_suffix(complexity, attempt)
 
@@ -214,7 +254,7 @@ class ChatService:
             cql_query = query.get("query", "")
             complexity = self._complexity_from_query(cql_query)
             passed = complexity["score"] <= max_score
-            fields = self._flatten_llm_response_fields(llm_response)
+            fields = self._flatten_llm_response_fields(llm_response, probe_fields)
 
             attempts_history.append({"attempt": attempt, "query": query, "complexity": complexity, "fields": fields})
 
@@ -534,21 +574,33 @@ class ChatService:
             result["error"] = errors[0] if errors else "Falha ao gerar queries com IA."
         return result
 
+    @staticmethod
+    def _get_raw_query_builder(api: str, search_mode: str) -> Any:
+        """
+        Dá o query builder "cru" (não o adapter) pra reconstrução síncrona
+        (sem LLM) - diferente de _get_qb_adapter (módulo-level), que espera
+        um LLMResponse (domain) e converte internamente; aqui já temos um
+        LLMOutput (schema) pronto, então instanciamos o builder direto.
+        """
+        if api == "ops":
+            from services.query_builders.ops_query_builder import OPSQueryBuilder
+            return OPSQueryBuilder(api_name="ops", search_mode=search_mode)
+        if api == "scopus":
+            from services.query_builders.scopus_query_builder import ScopusQueryBuilder
+            return ScopusQueryBuilder(api_name="scopus", search_mode=search_mode)
+        raise ValueError(f"Rebuild não suportado para api='{api}'")
+
     async def rebuild_probe_query(self, fields: dict[str, list[str]], api: str = "ops") -> dict[str, Any]:
         """
-        Reconstrói a CQL a partir de campos estruturados editados pelo
+        Reconstrói a query a partir de campos estruturados editados pelo
         usuário, sem chamar a LLM (síncrono e determinístico).
         """
-        if api != "ops":
-            return {"success": False, "error": f"Structured rebuild ainda não suportado para api='{api}'"}
         try:
-            from services.query_builders.ops_query_builder import OPSQueryBuilder
-
             year_from = getattr(self.settings, "search_year_from", 2015)
             year_to = getattr(self.settings, "search_year_to", 2026)
 
             llm_output = self._query_fields_to_llm_output(fields)
-            builder = OPSQueryBuilder(api_name="ops", search_mode="probe")
+            builder = self._get_raw_query_builder(api, "probe")
             query = builder.build_query(
                 llm_output=llm_output,
                 year_from=year_from,

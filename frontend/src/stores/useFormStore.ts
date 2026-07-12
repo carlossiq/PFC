@@ -92,6 +92,22 @@ interface FormStore {
   incrementStep3Iterations: () => void
   resetStep3Iterations: () => void
 
+  // Espelha o bloco step3* acima, mas pra queries de artigos (Scopus) - a
+  // segunda seção do Step3. Mesmo padrão de comparação de assinatura do
+  // intake pra decidir regeneração, independente da seção de patentes.
+  step3ArticleQueries: QueryOptionResult[] | null
+  setStep3ArticleQueries: (queries: QueryOptionResult[], generatedForIntake: string) => void
+  updateStep3ArticleQueryAt: (index: number, patch: Partial<QueryOptionResult>) => void
+
+  step3ArticleSelectedIndex: number | null
+  setStep3ArticleSelectedIndex: (index: number | null) => void
+
+  step3ArticleGeneratedForIntake: string | null
+
+  step3ArticleIterations: number
+  incrementStep3ArticleIterations: () => void
+  resetStep3ArticleIterations: () => void
+
   // Utilitários
   getFormData: () => {
     input: InputData
@@ -126,6 +142,10 @@ export const useFormStore = create<FormStore>((set, get) => ({
   step3SelectedIndex: null,
   step3GeneratedForIntake: null,
   step3Iterations: 0,
+  step3ArticleQueries: null,
+  step3ArticleSelectedIndex: null,
+  step3ArticleGeneratedForIntake: null,
+  step3ArticleIterations: 0,
 
   setSessionName: (name) =>
     set({
@@ -196,6 +216,35 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step3Iterations: 0,
     }),
 
+  setStep3ArticleQueries: (queries, generatedForIntake) =>
+    set({
+      step3ArticleQueries: queries,
+      step3ArticleGeneratedForIntake: generatedForIntake,
+    }),
+
+  updateStep3ArticleQueryAt: (index, patch) =>
+    set((state) => {
+      if (!state.step3ArticleQueries) return {}
+      return {
+        step3ArticleQueries: state.step3ArticleQueries.map((q, i) => (i === index ? { ...q, ...patch } : q)),
+      }
+    }),
+
+  setStep3ArticleSelectedIndex: (index) =>
+    set({
+      step3ArticleSelectedIndex: index,
+    }),
+
+  incrementStep3ArticleIterations: () =>
+    set((state) => ({
+      step3ArticleIterations: state.step3ArticleIterations + 1,
+    })),
+
+  resetStep3ArticleIterations: () =>
+    set({
+      step3ArticleIterations: 0,
+    }),
+
   getFormData: () => {
     const state = get()
     return {
@@ -217,5 +266,9 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step3SelectedIndex: null,
       step3GeneratedForIntake: null,
       step3Iterations: 0,
+      step3ArticleQueries: null,
+      step3ArticleSelectedIndex: null,
+      step3ArticleGeneratedForIntake: null,
+      step3ArticleIterations: 0,
     }),
 }))
