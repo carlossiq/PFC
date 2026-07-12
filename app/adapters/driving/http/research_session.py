@@ -30,7 +30,9 @@ async def search_sessions(
     por IA). Sem `theme`, retorna as sessões mais recentes. Cada sessão já vem
     com todas as suas linhas de session_input carregadas.
     """
-    stmt = select(ResearchSession).options(selectinload(ResearchSession.inputs))
+    stmt = select(ResearchSession).options(
+        selectinload(ResearchSession.inputs), selectinload(ResearchSession.probe_queries)
+    )
 
     if theme and theme.strip():
         stmt = (
@@ -56,12 +58,13 @@ async def delete_session(
     session_id: int,
     session: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[dict]:
-    """Apaga a research_session e, em cascata (cascade='all, delete-orphan' na
-    relationship ResearchSession.inputs), todas as suas linhas de session_input."""
+    """Apaga a research_session e, em cascata (cascade='all, delete-orphan' nas
+    relationships ResearchSession.inputs e ResearchSession.probe_queries), todas
+    as suas linhas de session_input e session_probe_query."""
     stmt = (
         select(ResearchSession)
         .where(ResearchSession.id == session_id)
-        .options(selectinload(ResearchSession.inputs))
+        .options(selectinload(ResearchSession.inputs), selectinload(ResearchSession.probe_queries))
     )
     result = await session.execute(stmt)
     research_session = result.scalar_one_or_none()

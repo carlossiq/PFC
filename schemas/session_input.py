@@ -52,12 +52,37 @@ class SessionInputGenerated(BaseModel):
     iterations: int = Field(default=0, ge=0)
 
 
+class SessionProbeQueryInput(BaseModel):
+    """Query do Step3 (patente ou artigo) selecionada pelo usuário."""
+
+    fonte: str = Field(..., pattern="^(ops|scopus)$")
+    query_text: str = Field(..., min_length=1)
+    fields: Optional[dict[str, list[str]]] = None
+    year_from: Optional[int] = None
+    year_to: Optional[int] = None
+    complexity_score: Optional[float] = None
+    complexity_level: Optional[str] = None
+    iterations: int = Field(default=1, ge=1)
+
+
+class SessionProbeQueryRow(SessionProbeQueryInput):
+    """Representação persistida de uma linha session_probe_query."""
+
+    id: int
+    session_id: int
+    result_count: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
 class SessionInputFinalizeRequest(BaseModel):
     """Payload enviado ao finalizar a sessão: nome + input raiz + gerado (opcional)."""
 
     name: str = Field(..., min_length=1, max_length=255)
     root: SessionInputRoot
     generated: Optional[SessionInputGenerated] = None
+    probe_queries: list[SessionProbeQueryInput] = Field(default_factory=list, max_items=2)
 
     @field_validator("name")
     @classmethod
@@ -91,3 +116,4 @@ class SessionInputFinalizeResponse(BaseModel):
     session_name: str
     root: SessionInputRow
     generated: Optional[SessionInputRow] = None
+    probe_queries: list[SessionProbeQueryRow] = Field(default_factory=list)

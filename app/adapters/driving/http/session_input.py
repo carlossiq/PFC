@@ -13,9 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.driving.http.dependencies import get_db_session
 from core.logging import get_logger
-from db.research_session_models import ResearchSession, SessionInput
+from db.research_session_models import ResearchSession, SessionInput, SessionProbeQuery
 from schemas.response import SuccessResponse
-from schemas.session_input import SessionInputFinalizeRequest, SessionInputFinalizeResponse, SessionInputRow
+from schemas.session_input import (
+    SessionInputFinalizeRequest,
+    SessionInputFinalizeResponse,
+    SessionInputRow,
+    SessionProbeQueryRow,
+)
 
 logger = get_logger(__name__)
 
@@ -61,17 +66,36 @@ async def finalize_session(
         )
         session.add(generated_row)
 
+    probe_query_rows = [
+        SessionProbeQuery(
+            session_id=research_session.id,
+            fonte=item.fonte,
+            query_text=item.query_text,
+            fields=item.fields,
+            year_from=item.year_from,
+            year_to=item.year_to,
+            complexity_score=item.complexity_score,
+            complexity_level=item.complexity_level,
+            iterations=item.iterations,
+        )
+        for item in payload.probe_queries
+    ]
+    session.add_all(probe_query_rows)
+
     await session.commit()
     await session.refresh(research_session)
     await session.refresh(root)
     if generated_row is not None:
         await session.refresh(generated_row)
+    for row in probe_query_rows:
+        await session.refresh(row)
 
     logger.info(
         "session_finalized",
         session_id=research_session.id,
         root_input_id=root.id,
         generated_input_id=generated_row.id if generated_row else None,
+        probe_query_count=len(probe_query_rows),
     )
 
     return SuccessResponse(
@@ -81,5 +105,6 @@ async def finalize_session(
             session_name=research_session.name,
             root=SessionInputRow.model_validate(root),
             generated=SessionInputRow.model_validate(generated_row) if generated_row else None,
+            probe_queries=[SessionProbeQueryRow.model_validate(row) for row in probe_query_rows],
         )
     )

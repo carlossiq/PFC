@@ -22,6 +22,7 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
     setStep3SelectedIndex,
     step3GeneratedForIntake,
     incrementStep3Iterations,
+    resetStep3Iterations,
     step3ArticleQueries,
     setStep3ArticleQueries,
     updateStep3ArticleQueryAt,
@@ -29,6 +30,7 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
     setStep3ArticleSelectedIndex,
     step3ArticleGeneratedForIntake,
     incrementStep3ArticleIterations,
+    resetStep3ArticleIterations,
   } = useFormStore()
 
   const patentSection = useProbeQuerySection({
@@ -46,6 +48,7 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
       setSelectedIndex: setStep3SelectedIndex,
       generatedForIntake: step3GeneratedForIntake,
       incrementIterations: incrementStep3Iterations,
+      resetIterations: resetStep3Iterations,
     },
   })
 
@@ -64,6 +67,7 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
       setSelectedIndex: setStep3ArticleSelectedIndex,
       generatedForIntake: step3ArticleGeneratedForIntake,
       incrementIterations: incrementStep3ArticleIterations,
+      resetIterations: resetStep3ArticleIterations,
     },
   })
 

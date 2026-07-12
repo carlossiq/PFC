@@ -45,6 +45,7 @@ export interface ProbeQuerySlice {
   setSelectedIndex: (index: number | null) => void
   generatedForIntake: string | null
   incrementIterations: () => void
+  resetIterations: () => void
 }
 
 interface UseProbeQuerySectionParams {
@@ -71,7 +72,16 @@ export function useProbeQuerySection({
   step2SelectedTheme,
   slice,
 }: UseProbeQuerySectionParams) {
-  const { queries, setQueries, updateQueryAt, selectedIndex, setSelectedIndex, generatedForIntake, incrementIterations } = slice
+  const {
+    queries,
+    setQueries,
+    updateQueryAt,
+    selectedIndex,
+    setSelectedIndex,
+    generatedForIntake,
+    incrementIterations,
+    resetIterations,
+  } = slice
 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -121,6 +131,10 @@ export function useProbeQuerySection({
     if (isGeneratingRef.current) return
     const needsRegeneration = !queries || generatedForIntake !== currentIntakeSignature
     if (needsRegeneration) {
+      // Regeneração automática (primeira geração ou input de origem mudou) -
+      // zera o contador de iterações, que só deve refletir cliques em "Gerar
+      // outras" feitos a partir deste novo conjunto de queries.
+      resetIterations()
       isGeneratingRef.current = true
       generateQueries().finally(() => {
         isGeneratingRef.current = false

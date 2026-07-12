@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -46,6 +46,11 @@ class ResearchSession(Base):
         back_populates="session",
         cascade="all, delete-orphan",
     )
+    probe_queries: Mapped[list["SessionProbeQuery"]] = relationship(
+        "SessionProbeQuery",
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
 
 
 class SessionInput(Base):
@@ -71,3 +76,35 @@ class SessionInput(Base):
 
     session: Mapped["ResearchSession"] = relationship("ResearchSession", back_populates="inputs")
     parent: Mapped[Optional["SessionInput"]] = relationship("SessionInput", remote_side=[id])
+
+
+class SessionProbeQuery(Base):
+    """
+    Query de exploração inicial (Step3) escolhida pelo usuário, uma por fonte
+    (ops para patentes, scopus para artigos). Guarda a query final montada
+    pela IA (ou reconstruída manualmente pelo usuário), os campos estruturados
+    que a compõem, e quantas iterações de IA foram necessárias até chegar
+    nela - reiniciadas sempre que o input de origem muda.
+    """
+
+    __tablename__ = "session_probe_query"
+    __table_args__ = (
+        UniqueConstraint("session_id", "fonte", name="uq_session_probe_query_session_fonte"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("research_session.id"), nullable=False, index=True)
+    fonte: Mapped[str] = mapped_column(String(20), nullable=False)  # "ops" | "scopus"
+
+    query_text: Mapped[str] = mapped_column(Text, nullable=False)
+    fields: Mapped[Optional[dict]] = mapped_column(JSON)
+    year_from: Mapped[Optional[int]] = mapped_column()
+    year_to: Mapped[Optional[int]] = mapped_column()
+    complexity_score: Mapped[Optional[float]] = mapped_column()
+    complexity_level: Mapped[Optional[str]] = mapped_column(String(50))
+    result_count: Mapped[Optional[int]] = mapped_column()
+    iterations: Mapped[int] = mapped_column(nullable=False, default=1)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    session: Mapped["ResearchSession"] = relationship("ResearchSession", back_populates="probe_queries")

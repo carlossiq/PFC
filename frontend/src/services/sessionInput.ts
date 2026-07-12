@@ -1,4 +1,5 @@
 import { apiClient } from './api'
+import type { QueryOptionResult } from './probeQuery'
 
 export interface SessionInputRootPayload {
   theme: string
@@ -45,6 +46,47 @@ export function mapInputToSessionInputRoot(input: FormInput): SessionInputRootPa
   }
 }
 
+export interface SessionProbeQueryPayload {
+  fonte: 'ops' | 'scopus'
+  query_text: string
+  fields: Record<string, string[]> | null
+  year_from: number | null
+  year_to: number | null
+  complexity_score: number | null
+  complexity_level: string | null
+  iterations: number
+}
+
+// Monta o payload de uma query do Step3 pronta pra enviar no finalize, a
+// partir da opção selecionada numa seção (patente ou artigo). `iterations`
+// é o contador interno da store (0-based: 0 = gerada uma vez, sem retry) -
+// aqui vira o valor de negócio "nº de vezes que a query foi gerada" (1+).
+// Retorna null se não há uma seleção válida (nada gerado, ou a tentativa
+// selecionada falhou) - mesma condição usada no `canProceed` do Step3.
+export function buildProbeQueryPayload(
+  selected: QueryOptionResult | undefined,
+  fonte: 'ops' | 'scopus',
+  iterations: number,
+): SessionProbeQueryPayload | null {
+  if (!selected?.success) return null
+  return {
+    fonte,
+    query_text: selected.query?.query ?? '',
+    fields: selected.fields ?? null,
+    year_from: selected.year_range?.from ?? null,
+    year_to: selected.year_range?.to ?? null,
+    complexity_score: selected.complexity?.score ?? null,
+    complexity_level: selected.complexity?.level ?? null,
+    iterations: iterations + 1,
+  }
+}
+
+export interface SessionProbeQueryRow extends SessionProbeQueryPayload {
+  id: number
+  session_id: number
+  result_count: number | null
+}
+
 export interface SessionInputRow {
   id: number
   session_id: number
@@ -64,17 +106,20 @@ export interface FinalizeSessionResponse {
   session_name: string
   root: SessionInputRow
   generated: SessionInputRow | null
+  probe_queries: SessionProbeQueryRow[]
 }
 
-// Finaliza a sessão: envia o nome da sessão, o input raiz (Step1) e, se houve
-// refinamento por IA, o tema escolhido para seguir adiante + o total de
-// iterações acumuladas. Cria research_session + a cadeia de session_input no
-// backend numa tacada só.
+// Finaliza a sessão: envia o nome da sessão, o input raiz (Step1), se houve
+// refinamento por IA o tema escolhido para seguir adiante + o total de
+// iterações acumuladas, e as queries do Step3 selecionadas (patente/artigo).
+// Cria research_session + a cadeia de session_input + as linhas de
+// session_probe_query no backend numa tacada só.
 export async function finalizeSession(
   name: string,
   root: FormInput,
   generated: GeneratedTheme | null,
   iterations: number,
+  probeQueries: SessionProbeQueryPayload[] = [],
 ): Promise<FinalizeSessionResponse> {
   const { data } = await apiClient.post('/session-input', {
     name,
@@ -86,6 +131,7 @@ export async function finalizeSession(
           iterations,
         }
       : null,
+    probe_queries: probeQueries,
   })
   return data.data
 }

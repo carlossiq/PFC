@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { Trash2, ChevronDown } from 'lucide-react'
 import { selectableCardClass } from './CandidatePicker'
 import { FieldCard } from './FieldCard'
+import { PROBE_FIELDS_BY_API } from '../constants/probeFields'
 import type { ResearchSessionSummary } from '../services/researchSession'
-import type { SessionInputRow } from '../services/sessionInput'
+import type { SessionInputRow, SessionProbeQueryRow } from '../services/sessionInput'
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString('pt-BR')
@@ -56,7 +57,62 @@ function InputFieldsBlock({ input, title }: { input: SessionInputRow; title: str
   )
 }
 
-type InputBlockType = 'root' | 'generated'
+// Mostra a query (patente/artigo) escolhida no Step3 pra essa sessão - mesmos
+// campos e rótulos usados na tela de seleção (ProbeQuerySectionView), pra
+// manter a query legível igual em ambos os lugares.
+function ProbeQueryFieldsBlock({ query, title }: { query: SessionProbeQueryRow; title: string }) {
+  const { order, labels } = PROBE_FIELDS_BY_API[query.fonte]
+
+  return (
+    <div>
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+        {title}
+      </p>
+      <div className="space-y-3">
+        <FieldCard label="Query">
+          <p className="text-sm font-mono text-gray-900 break-all">{query.query_text}</p>
+        </FieldCard>
+
+        {order
+          .filter((f) => f !== 'year' && (query.fields?.[f]?.length ?? 0) > 0)
+          .map((f) => (
+            <FieldCard key={f} label={labels[f]}>
+              <p className="text-sm font-semibold text-gray-900">{query.fields![f].join(', ')}</p>
+            </FieldCard>
+          ))}
+
+        {(query.year_from || query.year_to) && (
+          <FieldCard label="Years">
+            <p className="text-sm font-semibold text-gray-900">
+              {query.year_from ?? '?'} - {query.year_to ?? '?'}
+            </p>
+          </FieldCard>
+        )}
+
+        {query.complexity_level && (
+          <FieldCard label="Complexidade">
+            <p className="text-sm font-semibold text-gray-900">
+              {query.complexity_level}
+              {query.complexity_score != null ? ` (${query.complexity_score.toFixed(1)}/100)` : ''}
+            </p>
+          </FieldCard>
+        )}
+
+        <FieldCard label="Resultados encontrados">
+          <p className="text-sm font-semibold text-gray-900">
+            {query.result_count ?? 'Ainda não buscado'}
+          </p>
+        </FieldCard>
+
+        <FieldCard label="Iterations">
+          <p className="text-sm font-semibold text-gray-900">{query.iterations}</p>
+        </FieldCard>
+      </div>
+    </div>
+  )
+}
+
+type InputBlockType = 'root' | 'generated' | 'patentQuery' | 'articleQuery'
 
 interface SessionCardProps {
   session: ResearchSessionSummary
@@ -68,6 +124,8 @@ interface SessionCardProps {
 export function SessionCard({ session, isExpanded, onToggle, onDeleteClick }: SessionCardProps) {
   const root = session.inputs.find((i) => i.parent_id === null)
   const generated = session.inputs.find((i) => i.parent_id !== null)
+  const patentQuery = session.probe_queries.find((q) => q.fonte === 'ops')
+  const articleQuery = session.probe_queries.find((q) => q.fonte === 'scopus')
 
   // Independentes: os dois podem ficar abertos ao mesmo tempo, cada um
   // ocupando metade da grid.
@@ -169,15 +227,50 @@ export function SessionCard({ session, isExpanded, onToggle, onDeleteClick }: Se
                   />
                 </button>
               )}
+              {patentQuery && (
+                <button
+                  type="button"
+                  onClick={() => toggleBlock('patentQuery')}
+                  className={`${selectableCardClass(expandedBlocks.has('patentQuery'))} flex items-center justify-between`}
+                >
+                  <h4 className="font-semibold text-sm text-gray-900">Opção de query de patente</h4>
+                  <ChevronDown
+                    size={16}
+                    className={`shrink-0 text-gray-400 transition-transform duration-300 ${expandedBlocks.has('patentQuery') ? 'rotate-180' : ''}`}
+                  />
+                </button>
+              )}
+              {articleQuery && (
+                <button
+                  type="button"
+                  onClick={() => toggleBlock('articleQuery')}
+                  className={`${selectableCardClass(expandedBlocks.has('articleQuery'))} flex items-center justify-between`}
+                >
+                  <h4 className="font-semibold text-sm text-gray-900">Opção de query de artigos</h4>
+                  <ChevronDown
+                    size={16}
+                    className={`shrink-0 text-gray-400 transition-transform duration-300 ${expandedBlocks.has('articleQuery') ? 'rotate-180' : ''}`}
+                  />
+                </button>
+              )}
             </div>
 
-            {(expandedBlocks.has('root') || expandedBlocks.has('generated')) && (
+            {(expandedBlocks.has('root') ||
+              expandedBlocks.has('generated') ||
+              expandedBlocks.has('patentQuery') ||
+              expandedBlocks.has('articleQuery')) && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
                 {expandedBlocks.has('root') && root && (
                   <InputFieldsBlock input={root} title="Input do usuário" />
                 )}
                 {expandedBlocks.has('generated') && generated && (
                   <InputFieldsBlock input={generated} title="Gerado pela IA" />
+                )}
+                {expandedBlocks.has('patentQuery') && patentQuery && (
+                  <ProbeQueryFieldsBlock query={patentQuery} title="Query de patente (OPS)" />
+                )}
+                {expandedBlocks.has('articleQuery') && articleQuery && (
+                  <ProbeQueryFieldsBlock query={articleQuery} title="Query de artigos (Scopus)" />
                 )}
               </div>
             )}

@@ -1,5 +1,5 @@
 import { apiClient } from './api'
-import type { SessionInputRow } from './sessionInput'
+import type { SessionInputRow, SessionProbeQueryRow } from './sessionInput'
 
 export interface ResearchSessionSummary {
   id: number
@@ -8,6 +8,7 @@ export interface ResearchSessionSummary {
   status: string
   created_at: string
   inputs: SessionInputRow[]
+  probe_queries: SessionProbeQueryRow[]
 }
 
 // Busca sessões pelo tema de qualquer um de seus session_input (raiz ou gerado

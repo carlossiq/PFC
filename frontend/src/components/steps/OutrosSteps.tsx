@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useFormStore } from '../../stores/useFormStore'
-import { finalizeSession } from '../../services/sessionInput'
+import { finalizeSession, buildProbeQueryPayload } from '../../services/sessionInput'
 import { STEPS } from '../../constants/steps'
 
 interface OutrosStepsProps {
@@ -11,7 +11,18 @@ interface OutrosStepsProps {
 }
 
 export function OutrosSteps({ step, substep, onBack, onNext }: OutrosStepsProps) {
-  const { sessionName, input, step2SelectedTheme, step2Iterations } = useFormStore()
+  const {
+    sessionName,
+    input,
+    step2SelectedTheme,
+    step2Iterations,
+    step3Queries,
+    step3SelectedIndex,
+    step3Iterations,
+    step3ArticleQueries,
+    step3ArticleSelectedIndex,
+    step3ArticleIterations,
+  } = useFormStore()
 
   const [isFinalizing, setIsFinalizing] = useState(false)
   const [finalizeResult, setFinalizeResult] = useState<string | null>(null)
@@ -37,7 +48,21 @@ export function OutrosSteps({ step, substep, onBack, onNext }: OutrosStepsProps)
         ? { theme: step2SelectedTheme!.theme, description: step2SelectedTheme!.description || null }
         : null
 
-      const result = await finalizeSession(sessionName, input, generated, step2Iterations)
+      const patentQuery = buildProbeQueryPayload(
+        step3SelectedIndex !== null ? step3Queries?.[step3SelectedIndex] : undefined,
+        'ops',
+        step3Iterations,
+      )
+      const articleQuery = buildProbeQueryPayload(
+        step3ArticleSelectedIndex !== null ? step3ArticleQueries?.[step3ArticleSelectedIndex] : undefined,
+        'scopus',
+        step3ArticleIterations,
+      )
+      const probeQueries = [patentQuery, articleQuery].filter(
+        (q): q is NonNullable<typeof q> => q !== null
+      )
+
+      const result = await finalizeSession(sessionName, input, generated, step2Iterations, probeQueries)
       setFinalizeResult(
         `Sessão ${result.session_public_id} criada (session_id=${result.session_id}, root_input_id=${result.root.id}${
           result.generated ? `, generated_input_id=${result.generated.id}, iterations=${result.generated.iterations}` : ''
