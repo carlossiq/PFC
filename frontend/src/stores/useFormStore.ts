@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { QueryOptionResult } from '../services/probeQuery'
+import type { ProbeSearchResult, QueryOptionResult } from '../services/probeQuery'
 
 // Dados de entrada do formulário (durante edição ou persistidos)
 interface InputData {
@@ -108,6 +108,24 @@ interface FormStore {
   incrementStep3ArticleIterations: () => void
   resetStep3ArticleIterations: () => void
 
+  // Resultado da busca real (OPS/Scopus) disparada ao confirmar o Step3 -
+  // preenchido só depois que as duas buscas (patente + artigo) terminam com
+  // sucesso, consumido pela tela "Resultados Iniciais". null = ainda não
+  // buscou (nunca deveria acontecer no fluxo normal, já que só se chega em
+  // "Resultados Iniciais" vindo do Step3).
+  // `*ResultsQuery` guarda a assinatura (JSON da query) que gerou esse
+  // resultado - comparada com a query selecionada no momento do "Próximo"
+  // pra decidir se a busca precisa rodar de novo (ver Step3.tsx) ou se dá
+  // pra só reaproveitar o resultado já buscado (ex: usuário voltou de
+  // "Resultados Iniciais" sem mudar a query selecionada).
+  step3PatentResults: ProbeSearchResult | null
+  step3PatentResultsQuery: string | null
+  setStep3PatentResults: (result: ProbeSearchResult | null, querySignature: string | null) => void
+
+  step3ArticleResults: ProbeSearchResult | null
+  step3ArticleResultsQuery: string | null
+  setStep3ArticleResults: (result: ProbeSearchResult | null, querySignature: string | null) => void
+
   // Utilitários
   getFormData: () => {
     input: InputData
@@ -146,6 +164,10 @@ export const useFormStore = create<FormStore>((set, get) => ({
   step3ArticleSelectedIndex: null,
   step3ArticleGeneratedForIntake: null,
   step3ArticleIterations: 0,
+  step3PatentResults: null,
+  step3PatentResultsQuery: null,
+  step3ArticleResults: null,
+  step3ArticleResultsQuery: null,
 
   setSessionName: (name) =>
     set({
@@ -245,6 +267,18 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step3ArticleIterations: 0,
     }),
 
+  setStep3PatentResults: (result, querySignature) =>
+    set({
+      step3PatentResults: result,
+      step3PatentResultsQuery: querySignature,
+    }),
+
+  setStep3ArticleResults: (result, querySignature) =>
+    set({
+      step3ArticleResults: result,
+      step3ArticleResultsQuery: querySignature,
+    }),
+
   getFormData: () => {
     const state = get()
     return {
@@ -270,5 +304,9 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step3ArticleSelectedIndex: null,
       step3ArticleGeneratedForIntake: null,
       step3ArticleIterations: 0,
+      step3PatentResults: null,
+      step3PatentResultsQuery: null,
+      step3ArticleResults: null,
+      step3ArticleResultsQuery: null,
     }),
 }))

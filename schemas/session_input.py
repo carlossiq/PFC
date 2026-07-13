@@ -63,6 +63,7 @@ class SessionProbeQueryInput(BaseModel):
     complexity_score: Optional[float] = None
     complexity_level: Optional[str] = None
     iterations: int = Field(default=1, ge=1)
+    result_count: Optional[int] = Field(default=None, ge=0)
 
 
 class SessionProbeQueryRow(SessionProbeQueryInput):

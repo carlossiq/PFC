@@ -5,6 +5,7 @@ import { SearchPage } from "../pages/SearchPage";
 import { StatisticsPage } from "../pages/StatisticsPage";
 import { Step1 } from "./steps/Step1";
 import { Step3 } from "./steps/Step3";
+import { InitialResults } from "./steps/InitialResults";
 import { OutrosSteps } from "./steps/OutrosSteps";
 import { useWorkflowStore } from "../stores/useWorkflowStore";
 import { useProspectingStore } from "../stores/useProspectingStore";
@@ -174,6 +175,12 @@ export function WorkflowPage() {
                 onNext={handleNext}
               />
               <Step3
+                step={step}
+                substep={substep}
+                onBack={handlePrevStep}
+                onNext={handleNext}
+              />
+              <InitialResults
                 step={step}
                 substep={substep}
                 onBack={handlePrevStep}

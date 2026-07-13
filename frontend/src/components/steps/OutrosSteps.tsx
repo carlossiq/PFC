@@ -1,6 +1,3 @@
-import { useState } from 'react'
-import { useFormStore } from '../../stores/useFormStore'
-import { finalizeSession, buildProbeQueryPayload } from '../../services/sessionInput'
 import { STEPS } from '../../constants/steps'
 
 interface OutrosStepsProps {
@@ -11,70 +8,14 @@ interface OutrosStepsProps {
 }
 
 export function OutrosSteps({ step, substep, onBack, onNext }: OutrosStepsProps) {
-  const {
-    sessionName,
-    input,
-    step2SelectedTheme,
-    step2Iterations,
-    step3Queries,
-    step3SelectedIndex,
-    step3Iterations,
-    step3ArticleQueries,
-    step3ArticleSelectedIndex,
-    step3ArticleIterations,
-  } = useFormStore()
-
-  const [isFinalizing, setIsFinalizing] = useState(false)
-  const [finalizeResult, setFinalizeResult] = useState<string | null>(null)
-  const [finalizeError, setFinalizeError] = useState<string | null>(null)
-
   // Step0 (Input Inicial) é todo tratado por Step1/Step2. Step1 (Exploração
   // Inicial) tem sua tela "principal" (escolha/edição da query) tratada pelo
-  // Step3 quando substep===null; o substep "Resultados Iniciais" ainda não
-  // tem tela própria, então cai neste placeholder genérico.
+  // Step3 quando substep===null, e o substep "Resultados Iniciais" tratado
+  // pelo InitialResults. Passos além disso ainda não têm tela própria, então
+  // caem neste placeholder genérico.
   if (step === STEPS.INPUT) return null
   if (step === STEPS.INITIAL_EXPLORATION && substep === null) return null
-
-  // Botão de teste: os passos 2-4 ainda são placeholder, então isso só serve
-  // pra exercitar a rota POST /session-input enquanto o fluxo real de
-  // finalização (ao fim da Geração do Relatório) não existe de verdade.
-  async function handleFinalize() {
-    setIsFinalizing(true)
-    setFinalizeError(null)
-    setFinalizeResult(null)
-    try {
-      const wasRefinedByAI = !!step2SelectedTheme && step2SelectedTheme.id !== 'input'
-      const generated = wasRefinedByAI
-        ? { theme: step2SelectedTheme!.theme, description: step2SelectedTheme!.description || null }
-        : null
-
-      const patentQuery = buildProbeQueryPayload(
-        step3SelectedIndex !== null ? step3Queries?.[step3SelectedIndex] : undefined,
-        'ops',
-        step3Iterations,
-      )
-      const articleQuery = buildProbeQueryPayload(
-        step3ArticleSelectedIndex !== null ? step3ArticleQueries?.[step3ArticleSelectedIndex] : undefined,
-        'scopus',
-        step3ArticleIterations,
-      )
-      const probeQueries = [patentQuery, articleQuery].filter(
-        (q): q is NonNullable<typeof q> => q !== null
-      )
-
-      const result = await finalizeSession(sessionName, input, generated, step2Iterations, probeQueries)
-      setFinalizeResult(
-        `Sessão ${result.session_public_id} criada (session_id=${result.session_id}, root_input_id=${result.root.id}${
-          result.generated ? `, generated_input_id=${result.generated.id}, iterations=${result.generated.iterations}` : ''
-        })`
-      )
-    } catch (err) {
-      console.error('Falha ao finalizar sessão:', err)
-      setFinalizeError('Não foi possível finalizar a sessão. Tente novamente.')
-    } finally {
-      setIsFinalizing(false)
-    }
-  }
+  if (step === STEPS.INITIAL_EXPLORATION && substep === 0) return null
 
   return (
     <div>
@@ -83,13 +24,6 @@ export function OutrosSteps({ step, substep, onBack, onNext }: OutrosStepsProps)
         {substep !== null && ` - Subnó ${substep + 1}`}
       </h2>
       <p className="mb-6">Conteúdo do passo em construção</p>
-
-      {finalizeResult && (
-        <p className="mb-4 text-sm text-[#0f9448] font-medium">{finalizeResult}</p>
-      )}
-      {finalizeError && (
-        <p className="mb-4 text-sm text-red-600 font-medium">{finalizeError}</p>
-      )}
 
       <div className="flex gap-4">
         <button
@@ -105,14 +39,6 @@ export function OutrosSteps({ step, substep, onBack, onNext }: OutrosStepsProps)
           className="flex-1 bg-[#0f9448] hover:bg-[#0d843f] text-white font-semibold py-2 px-4 rounded-lg transition-colors"
         >
           Próximo
-        </button>
-        <button
-          type="button"
-          onClick={handleFinalize}
-          disabled={isFinalizing}
-          className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-        >
-          {isFinalizing ? 'Finalizando...' : 'Finalizar Sessão (teste)'}
         </button>
       </div>
     </div>

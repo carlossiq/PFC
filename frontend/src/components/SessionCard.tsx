@@ -201,77 +201,96 @@ export function SessionCard({ session, isExpanded, onToggle, onDeleteClick }: Se
       >
         <div className="overflow-hidden">
           <div className="px-6 pb-6 pt-2 border-t border-gray-100">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {root && (
-                <button
-                  type="button"
-                  onClick={() => toggleBlock('root')}
-                  className={`${selectableCardClass(expandedBlocks.has('root'))} flex items-center justify-between`}
-                >
-                  <h4 className="font-semibold text-sm text-gray-900">Parâmetros do usuário</h4>
-                  <ChevronDown
-                    size={16}
-                    className={`shrink-0 text-gray-400 transition-transform duration-300 ${expandedBlocks.has('root') ? 'rotate-180' : ''}`}
-                  />
-                </button>
-              )}
-              {generated && (
-                <button
-                  type="button"
-                  onClick={() => toggleBlock('generated')}
-                  className={`${selectableCardClass(expandedBlocks.has('generated'))} flex items-center justify-between`}
-                >
-                  <h4 className="font-semibold text-sm text-gray-900">Parâmetros de busca com IA</h4>
-                  <ChevronDown
-                    size={16}
-                    className={`shrink-0 text-gray-400 transition-transform duration-300 ${expandedBlocks.has('generated') ? 'rotate-180' : ''}`}
-                  />
-                </button>
-              )}
-              {patentQuery && (
-                <button
-                  type="button"
-                  onClick={() => toggleBlock('patentQuery')}
-                  className={`${selectableCardClass(expandedBlocks.has('patentQuery'))} flex items-center justify-between`}
-                >
-                  <h4 className="font-semibold text-sm text-gray-900">Opção de query de patente</h4>
-                  <ChevronDown
-                    size={16}
-                    className={`shrink-0 text-gray-400 transition-transform duration-300 ${expandedBlocks.has('patentQuery') ? 'rotate-180' : ''}`}
-                  />
-                </button>
-              )}
-              {articleQuery && (
-                <button
-                  type="button"
-                  onClick={() => toggleBlock('articleQuery')}
-                  className={`${selectableCardClass(expandedBlocks.has('articleQuery'))} flex items-center justify-between`}
-                >
-                  <h4 className="font-semibold text-sm text-gray-900">Opção de query de artigos</h4>
-                  <ChevronDown
-                    size={16}
-                    className={`shrink-0 text-gray-400 transition-transform duration-300 ${expandedBlocks.has('articleQuery') ? 'rotate-180' : ''}`}
-                  />
-                </button>
-              )}
-            </div>
+            {(root || generated) && (
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                  Parâmetros de entrada
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {root && (
+                    <button
+                      type="button"
+                      onClick={() => toggleBlock('root')}
+                      className={`${selectableCardClass(expandedBlocks.has('root'))} flex items-center justify-between`}
+                    >
+                      <h4 className="font-semibold text-sm text-gray-900">Parâmetros do usuário</h4>
+                      <ChevronDown
+                        size={16}
+                        className={`shrink-0 text-gray-400 transition-transform duration-300 ${expandedBlocks.has('root') ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                  )}
+                  {generated && (
+                    <button
+                      type="button"
+                      onClick={() => toggleBlock('generated')}
+                      className={`${selectableCardClass(expandedBlocks.has('generated'))} flex items-center justify-between`}
+                    >
+                      <h4 className="font-semibold text-sm text-gray-900">Parâmetros de busca com IA</h4>
+                      <ChevronDown
+                        size={16}
+                        className={`shrink-0 text-gray-400 transition-transform duration-300 ${expandedBlocks.has('generated') ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                  )}
+                </div>
 
-            {(expandedBlocks.has('root') ||
-              expandedBlocks.has('generated') ||
-              expandedBlocks.has('patentQuery') ||
-              expandedBlocks.has('articleQuery')) && (
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
-                {expandedBlocks.has('root') && root && (
-                  <InputFieldsBlock input={root} title="Input do usuário" />
+                {(expandedBlocks.has('root') || expandedBlocks.has('generated')) && (
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {expandedBlocks.has('root') && root && (
+                      <InputFieldsBlock input={root} title="Input do usuário" />
+                    )}
+                    {expandedBlocks.has('generated') && generated && (
+                      <InputFieldsBlock input={generated} title="Gerado pela IA" />
+                    )}
+                  </div>
                 )}
-                {expandedBlocks.has('generated') && generated && (
-                  <InputFieldsBlock input={generated} title="Gerado pela IA" />
-                )}
-                {expandedBlocks.has('patentQuery') && patentQuery && (
-                  <ProbeQueryFieldsBlock query={patentQuery} title="Query de patente (OPS)" />
-                )}
-                {expandedBlocks.has('articleQuery') && articleQuery && (
-                  <ProbeQueryFieldsBlock query={articleQuery} title="Query de artigos (Scopus)" />
+              </div>
+            )}
+
+            {(patentQuery || articleQuery) && (
+              <div className={(root || generated) ? 'mt-5 pt-5 border-t border-gray-100' : ''}>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                  Queries da Exploração Inicial
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {patentQuery && (
+                    <button
+                      type="button"
+                      onClick={() => toggleBlock('patentQuery')}
+                      className={`${selectableCardClass(expandedBlocks.has('patentQuery'))} flex items-center justify-between`}
+                    >
+                      <h4 className="font-semibold text-sm text-gray-900">Opção de query de patente</h4>
+                      <ChevronDown
+                        size={16}
+                        className={`shrink-0 text-gray-400 transition-transform duration-300 ${expandedBlocks.has('patentQuery') ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                  )}
+                  {articleQuery && (
+                    <button
+                      type="button"
+                      onClick={() => toggleBlock('articleQuery')}
+                      className={`${selectableCardClass(expandedBlocks.has('articleQuery'))} flex items-center justify-between`}
+                    >
+                      <h4 className="font-semibold text-sm text-gray-900">Opção de query de artigos</h4>
+                      <ChevronDown
+                        size={16}
+                        className={`shrink-0 text-gray-400 transition-transform duration-300 ${expandedBlocks.has('articleQuery') ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                  )}
+                </div>
+
+                {(expandedBlocks.has('patentQuery') || expandedBlocks.has('articleQuery')) && (
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {expandedBlocks.has('patentQuery') && patentQuery && (
+                      <ProbeQueryFieldsBlock query={patentQuery} title="Query de patente (OPS)" />
+                    )}
+                    {expandedBlocks.has('articleQuery') && articleQuery && (
+                      <ProbeQueryFieldsBlock query={articleQuery} title="Query de artigos (Scopus)" />
+                    )}
+                  </div>
                 )}
               </div>
             )}

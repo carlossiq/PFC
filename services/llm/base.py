@@ -9,6 +9,20 @@ from schemas.intake import InputIntake
 from schemas.llm import LLMOutput
 
 
+class LLMJSONParseError(ValueError):
+    """
+    JSON malformado retornado pelo LLM (ex: aspa não escapada dentro de um
+    campo de texto livre). Carrega a resposta bruta para permitir que o
+    chamador tente uma recuperação parcial (ex: extrair os itens de uma
+    lista que individualmente ainda são JSON válido) em vez de descartar a
+    resposta inteira.
+    """
+
+    def __init__(self, message: str, raw_response: str) -> None:
+        super().__init__(message)
+        self.raw_response = raw_response
+
+
 class BaseLLMService(ABC):
     """
     Interface abstrata para provedores de serviço LLM.

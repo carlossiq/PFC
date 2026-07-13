@@ -18,6 +18,7 @@ from core.config import settings
 from core.logging import get_logger
 from schemas.llm import LLMOutput, SimpleFieldQuery, TextualFieldQuery
 from services.query_builders.base import BaseQueryBuilder
+from services.query_builders.constants.scopus_subject_areas import resolve_asjc_code
 
 logger = get_logger(__name__)
 
@@ -118,7 +119,7 @@ class ScopusQueryBuilder(BaseQueryBuilder):
                         query_parts.append(query_part)
 
         # Processar campos simples com AND
-        for field_name in ["authors", "affiliation", "field_of_study", "keywords", "source_title"]:
+        for field_name in ["authors", "affiliation", "keywords", "source_title"]:
             field_value = getattr(llm_output, field_name)
             if not field_value.is_empty():
                 scopus_field = self.field_map.get("simple", {}).get(field_name)
@@ -127,14 +128,33 @@ class ScopusQueryBuilder(BaseQueryBuilder):
                     if query_part:
                         query_parts.append(query_part)
 
+        # field_of_study é tratado à parte: SUBJAREA não aceita texto livre
+        # entre aspas como os outros campos simples (AUTH/AFFIL/KEY/SRCTITLE)
+        # - exige um dos 27 códigos ASJC de 4 letras, sem aspas. Ver
+        # services/query_builders/constants/scopus_subject_areas.py.
+        field_of_study_value = getattr(llm_output, "field_of_study")
+        if not field_of_study_value.is_empty():
+            query_part = self._build_subject_area_query(field_of_study_value)
+            if query_part:
+                query_parts.append(query_part)
+
         # Adicionar intervalo de anos
         year_values = llm_output.year.values if llm_output.year and not llm_output.year.is_empty() else None
         date_query = self._build_date_query(year_from, year_to, year_values=year_values)
         if date_query:
             query_parts.append(date_query)
 
-        # Combinar partes com AND
-        scopus_query = " AND ".join(query_parts)
+        # Restringir a artigos de revista (exclui review, conference paper,
+        # editorial, carta, nota, errata etc - ruído que não interessa numa
+        # busca de literatura técnica). Fixo, não vem do LLM.
+        query_parts.append("DOCTYPE(ar)")
+
+        # Combinar partes com AND - cada parte entre parênteses, mesmo que já
+        # pareça "simples": qualquer parte que internamente use OR sem
+        # parênteses próprios (ex: SUBJAREA(A) OR SUBJAREA(B), ou KEY("x") OR
+        # KEY("y")) ficaria ambíguo com o AND externo sem isso. Mesmo padrão
+        # já usado no OPS builder (" AND ".join([f"({c})" ...])).
+        scopus_query = " AND ".join(f"({part})" for part in query_parts)
 
         # Validar comprimento
         if len(scopus_query) > self.max_query_length:
@@ -152,12 +172,16 @@ class ScopusQueryBuilder(BaseQueryBuilder):
             count = getattr(settings, "final_top_k", 100)
 
         # Construir parâmetros da requisição
+        # view=STANDARD (não COMPLETE): COMPLETE exige entitlement de Text
+        # Mining/institucional que a API key não tem, retornando 401 em toda
+        # busca - e mesmo com COMPLETE essa chave não retorna abstract
+        # (dc:description) de qualquer forma, então não há perda real aqui.
         params = {
             "query": scopus_query,
             "count": count,
             "start": 0,
             "sort": "citedby-count",
-            "view": "COMPLETE",
+            "view": "STANDARD",
         }
 
         logger.info(
@@ -193,8 +217,12 @@ class ScopusQueryBuilder(BaseQueryBuilder):
             if not group.terms:
                 continue
 
-            # Scopus sintaxe: TITLE() ou ABSTRACT() etc
-            escaped_terms = [self._escape_scopus_term(term) for term in group.terms]
+            # Scopus sintaxe: TITLE() ou ABSTRACT() etc. Termos SEMPRE entre
+            # aspas: sem aspas, a Scopus trata frases de múltiplas palavras
+            # como busca de proximidade implícita, e OR'ar duas ou mais
+            # dessas frases sem aspas quebra o parser e zera os resultados
+            # (confirmado testando direto na API - ver notes/pendencias.md).
+            escaped_terms = [f'"{self._escape_scopus_term(term)}"' for term in group.terms]
 
             # Combinar com operador
             if group.operator.value == "OR":
@@ -237,6 +265,38 @@ class ScopusQueryBuilder(BaseQueryBuilder):
 
         parts = [f'{scopus_field}("{v}")' for v in escaped_values]
         return " OR ".join(parts)
+
+    def _build_subject_area_query(self, field: SimpleFieldQuery) -> Optional[str]:
+        """
+        Constrói a cláusula SUBJAREA a partir do field_of_study gerado pela
+        LLM. Diferente de _build_simple_query, SUBJAREA não aceita texto
+        livre entre aspas - exige um código ASJC de 4 letras sem aspas (ex:
+        SUBJAREA(COMP)). Valores que não mapeiam pra nenhum código conhecido
+        são descartados em vez de gerarem uma cláusula que nunca casa com
+        nada (e derruba a busca inteira, já que é combinada com AND).
+
+        Args:
+            field: Campo field_of_study com a lista de valores da LLM.
+
+        Returns:
+            String de query (`SUBJAREA(A) OR SUBJAREA(B)`) ou None se
+            nenhum valor mapear pra um código válido.
+        """
+        if not field.values:
+            return None
+
+        codes: list[str] = []
+        for value in field.values:
+            code = resolve_asjc_code(value)
+            if code and code not in codes:
+                codes.append(code)
+            elif not code:
+                logger.info("scopus_subject_area_unmapped", value=value)
+
+        if not codes:
+            return None
+
+        return " OR ".join(f"SUBJAREA({code})" for code in codes)
 
     def _build_date_query(
         self, year_from: int, year_to: int, year_values: Optional[list[str]] = None

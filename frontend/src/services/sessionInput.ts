@@ -55,18 +55,22 @@ export interface SessionProbeQueryPayload {
   complexity_score: number | null
   complexity_level: string | null
   iterations: number
+  result_count: number | null
 }
 
 // Monta o payload de uma query do Step3 pronta pra enviar no finalize, a
 // partir da opção selecionada numa seção (patente ou artigo). `iterations`
 // é o contador interno da store (0-based: 0 = gerada uma vez, sem retry) -
 // aqui vira o valor de negócio "nº de vezes que a query foi gerada" (1+).
+// `resultCount` vem da busca real já rodada no Step3 (ver runProbeSearch),
+// null se por algum motivo não tiver rodado ainda.
 // Retorna null se não há uma seleção válida (nada gerado, ou a tentativa
 // selecionada falhou) - mesma condição usada no `canProceed` do Step3.
 export function buildProbeQueryPayload(
   selected: QueryOptionResult | undefined,
   fonte: 'ops' | 'scopus',
   iterations: number,
+  resultCount: number | null = null,
 ): SessionProbeQueryPayload | null {
   if (!selected?.success) return null
   return {
@@ -78,13 +82,13 @@ export function buildProbeQueryPayload(
     complexity_score: selected.complexity?.score ?? null,
     complexity_level: selected.complexity?.level ?? null,
     iterations: iterations + 1,
+    result_count: resultCount,
   }
 }
 
 export interface SessionProbeQueryRow extends SessionProbeQueryPayload {
   id: number
   session_id: number
-  result_count: number | null
 }
 
 export interface SessionInputRow {

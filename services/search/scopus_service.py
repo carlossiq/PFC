@@ -254,8 +254,15 @@ class ScopusService:
                 data = response.json()
 
                 # Extrair resultados
+                # Quando não há nenhum match, a Scopus não devolve "entry": []
+                # - devolve "entry": [{"error": "Result set was empty"}], um
+                # placeholder com 1 item. Sem filtrar isso, a paginação (que só
+                # olha len(page_results) > 0) achava que sempre tinha mais uma
+                # página e repetia esse mesmo placeholder por até _MAX_PAGES
+                # tentativas, poluindo os resultados com itens sem título/DOI.
                 search_results = data.get("search-results", {})
-                results = search_results.get("entry", [])
+                raw_results = search_results.get("entry", [])
+                results = [r for r in raw_results if not r.get("error")]
                 total_count = search_results.get("opensearch:totalResults")
 
                 return SearchResult(

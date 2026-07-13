@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { useFormStore } from '../../stores/useFormStore'
 import { useProbeQuerySection } from '../../hooks/useProbeQuerySection'
 import { ProbeQuerySectionView } from '../ProbeQuerySectionView'
 import { PROBE_FIELDS_BY_API } from '../../constants/probeFields'
 import { STEPS } from '../../constants/steps'
+import { runProbeSearch } from '../../services/probeQuery'
 
 interface Step3Props {
   step: number
@@ -31,7 +33,16 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
     step3ArticleGeneratedForIntake,
     incrementStep3ArticleIterations,
     resetStep3ArticleIterations,
+    step3PatentResults,
+    step3PatentResultsQuery,
+    setStep3PatentResults,
+    step3ArticleResults,
+    step3ArticleResultsQuery,
+    setStep3ArticleResults,
   } = useFormStore()
+
+  const [isConfirming, setIsConfirming] = useState(false)
+  const [confirmError, setConfirmError] = useState<string | null>(null)
 
   const patentSection = useProbeQuerySection({
     step,
@@ -75,6 +86,51 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
 
   const isBusy = patentSection.isBusy || articleSection.isBusy
   const canProceed = !!patentSection.selected?.success && !!articleSection.selected?.success
+
+  // Roda a busca real (OPS + Scopus) com as queries selecionadas antes de
+  // avançar pra "Resultados Iniciais" - não persiste nada no banco ainda,
+  // só guarda o resultado na store pra tela seguinte exibir e, mais tarde,
+  // pro botão de finalizar preencher session_probe_query.result_count.
+  // Se a query selecionada não mudou desde a última busca (ex: usuário só
+  // voltou de "Resultados Iniciais" sem alterar nada), reaproveita o
+  // resultado já buscado em vez de bater na API de novo.
+  async function handleConfirm() {
+    if (!canProceed) return
+
+    const patentQuerySignature = JSON.stringify(patentSection.selected!.query)
+    const articleQuerySignature = JSON.stringify(articleSection.selected!.query)
+    const needsPatentSearch = !step3PatentResults || step3PatentResultsQuery !== patentQuerySignature
+    const needsArticleSearch = !step3ArticleResults || step3ArticleResultsQuery !== articleQuerySignature
+
+    if (!needsPatentSearch && !needsArticleSearch) {
+      onNext()
+      return
+    }
+
+    setIsConfirming(true)
+    setConfirmError(null)
+
+    const [patentOutcome, articleOutcome] = await Promise.allSettled([
+      needsPatentSearch ? runProbeSearch(patentSection.selected!.query!, 'ops') : Promise.resolve(null),
+      needsArticleSearch ? runProbeSearch(articleSection.selected!.query!, 'scopus') : Promise.resolve(null),
+    ])
+
+    if (patentOutcome.status === 'rejected' || articleOutcome.status === 'rejected') {
+      const label = patentOutcome.status === 'rejected' ? 'patentes' : 'artigos'
+      setConfirmError(`Falha ao buscar resultados de ${label}. Tente novamente.`)
+      setIsConfirming(false)
+      return
+    }
+
+    if (needsPatentSearch && patentOutcome.value) {
+      setStep3PatentResults(patentOutcome.value, patentQuerySignature)
+    }
+    if (needsArticleSearch && articleOutcome.value) {
+      setStep3ArticleResults(articleOutcome.value, articleQuerySignature)
+    }
+    setIsConfirming(false)
+    onNext()
+  }
 
   return (
     <div className="w-full flex flex-col h-full overflow-y-auto">
@@ -134,21 +190,25 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
           onSaveEdit={articleSection.handleSaveEdit}
         />
 
+      {confirmError && (
+        <p className="mt-2 text-sm text-red-600 font-medium">{confirmError}</p>
+      )}
+
       <div className="mt-2 pt-4 border-t border-gray-200 flex gap-4">
         <button
           onClick={onBack}
-          disabled={isBusy}
+          disabled={isBusy || isConfirming}
           className="flex-1 bg-gray-400 hover:bg-gray-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-300"
         >
           Voltar
         </button>
 
         <button
-          onClick={onNext}
-          disabled={isBusy || !canProceed}
+          onClick={handleConfirm}
+          disabled={isBusy || isConfirming || !canProceed}
           className="flex-1 font-semibold py-2 px-4 rounded-lg text-white transition-colors duration-300 bg-[#0f9448] hover:bg-[#0d843f] disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          Próximo
+          {isConfirming ? 'Buscando resultados...' : 'Próximo'}
         </button>
       </div>
     </div>

@@ -1,15 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { getSessionTotalIterations, type ResearchSessionSummary } from '../services/researchSession'
 import {
-  CHART_AXIS_LABEL_TEXT,
-  CHART_AXIS_TICK_TEXT,
-  CHART_BASELINE,
-  CHART_BRAND_GREEN,
-  CHART_BRAND_GREEN_HOVER,
-  CHART_GRID_LINE,
-  CHART_HEIGHT,
-  CHART_MAX_BUCKETS,
-  CHART_VALUE_LABEL_TEXT,
+  CHART_AXIS_LABEL_TEXT, CHART_AXIS_TICK_TEXT, CHART_BASELINE, CHART_BRAND_GREEN,
+  CHART_BRAND_GREEN_HOVER, CHART_GRID_LINE, CHART_HEIGHT, CHART_MAX_BUCKETS, CHART_VALUE_LABEL_TEXT,
 } from '../constants/charts'
 
 interface Bucket {
@@ -30,9 +23,7 @@ function niceStep(maxValue: number, targetTicks = 4): number {
 }
 
 // Agrupa as sessões pelo total de iterações: um bucket por valor exato
-// (0, 1, 2, ...) enquanto couber em CHART_MAX_BUCKETS; se o intervalo for maior
-// que isso, agrupa em faixas (ex: 0-2, 3-5...) pra manter o gráfico
-// compacto independente de quantas sessões existirem.
+// (0, 1, 2, ...) enquanto couber em CHART_MAX_BUCKETS;
 function buildBuckets(values: number[]): Bucket[] {
   if (values.length === 0) return []
   const max = Math.max(...values)
@@ -71,12 +62,7 @@ interface IterationsBarChartProps {
   sessions: ResearchSessionSummary[]
 }
 
-// Histograma "quantas sessões têm X iterações" - uma série só (contagem de
-// sessões por total de iterações: parâmetros + query de patente + query de
-// artigo), por isso uma única cor (verde da marca) e sem legenda: o título já
-// diz o que é plotado. Como o eixo X é a quantidade de iterações (tipicamente
-// um intervalo pequeno) em vez de uma barra por sessão, o gráfico fica
-// compacto mesmo com muitas sessões.
+// Histograma "quantas sessões têm X iterações"
 export function IterationsBarChart({ sessions }: IterationsBarChartProps) {
   const [hoveredKey, setHoveredKey] = useState<string | null>(null)
   const [showTable, setShowTable] = useState(false)

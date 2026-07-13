@@ -77,6 +77,7 @@ async def finalize_session(
             complexity_score=item.complexity_score,
             complexity_level=item.complexity_level,
             iterations=item.iterations,
+            result_count=item.result_count,
         )
         for item in payload.probe_queries
     ]

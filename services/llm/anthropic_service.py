@@ -10,7 +10,7 @@ from pydantic import ValidationError
 from core.logging import get_logger
 from schemas.intake import InputIntake
 from schemas.llm import LLMOutput
-from services.llm.base import BaseLLMService
+from services.llm.base import BaseLLMService, LLMJSONParseError
 
 logger = get_logger(__name__)
 
@@ -307,7 +307,7 @@ class AnthropicLLMService(BaseLLMService):
                 try:
                     return json.loads(json_str)
                 except json.JSONDecodeError as exc:
-                    raise ValueError(f"Invalid JSON in ```json block: {exc}")
+                    raise LLMJSONParseError(f"Invalid JSON in ```json block: {exc}", raw_response=response)
 
         # Tentar extrair JSON entre ``` e ```
         if "```" in response:
@@ -318,10 +318,13 @@ class AnthropicLLMService(BaseLLMService):
                 try:
                     return json.loads(json_str)
                 except json.JSONDecodeError as exc:
-                    raise ValueError(f"Invalid JSON in ``` block: {exc}")
+                    raise LLMJSONParseError(f"Invalid JSON in ``` block: {exc}", raw_response=response)
 
         # Tentar parse direto
         try:
             return json.loads(response)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"Could not parse response as JSON: {exc}. Response preview: {response[:200]}")
+            raise LLMJSONParseError(
+                f"Could not parse response as JSON: {exc}. Response preview: {response[:200]}",
+                raw_response=response,
+            )

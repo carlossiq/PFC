@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from core.logging import get_logger
 from schemas.intake import InputIntake
 from schemas.llm import LLMOutput
-from services.llm.base import BaseLLMService
+from services.llm.base import BaseLLMService, LLMJSONParseError
 
 logger = get_logger(__name__)
 
@@ -318,7 +318,7 @@ class GeminiLLMService(BaseLLMService):
                 try:
                     return GeminiLLMService._parse_json_with_repair(json_str)
                 except json.JSONDecodeError as exc:
-                    raise ValueError(f"Invalid JSON in ```json block: {exc}")
+                    raise LLMJSONParseError(f"Invalid JSON in ```json block: {exc}", raw_response=response)
 
         # Tentar extrair JSON entre ``` e ```
         if "```" in response:
@@ -329,13 +329,16 @@ class GeminiLLMService(BaseLLMService):
                 try:
                     return GeminiLLMService._parse_json_with_repair(json_str)
                 except json.JSONDecodeError as exc:
-                    raise ValueError(f"Invalid JSON in ``` block: {exc}")
+                    raise LLMJSONParseError(f"Invalid JSON in ``` block: {exc}", raw_response=response)
 
         # Tentar parse direto
         try:
             return GeminiLLMService._parse_json_with_repair(response)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"Could not parse response as JSON: {exc}. Response preview: {response[:200]}")
+            raise LLMJSONParseError(
+                f"Could not parse response as JSON: {exc}. Response preview: {response[:200]}",
+                raw_response=response,
+            )
 
     @staticmethod
     def _parse_json_with_repair(json_str: str) -> dict:

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import random
+import re
 from typing import Any, Optional
 
 from app.core.domain.types import LLMRequest
 from app.core.services.query_complexity import QueryComplexityAnalyzer
 from core.config import Settings
 from core.logging import get_logger
+from services.llm.base import LLMJSONParseError
 
 logger = get_logger(__name__)
 
@@ -42,11 +46,13 @@ class ChatService:
         patent_pairs: list[tuple[Any, Any]],
         scholarly_pairs: list[tuple[Any, Any]],
         settings: Settings,
+        openalex: Any = None,
     ) -> None:
         self.llm = llm
         self.patent_pairs = patent_pairs
         self.scholarly_pairs = scholarly_pairs
         self.settings = settings
+        self.openalex = openalex
 
     # ------------------------------------------------------------------
     # Helpers
@@ -408,6 +414,56 @@ class ChatService:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _salvage_candidates(raw_response: str) -> list[dict[str, Any]]:
+        """
+        Recupera candidatos individualmente válidos de uma resposta JSON
+        malformada (ex: quando só um dos 4 candidatos tem uma aspa não
+        escapada no meio da description, quebrando o parse do array
+        inteiro). Localiza o array "candidates" e extrai cada objeto
+        top-level por contagem de chaves (não é sensível a strings, mas a
+        corrupção típica de LLM é só de aspas dentro de texto livre, não de
+        chaves desbalanceadas); cada objeto extraído é parseado sozinho e os
+        que falharem são simplesmente descartados, em vez de derrubar a
+        resposta inteira.
+        """
+        def parse_with_repair(obj_str: str) -> dict[str, Any]:
+            try:
+                return json.loads(obj_str)
+            except json.JSONDecodeError:
+                repaired = re.sub(r",\s*([}\]])", r"\1", obj_str)
+                return json.loads(repaired)
+
+        idx = raw_response.find('"candidates"')
+        if idx == -1:
+            return []
+        array_start = raw_response.find("[", idx)
+        if array_start == -1:
+            return []
+
+        candidates: list[dict[str, Any]] = []
+        depth = 0
+        obj_start: Optional[int] = None
+        for i in range(array_start, len(raw_response)):
+            ch = raw_response[i]
+            if ch == "{":
+                if depth == 0:
+                    obj_start = i
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0 and obj_start is not None:
+                    obj_str = raw_response[obj_start : i + 1]
+                    try:
+                        candidates.append(parse_with_repair(obj_str))
+                    except json.JSONDecodeError:
+                        pass
+                    obj_start = None
+            elif ch == "]" and depth == 0:
+                break
+
+        return candidates
+
+    @staticmethod
     def _build_intake_user_input(intake: Any) -> str:
         """Monta o bloco textual base (Tema/Descrição/Área/Palavras-chave) enviado à LLM."""
         user_input = f"Tema: {intake.theme}"
@@ -441,13 +497,32 @@ class ChatService:
 
         try:
             raw = await self.llm.call_raw_json(system_prompt, user_input)
+        except LLMJSONParseError as exc:
+            candidates = self._salvage_candidates(exc.raw_response)
+            if not candidates:
+                logger.error("generate_candidate_topics_llm_error", error=str(exc))
+                return {
+                    "success": False,
+                    "error": "Não foi possível gerar variações do tema no momento. Tente novamente.",
+                }
+            logger.warning(
+                "generate_candidate_topics_partial_recovery",
+                recovered=len(candidates),
+                error=str(exc),
+            )
+            raw = {"candidates": candidates}
         except Exception as exc:
             logger.error("generate_candidate_topics_llm_error", error=str(exc))
-            return {"success": False, "error": str(exc)}
+            return {
+                "success": False,
+                "error": "Não foi possível gerar variações do tema no momento. Tente novamente.",
+            }
 
         candidates = raw.get("candidates", [])
         processed = []
         for candidate in candidates:
+            if not candidate.get("theme"):
+                continue
             item: dict[str, Any] = {"theme": candidate.get("theme")}
             if candidate.get("description"):
                 item["description"] = candidate["description"]
@@ -458,7 +533,17 @@ class ChatService:
             item["user_input"] = intake.model_dump()
             processed.append(item)
 
-        return {"success": True, "candidates": processed}
+        if not processed:
+            logger.error("generate_candidate_topics_no_valid_candidates", raw_response=raw)
+            return {
+                "success": False,
+                "error": "Não foi possível gerar variações do tema no momento. Tente novamente.",
+            }
+
+        result: dict[str, Any] = {"success": True, "candidates": processed}
+        if len(processed) < 4:
+            result["warning"] = f"Apenas {len(processed)} de 4 variações puderam ser geradas."
+        return result
 
     async def specify_topic(self, intake: Any) -> dict[str, Any]:
         """
@@ -482,7 +567,10 @@ class ChatService:
             raw = await self.llm.call_raw_json(system_prompt, user_input)
         except Exception as exc:
             logger.error("specify_topic_llm_error", error=str(exc))
-            return {"success": False, "error": str(exc)}
+            return {
+                "success": False,
+                "error": "Não foi possível especificar o tema no momento. Tente novamente.",
+            }
 
         theme = raw.get("theme")
         if not theme:
@@ -803,6 +891,153 @@ class ChatService:
     # Search
     # ------------------------------------------------------------------
 
+    async def _enrich_scopus_abstracts(
+        self,
+        items: list[dict[str, Any]],
+        top_k: int,
+    ) -> list[dict[str, Any]]:
+        """
+        A Scopus Search API não devolve abstract (dc:description) pra essa
+        API key - falta entitlement de Text Mining na Elsevier (ver
+        notes/pendencias.md). Busca o abstract complementar no OpenAlex via
+        DOI (prism:doi, público e sem key) e descarta os itens sem abstract
+        disponível em nenhuma das duas fontes, priorizando qualidade sobre
+        quantidade. Janela de candidatos com margem (3x top_k) porque nem
+        todo DOI está indexado no OpenAlex ou tem abstract liberado pela
+        editora (~70% de cobertura observada em teste manual).
+        """
+        if not self.openalex or not items:
+            return items[:top_k]
+
+        candidate_window = items[: max(top_k * 3, top_k)]
+        dois = [item["prism:doi"] for item in candidate_window if item.get("prism:doi")]
+        abstracts = await self.openalex.fetch_abstracts(dois)
+
+        enriched: list[dict[str, Any]] = []
+        for item in candidate_window:
+            doi = item.get("prism:doi")
+            abstract = abstracts.get(doi) if doi else None
+            if not abstract:
+                continue
+            enriched.append({**item, "dc:description": abstract})
+            if len(enriched) >= top_k:
+                break
+
+        logger.info(
+            "scopus_abstract_enrichment",
+            candidates=len(candidate_window),
+            with_abstract=len(enriched),
+            requested=top_k,
+        )
+        return enriched
+
+    # Faixas de anos (mais recente -> mais antiga) e o peso de cada uma na
+    # amostra final - dá ênfase ao mais recente sem excluir o resto, evitando
+    # que a probe (sem nenhum critério de relevância no OPS - ver
+    # notes/pendencias.md) venha inteira de uma janela estreita de tempo.
+    _OPS_YEAR_BUCKET_OFFSETS: list[tuple[int, int, float]] = [
+        (1, 0, 0.4),  # últimos 2 anos
+        (4, 2, 0.3),  # 3-5 anos atrás
+        (7, 5, 0.3),  # 6-8 anos atrás
+        (None, 8, 0.1),  # o resto (9+ anos atrás até year_from)
+    ]
+
+    @classmethod
+    def _ops_year_buckets(cls, year_from: int, year_to: int) -> list[tuple[int, int, float]]:
+        """
+        Recorta [year_from, year_to] em faixas com peso decrescente conforme
+        a idade. Faixas que caem fora do range configurado são descartadas e
+        os pesos das restantes são renormalizados pra somar 1.
+        """
+        raw = []
+        for from_offset, to_offset, weight in cls._OPS_YEAR_BUCKET_OFFSETS:
+            b_to = year_to - to_offset
+            b_from = year_from if from_offset is None else year_to - from_offset
+            raw.append((b_from, b_to, weight))
+
+        valid = [
+            (max(b_from, year_from), min(b_to, year_to), weight)
+            for b_from, b_to, weight in raw
+            if b_to >= year_from and b_from <= year_to
+        ]
+        valid = [(f, t, w) for f, t, w in valid if f <= t]
+
+        total_weight = sum(w for _, _, w in valid)
+        if not valid or total_weight <= 0:
+            return [(year_from, year_to, 1.0)]
+
+        return [(f, t, w / total_weight) for f, t, w in valid]
+
+    @staticmethod
+    def _ops_bucket_quotas(buckets: list[tuple[int, int, float]], top_k: int) -> list[int]:
+        """Converte os pesos das faixas em nº de itens, garantindo que a soma bata com top_k."""
+        quotas = [max(1, round(top_k * weight)) for _, _, weight in buckets]
+        quotas[0] += top_k - sum(quotas)
+        quotas[0] = max(1, quotas[0])
+        return quotas
+
+    @staticmethod
+    def _ops_replace_date_clause(cql_query: str, year_from: int, year_to: int) -> str:
+        """Substitui a cláusula `(pd within "...")` da CQL original pelo intervalo da faixa."""
+        new_clause = f'(pd within "{year_from}0101 {year_to}1231")'
+        pattern = r'\(pd within "\d{8} \d{8}"\)'
+        if re.search(pattern, cql_query):
+            return re.sub(pattern, new_clause, cql_query)
+        return f"{cql_query} AND {new_clause}" if cql_query else new_clause
+
+    async def _run_ops_year_diversified_search(
+        self,
+        adapter: Any,
+        query: dict[str, Any],
+        top_k: int,
+    ) -> tuple[list[dict[str, Any]], Optional[int]]:
+        """
+        O OPS não tem nenhum critério de relevância/ordenação na busca (ver
+        notes/pendencias.md) - por padrão devolve sempre os mais recentes, o
+        que pode enviesar a probe inteira pra uma janela de tempo estreita
+        quando o tema tem muita atividade recente. Busca por faixa de ano
+        (mais cota pras faixas recentes) e sorteia uma amostra dentro de
+        cada faixa, em vez de pegar sempre os N mais recentes de cada uma.
+        """
+        cql_query = query.get("query", "")
+        year_from = getattr(self.settings, "search_year_from", 2015)
+        year_to = getattr(self.settings, "search_year_to", 2026)
+
+        buckets = self._ops_year_buckets(year_from, year_to)
+        quotas = self._ops_bucket_quotas(buckets, top_k)
+
+        collected: list[dict[str, Any]] = []
+        total_available = 0
+
+        for (b_from, b_to, _weight), quota in zip(buckets, quotas):
+            bucket_query = {**query, "query": self._ops_replace_date_clause(cql_query, b_from, b_to)}
+            fetch_n = min(max(quota * 3, quota), 100)
+            try:
+                result = await adapter.search_with_biblio(bucket_query, top_k=fetch_n)
+            except Exception as exc:
+                logger.warning(
+                    "ops_year_bucket_search_failed",
+                    year_from=b_from,
+                    year_to=b_to,
+                    error=str(exc),
+                )
+                continue
+
+            if not result.success:
+                continue
+
+            total_available += result.total_count or 0
+            collected.extend(random.sample(result.results, min(quota, len(result.results))))
+
+        logger.info(
+            "ops_year_diversified_search",
+            buckets=[(f, t) for f, t, _ in buckets],
+            quotas=quotas,
+            collected=len(collected),
+            requested=top_k,
+        )
+        return collected, (total_available or None)
+
     async def run_probe_search(
         self,
         query: dict[str, Any],
@@ -816,17 +1051,35 @@ class ChatService:
         effective_top_k = min(top_k + 5, 100)
         try:
             if api == "ops" and hasattr(adapter, "search_with_biblio"):
-                result = await adapter.search_with_biblio(query, top_k=effective_top_k)
+                items, total_available = await self._run_ops_year_diversified_search(
+                    adapter, query, top_k=effective_top_k
+                )
+                return {
+                    "success": True,
+                    "api": api,
+                    "results_count": len(items),
+                    "total_available": total_available,
+                    "results": items,
+                    "error": None,
+                }
+
+            result = await adapter.search(query)
+
+            if not result.success:
+                return {"success": False, "api": api, "error": result.error_message}
+
+            if api == "scopus":
+                items = await self._enrich_scopus_abstracts(result.results, top_k=effective_top_k)
             else:
-                result = await adapter.search(query)
-            items = result.results[:effective_top_k] if result.success else []
+                items = result.results[:effective_top_k]
+
             return {
-                "success": result.success,
+                "success": True,
                 "api": api,
                 "results_count": len(items),
                 "total_available": result.total_count,
                 "results": items,
-                "error": result.error_message if not result.success else None,
+                "error": None,
             }
         except Exception as exc:
             logger.error("run_probe_search_error", api=api, error=str(exc))
@@ -847,14 +1100,22 @@ class ChatService:
                 result = await adapter.search_with_biblio(query, top_k=min(max_results, 100))
             else:
                 result = await adapter.search(query)
-            items = result.results[:max_results] if result.success else []
+
+            if not result.success:
+                return {"success": False, "api": api, "error": result.error_message}
+
+            if api == "scopus":
+                items = await self._enrich_scopus_abstracts(result.results, top_k=max_results)
+            else:
+                items = result.results[:max_results]
+
             return {
-                "success": result.success,
+                "success": True,
                 "api": api,
                 "results_count": len(items),
                 "total_available": result.total_count,
                 "results": items,
-                "error": result.error_message if not result.success else None,
+                "error": None,
             }
         except Exception as exc:
             logger.error("run_final_search_error", api=api, error=str(exc))

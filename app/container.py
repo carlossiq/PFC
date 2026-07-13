@@ -91,6 +91,13 @@ def build_container(settings: Settings) -> dict[str, Any]:
     else:
         logger.warning("container_scopus_skipped scopus_enabled=%s", settings.scopus_enabled)
 
+    # OpenAlex - complementa abstract que a Scopus Search API não devolve
+    # pra essa API key (ver notes/pendencias.md). API pública, sem key.
+    from services.search.openalex_service import OpenAlexService
+
+    openalex_service = OpenAlexService()
+    _services_to_close.append(openalex_service)
+
     # ------------------------------------------------------------------
     # Pure core services (sem dependências externas)
     # ------------------------------------------------------------------
@@ -103,6 +110,7 @@ def build_container(settings: Settings) -> dict[str, Any]:
         patent_pairs=patent_pairs,
         scholarly_pairs=scholarly_pairs,
         settings=settings,
+        openalex=openalex_service,
     )
 
     return {
