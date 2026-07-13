@@ -3,7 +3,7 @@ import { ChevronDown, FileText, BookOpen } from 'lucide-react'
 import { selectableCardClass } from '../CandidatePicker'
 import { StatTile } from '../StatTile'
 import { useFormStore } from '../../stores/useFormStore'
-import { finalizeSession, buildProbeQueryPayload } from '../../services/sessionInput'
+import { buildSaveSessionPayload, saveSession } from '../../services/sessionInput'
 import type { ProbeSearchResult } from '../../services/probeQuery'
 import type { ProbeApi } from '../../constants/probeFields'
 import { PANEL_ACCENT } from '../../constants/probePanelAccent'
@@ -143,20 +143,7 @@ interface InitialResultsProps {
 }
 
 export function InitialResults({ step, substep, onBack, onNext }: InitialResultsProps) {
-  const {
-    sessionName,
-    input,
-    step2SelectedTheme,
-    step2Iterations,
-    step3Queries,
-    step3SelectedIndex,
-    step3Iterations,
-    step3ArticleQueries,
-    step3ArticleSelectedIndex,
-    step3ArticleIterations,
-    step3PatentResults,
-    step3ArticleResults,
-  } = useFormStore()
+  const { step3PatentResults, step3ArticleResults, setSessionId } = useFormStore()
 
   const [expandedPanel, setExpandedPanel] = useState<'patent' | 'article' | null>(null)
 
@@ -166,38 +153,22 @@ export function InitialResults({ step, substep, onBack, onNext }: InitialResults
 
   if (step !== STEPS.INITIAL_EXPLORATION || substep !== 0) return null
 
-  // Botão de teste: os passos seguintes ainda são placeholder, então isso só
-  // serve pra exercitar a rota POST /session-input enquanto o fluxo real de
-  // finalização (ao fim da Geração do Relatório) não existe de verdade.
+  // Marca a sessão como concluída (completed=true). Os steps seguintes
+  // (Exploração Final, Geração do Relatório) ainda são placeholder
+  // (OutrosSteps.tsx), então "finalizar" aqui é o fim do fluxo implementado
+  // até agora, não do wizard completo. Atualiza (PUT) em vez de criar de novo
+  // se a sessão já tiver sido salva antes via "Salvar progresso".
   async function handleFinalize() {
     setIsFinalizing(true)
     setFinalizeError(null)
     setFinalizeResult(null)
     try {
-      const wasRefinedByAI = !!step2SelectedTheme && step2SelectedTheme.id !== 'input'
-      const generated = wasRefinedByAI
-        ? { theme: step2SelectedTheme!.theme, description: step2SelectedTheme!.description || null }
-        : null
-
-      const patentQuery = buildProbeQueryPayload(
-        step3SelectedIndex !== null ? step3Queries?.[step3SelectedIndex] : undefined,
-        'ops',
-        step3Iterations,
-        step3PatentResults?.resultsCount ?? null,
-      )
-      const articleQuery = buildProbeQueryPayload(
-        step3ArticleSelectedIndex !== null ? step3ArticleQueries?.[step3ArticleSelectedIndex] : undefined,
-        'scopus',
-        step3ArticleIterations,
-        step3ArticleResults?.resultsCount ?? null,
-      )
-      const probeQueries = [patentQuery, articleQuery].filter(
-        (q): q is NonNullable<typeof q> => q !== null
-      )
-
-      const result = await finalizeSession(sessionName, input, generated, step2Iterations, probeQueries)
+      const formState = useFormStore.getState()
+      const payload = buildSaveSessionPayload(formState, true)
+      const result = await saveSession(formState.sessionId, formState.sessionName, payload)
+      setSessionId(result.session_id, result.session_public_id)
       setFinalizeResult(
-        `Sessão ${result.session_public_id} criada (session_id=${result.session_id}, root_input_id=${result.root.id}${
+        `Sessão ${result.session_public_id} finalizada (session_id=${result.session_id}, root_input_id=${result.root.id}${
           result.generated ? `, generated_input_id=${result.generated.id}, iterations=${result.generated.iterations}` : ''
         })`
       )
@@ -262,7 +233,7 @@ export function InitialResults({ step, substep, onBack, onNext }: InitialResults
           disabled={isFinalizing}
           className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors"
         >
-          {isFinalizing ? 'Finalizando...' : 'Finalizar Sessão (teste)'}
+          {isFinalizing ? 'Finalizando...' : 'Finalizar Sessão'}
         </button>
       </div>
     </div>

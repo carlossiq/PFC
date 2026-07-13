@@ -5,7 +5,7 @@ export interface ResearchSessionSummary {
   id: number
   public_id: string
   name: string | null
-  status: string
+  completed: boolean
   created_at: string
   inputs: SessionInputRow[]
   probe_queries: SessionProbeQueryRow[]
@@ -17,6 +17,14 @@ export async function searchSessions(theme?: string): Promise<ResearchSessionSum
   const { data } = await apiClient.get('/research-session', {
     params: theme && theme.trim() ? { theme: theme.trim() } : {},
   })
+  return data.data
+}
+
+// Busca uma sessão específica com todas as suas linhas de session_input e
+// session_probe_query - usado ao retomar uma sessão pendente ("Continuar
+// pesquisa"), pra garantir dados frescos em vez de reaproveitar a listagem.
+export async function getSessionById(sessionId: number): Promise<ResearchSessionSummary> {
+  const { data } = await apiClient.get(`/research-session/${sessionId}`)
   return data.data
 }
 

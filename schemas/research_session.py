@@ -17,7 +17,7 @@ class ResearchSessionSummary(BaseModel):
     id: int
     public_id: str
     name: Optional[str] = None
-    status: str
+    completed: bool
     created_at: datetime
     inputs: list[SessionInputRow]
     probe_queries: list[SessionProbeQueryRow] = []

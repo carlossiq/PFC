@@ -7,6 +7,7 @@ import { Step1 } from "./steps/Step1";
 import { Step3 } from "./steps/Step3";
 import { InitialResults } from "./steps/InitialResults";
 import { OutrosSteps } from "./steps/OutrosSteps";
+import { SaveProgressButton } from "./SaveProgressButton";
 import { useWorkflowStore } from "../stores/useWorkflowStore";
 import { useProspectingStore } from "../stores/useProspectingStore";
 import { useFormStore } from "../stores/useFormStore";
@@ -14,6 +15,7 @@ import { useHistoryStore } from "../stores/useHistoryStore";
 import { useSidebarStore } from "../stores/useSidebarStore";
 import { TABS } from "../constants/tabs";
 import { STEPS } from "../constants/steps";
+import { buildSaveSessionPayload, saveSession } from "../services/sessionInput";
 
 const tabContents = {
   [TABS.WELCOME]: { title: "Welcome", label: "Welcome" },
@@ -39,6 +41,7 @@ export function WorkflowPage() {
     setInput,
     step2SelectedTheme,
     setStep2SelectedTheme,
+    step2GeneratedForInput,
     setShouldRegenerateStep2,
     resetStep2Iterations,
     incrementStep2Iterations,
@@ -90,10 +93,15 @@ export function WorkflowPage() {
   const handleRefineParameters = () => {
     if (handleValidateTopic()) {
       // Apenas navega para o Step2 - nada é persistido no backend até a sessão
-      // ser finalizada. Conta como uma iteração de refinamento por IA, e força
-      // a regeneração dos parâmetros (o usuário pode ter mudado o input no Step1).
-      incrementStep2Iterations();
-      setShouldRegenerateStep2(true);
+      // ser finalizada. Só força regeneração dos parâmetros (e conta como uma
+      // iteração de refinamento por IA) se o input mudou desde a última
+      // geração - senão reaproveita os candidatos já gerados sem chamar a IA
+      // de novo.
+      const inputChanged = JSON.stringify(input) !== step2GeneratedForInput;
+      if (inputChanged) {
+        incrementStep2Iterations();
+        setShouldRegenerateStep2(true);
+      }
       setStep(step, 0);
     }
   };
@@ -137,6 +145,16 @@ export function WorkflowPage() {
     nextStep();
   };
 
+  // Salva o progresso atual (o que estiver preenchido até o momento) com
+  // completed=false. Cria a sessão na primeira vez (POST), atualiza nas
+  // seguintes (PUT), guardando o sessionId retornado no form store.
+  const handleSaveProgress = async () => {
+    const formState = useFormStore.getState()
+    const payload = buildSaveSessionPayload(formState, false)
+    const result = await saveSession(formState.sessionId, formState.sessionName, payload)
+    useFormStore.getState().setSessionId(result.session_id, result.session_public_id)
+  }
+
   // Volta ao step anterior restaurando o estado salvo no histórico
   const handlePrevStep = () => {
     const snapshot = historyPop();
@@ -158,7 +176,10 @@ export function WorkflowPage() {
       <div className="h-[calc(100vh-5rem)] bg-gray-200 rounded-tl-2xl overflow-hidden flex flex-col">
         {isStartProspection && <StepsBar />}
 
-        <div className="flex-1 overflow-y-auto px-4 py-3">
+        <div className="relative flex-1 overflow-y-auto px-4 py-3">
+          {isStartProspection && (
+            <SaveProgressButton disabled={!input.theme.trim()} onSave={handleSaveProgress} />
+          )}
           {isStartProspection ? (
             <>
               <Step1

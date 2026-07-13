@@ -2,10 +2,25 @@ import { useEffect, useState } from 'react'
 import { Modal } from '../components/Modal'
 import { SessionSearchFilter } from '../components/SessionSearchFilter'
 import { SessionCard } from '../components/SessionCard'
-import { searchSessions, deleteSession, type ResearchSessionSummary } from '../services/researchSession'
+import { searchSessions, deleteSession, getSessionById, type ResearchSessionSummary } from '../services/researchSession'
+import { mapSessionToFormStorePatch } from '../services/sessionHydration'
+import { useFormStore } from '../stores/useFormStore'
+import { useProspectingStore } from '../stores/useProspectingStore'
+import { useHistoryStore } from '../stores/useHistoryStore'
+import { useWorkflowStore } from '../stores/useWorkflowStore'
+import { TABS } from '../constants/tabs'
+
+type StatusFilter = 'all' | 'pending' | 'completed'
+
+const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
+  { value: 'all', label: 'Todas' },
+  { value: 'pending', label: 'Pendentes' },
+  { value: 'completed', label: 'Concluídas' },
+]
 
 export function SearchPage() {
   const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [sessions, setSessions] = useState<ResearchSessionSummary[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -13,6 +28,34 @@ export function SearchPage() {
   const [sessionPendingDelete, setSessionPendingDelete] = useState<ResearchSessionSummary | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [resumingId, setResumingId] = useState<number | null>(null)
+  const [resumeError, setResumeError] = useState<string | null>(null)
+
+  const filteredSessions = sessions.filter((session) => {
+    if (statusFilter === 'pending') return !session.completed
+    if (statusFilter === 'completed') return session.completed
+    return true
+  })
+
+  // Busca a sessão completa (dados frescos) e repopula o form store, sempre
+  // reabrindo no Step1 preenchido - não restaura o step/substep exato de onde
+  // o usuário parou.
+  async function handleContinue(session: ResearchSessionSummary) {
+    setResumingId(session.id)
+    setResumeError(null)
+    try {
+      const full = await getSessionById(session.id)
+      useFormStore.getState().hydrateFromSession(mapSessionToFormStorePatch(full))
+      useHistoryStore.getState().reset()
+      useProspectingStore.getState().reset()
+      useWorkflowStore.getState().setTab(TABS.START_PROSPECTION)
+    } catch (err) {
+      console.error('Falha ao retomar sessão:', err)
+      setResumeError('Não foi possível retomar a sessão. Tente novamente.')
+    } finally {
+      setResumingId(null)
+    }
+  }
 
   async function handleConfirmDelete() {
     if (!sessionPendingDelete) return
@@ -55,7 +98,11 @@ export function SearchPage() {
         pra apagar a sessão (e tudo o que ela guarda) permanentemente.
       </p>
 
-      <SessionSearchFilter value={query} onChange={setQuery} />
+      <SessionSearchFilter
+        value={query}
+        onChange={setQuery}
+        statusFilter={{ options: STATUS_FILTER_OPTIONS, value: statusFilter, onChange: setStatusFilter }}
+      />
 
       {isLoading && <p className="text-sm text-gray-500">Buscando...</p>}
 
@@ -63,13 +110,17 @@ export function SearchPage() {
         <p className="text-sm text-red-600 font-medium">{error}</p>
       )}
 
-      {!isLoading && !error && sessions.length === 0 && (
+      {resumeError && (
+        <p className="mb-4 text-sm text-red-600 font-medium">{resumeError}</p>
+      )}
+
+      {!isLoading && !error && filteredSessions.length === 0 && (
         <p className="text-sm text-gray-500">Nenhuma sessão encontrada.</p>
       )}
 
-      {!isLoading && !error && sessions.length > 0 && (
+      {!isLoading && !error && filteredSessions.length > 0 && (
         <div className="flex flex-col gap-4">
-          {sessions.map((session) => (
+          {filteredSessions.map((session) => (
             <SessionCard
               key={session.id}
               session={session}
@@ -79,6 +130,8 @@ export function SearchPage() {
                 setDeleteError(null)
                 setSessionPendingDelete(session)
               }}
+              onContinueClick={() => handleContinue(session)}
+              isResuming={resumingId === session.id}
             />
           ))}
         </div>

@@ -25,8 +25,39 @@ interface SelectedTheme {
   studyArea?: string[]
 }
 
+// Patch aplicado por `hydrateFromSession` ao retomar uma sessão salva -
+// mesmas chaves do FormStore, todas opcionais (só as que a sessão traz).
+export type FormStorePatch = Partial<
+  Pick<
+    FormStore,
+    | 'sessionId'
+    | 'sessionPublicId'
+    | 'sessionName'
+    | 'input'
+    | 'step2SelectedTheme'
+    | 'step2Candidates'
+    | 'step2GeneratedForInput'
+    | 'step2Iterations'
+    | 'step3Queries'
+    | 'step3SelectedIndex'
+    | 'step3GeneratedForIntake'
+    | 'step3Iterations'
+    | 'step3ArticleQueries'
+    | 'step3ArticleSelectedIndex'
+    | 'step3ArticleGeneratedForIntake'
+    | 'step3ArticleIterations'
+  >
+>
+
 // Gerencia dados de entrada e parâmetros gerados
 interface FormStore {
+  // Identifica a sessão já persistida no backend, uma vez que o primeiro save
+  // (progresso ou finalização) acontece. null = sessão ainda não salva nenhuma
+  // vez - o próximo save deve criar (POST); não-null - deve atualizar (PUT).
+  sessionId: number | null
+  sessionPublicId: string | null
+  setSessionId: (id: number | null, publicId: string | null) => void
+
   // Nome da sessão, definido pelo usuário ao clicar em "Start" na sidebar,
   // antes mesmo de preencher o Step1. Enviado ao backend junto com o resto
   // do session_input quando a sessão é finalizada.
@@ -53,11 +84,21 @@ interface FormStore {
   // não é persistido, então reseta sozinho). O caso (3) - especializar um
   // tema - atualiza só o card selecionado, sem tocar nos demais.
   step2Candidates: SelectedTheme[]
-  setStep2Candidates: (candidates: SelectedTheme[]) => void
+  // `generatedForInput`, quando informado, é a assinatura (JSON) do input do
+  // Step1 que gerou esses candidatos - usada por "Refinar parâmetros" pra
+  // decidir se o input mudou desde a última geração (ver handleRefineParameters
+  // em Workflow.tsx). Omitido em updates que não são uma nova geração por IA
+  // (ex: editar ou especializar um card já existente), pra não mascarar uma
+  // mudança real de input.
+  setStep2Candidates: (candidates: SelectedTheme[], generatedForInput?: string) => void
+
+  // Assinatura do input usado na última geração de candidatos do Step2.
+  step2GeneratedForInput: string | null
 
   // Sinaliza que a próxima montagem do Step2 deve regenerar os parâmetros do
-  // zero. Setado ao clicar em "Refinar parâmetros" no Step1; consumido (volta
-  // a false) assim que o Step2 monta e dispara a geração.
+  // zero. Setado ao clicar em "Refinar parâmetros" no Step1 quando o input
+  // mudou desde a última geração; consumido (volta a false) assim que o
+  // Step2 monta e dispara a geração.
   shouldRegenerateStep2: boolean
   setShouldRegenerateStep2: (value: boolean) => void
 
@@ -132,6 +173,12 @@ interface FormStore {
     generated: GeneratedData
   }
   reset: () => void
+
+  // Repopula o form store a partir de uma sessão salva (ver
+  // services/sessionHydration.ts), ao clicar "Continuar pesquisa" num card
+  // pendente. Os resultados reais de busca (Step3) não são persistidos, então
+  // são sempre zerados aqui - o usuário rebusca ao reconfirmar o Step3.
+  hydrateFromSession: (patch: FormStorePatch) => void
 }
 
 const defaultInput: InputData = {
@@ -149,11 +196,14 @@ const defaultGenerated: GeneratedData = {
 }
 
 export const useFormStore = create<FormStore>((set, get) => ({
+  sessionId: null,
+  sessionPublicId: null,
   sessionName: '',
   input: defaultInput,
   generated: defaultGenerated,
   step2SelectedTheme: null,
   step2Candidates: [],
+  step2GeneratedForInput: null,
   shouldRegenerateStep2: true,
   step2Iterations: 0,
   step3Queries: null,
@@ -168,6 +218,12 @@ export const useFormStore = create<FormStore>((set, get) => ({
   step3PatentResultsQuery: null,
   step3ArticleResults: null,
   step3ArticleResultsQuery: null,
+
+  setSessionId: (id, publicId) =>
+    set({
+      sessionId: id,
+      sessionPublicId: publicId,
+    }),
 
   setSessionName: (name) =>
     set({
@@ -189,10 +245,12 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step2SelectedTheme: theme,
     }),
 
-  setStep2Candidates: (candidates) =>
-    set({
+  setStep2Candidates: (candidates, generatedForInput) =>
+    set((state) => ({
       step2Candidates: candidates,
-    }),
+      step2GeneratedForInput:
+        generatedForInput !== undefined ? generatedForInput : state.step2GeneratedForInput,
+    })),
 
   setShouldRegenerateStep2: (value) =>
     set({
@@ -287,13 +345,26 @@ export const useFormStore = create<FormStore>((set, get) => ({
     }
   },
 
+  hydrateFromSession: (patch) =>
+    set({
+      ...patch,
+      shouldRegenerateStep2: false,
+      step3PatentResults: null,
+      step3PatentResultsQuery: null,
+      step3ArticleResults: null,
+      step3ArticleResultsQuery: null,
+    }),
+
   reset: () =>
     set({
+      sessionId: null,
+      sessionPublicId: null,
       sessionName: '',
       input: defaultInput,
       generated: defaultGenerated,
       step2SelectedTheme: null,
       step2Candidates: [],
+      step2GeneratedForInput: null,
       shouldRegenerateStep2: true,
       step2Iterations: 0,
       step3Queries: null,

@@ -35,7 +35,7 @@
     focus:outline-none transition-all duration-200
     ${isTextarea
         ? 'pt-5 pb-2'
-        : 'h-12 flex items-center pt-5 pb-1'
+        : 'h-10 flex items-center pt-5 pb-1'
       }
     ${error
         ? 'border-red-500 focus:border-red-500 focus:ring-1 focus:ring-red-500'

@@ -52,6 +52,7 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
     const requestId = ++requestIdRef.current
     setIsLoading(true)
     setError(null)
+    const generatedForInput = JSON.stringify(input)
     try {
       const results = await refineTopic(input)
       if (requestIdRef.current !== requestId) return
@@ -64,7 +65,8 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
           studyArea: candidate.area_of_study
             ? candidate.area_of_study.split(',').map((a) => a.trim())
             : undefined,
-        }))
+        })),
+        generatedForInput
       )
     } catch (err) {
       if (requestIdRef.current !== requestId) return

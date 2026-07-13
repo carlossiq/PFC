@@ -134,7 +134,7 @@ export function IterationsBarChart({ sessions }: IterationsBarChartProps) {
             type="button"
             onClick={() => setShowTable(false)}
             className={`text-xs font-semibold px-2.5 py-1 rounded-md transition-colors ${
-              !showTable ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              !showTable ? 'bg-[#0f9448] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
             Gráfico
@@ -143,7 +143,7 @@ export function IterationsBarChart({ sessions }: IterationsBarChartProps) {
             type="button"
             onClick={() => setShowTable(true)}
             className={`text-xs font-semibold px-2.5 py-1 rounded-md transition-colors ${
-              showTable ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              showTable ? 'bg-[#0f9448] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
             Tabela

@@ -51,6 +51,12 @@ export function Step1({
 
   return (
     <div className="w-full">
+      <h3 className="text-lg font-semibold text-gray-900 mb-1">Parâmetros da Prospecção</h3>
+      <p className="text-xs text-gray-500 mb-4">
+        Preencha o tema e os detalhes da sua pesquisa - só o tema é obrigatório para avançar ou
+        salvar o progresso.
+      </p>
+
       <form className="space-y-6">
         <div>
           <FloatingLabelInput

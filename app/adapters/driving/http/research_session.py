@@ -10,10 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.adapters.driving.http.dependencies import get_db_session
+from app.adapters.driving.http.session_persistence import persist_session_input
 from core.logging import get_logger
 from db.research_session_models import ResearchSession, SessionInput
 from schemas.research_session import ResearchSessionSummary
 from schemas.response import SuccessResponse
+from schemas.session_input import SessionInputSaveRequest, SessionInputSaveResponse
 
 logger = get_logger(__name__)
 
@@ -51,6 +53,54 @@ async def search_sessions(
     return SuccessResponse(
         data=[ResearchSessionSummary.model_validate(s) for s in sessions]
     )
+
+
+@router.get("/{session_id}", response_model=SuccessResponse[ResearchSessionSummary])
+async def get_session(
+    session_id: int,
+    session: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[ResearchSessionSummary]:
+    """Busca uma sessão específica com todas as suas linhas de session_input e
+    session_probe_query - usado ao retomar uma sessão pendente no frontend."""
+    stmt = (
+        select(ResearchSession)
+        .where(ResearchSession.id == session_id)
+        .options(selectinload(ResearchSession.inputs), selectinload(ResearchSession.probe_queries))
+    )
+    result = await session.execute(stmt)
+    research_session = result.scalar_one_or_none()
+
+    if research_session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return SuccessResponse(data=ResearchSessionSummary.model_validate(research_session))
+
+
+@router.put("/{session_id}", response_model=SuccessResponse[SessionInputSaveResponse])
+async def update_session(
+    session_id: int,
+    payload: SessionInputSaveRequest,
+    session: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[SessionInputSaveResponse]:
+    """Atualiza uma sessão já salva (root/generated/probe_queries em upsert)
+    ao invés de criar linhas novas - usado tanto para salvar progresso de novo
+    quanto para finalizar uma sessão retomada anteriormente."""
+    stmt = (
+        select(ResearchSession)
+        .where(ResearchSession.id == session_id)
+        .options(selectinload(ResearchSession.inputs), selectinload(ResearchSession.probe_queries))
+    )
+    result = await session.execute(stmt)
+    research_session = result.scalar_one_or_none()
+
+    if research_session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    data = await persist_session_input(session, research_session, payload)
+
+    logger.info("research_session_updated", session_id=session_id, completed=payload.completed)
+
+    return SuccessResponse(data=data)
 
 
 @router.delete("/{session_id}", response_model=SuccessResponse[dict])

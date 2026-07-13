@@ -1,5 +1,8 @@
 """
-Schemas for finalizing a prospecting session's input parameters.
+Schemas for saving a prospecting session's input parameters - either partially,
+mid-wizard ("save progress", completed=False), or as a full finalization
+(completed=True). The same request/response shape backs both the create path
+(POST /session-input) and the update path (PUT /research-session/{id}).
 """
 
 from typing import Optional
@@ -77,13 +80,16 @@ class SessionProbeQueryRow(SessionProbeQueryInput):
         from_attributes = True
 
 
-class SessionInputFinalizeRequest(BaseModel):
-    """Payload enviado ao finalizar a sessão: nome + input raiz + gerado (opcional)."""
+class SessionInputSaveRequest(BaseModel):
+    """Payload enviado ao salvar/atualizar uma sessão: nome + input raiz +
+    gerado (opcional) + queries de probe (opcionais) + se a sessão deve ficar
+    marcada como concluída ou apenas salva em progresso."""
 
     name: str = Field(..., min_length=1, max_length=255)
     root: SessionInputRoot
     generated: Optional[SessionInputGenerated] = None
     probe_queries: list[SessionProbeQueryInput] = Field(default_factory=list, max_items=2)
+    completed: bool = Field(default=False)
 
     @field_validator("name")
     @classmethod
@@ -109,12 +115,13 @@ class SessionInputRow(BaseModel):
         from_attributes = True
 
 
-class SessionInputFinalizeResponse(BaseModel):
-    """Resultado da finalização: sessão criada + linhas de input criadas."""
+class SessionInputSaveResponse(BaseModel):
+    """Resultado do save/update: sessão + linhas de input persistidas."""
 
     session_id: int
     session_public_id: str
     session_name: str
+    completed: bool
     root: SessionInputRow
     generated: Optional[SessionInputRow] = None
     probe_queries: list[SessionProbeQueryRow] = Field(default_factory=list)

@@ -23,11 +23,6 @@ interface FormInput {
   studyArea: string | null
 }
 
-interface GeneratedTheme {
-  theme: string
-  description: string | null
-}
-
 // Converte o shape do useFormStore.input para o payload raiz esperado pelo
 // endpoint /session-input, fazendo o split de keywords (string separada por
 // vírgula) em uma lista sem vazios.
@@ -104,38 +99,94 @@ export interface SessionInputRow {
   iterations: number
 }
 
-export interface FinalizeSessionResponse {
+export interface SaveSessionResponse {
   session_id: number
   session_public_id: string
   session_name: string
+  completed: boolean
   root: SessionInputRow
   generated: SessionInputRow | null
   probe_queries: SessionProbeQueryRow[]
 }
 
-// Finaliza a sessão: envia o nome da sessão, o input raiz (Step1), se houve
-// refinamento por IA o tema escolhido para seguir adiante + o total de
-// iterações acumuladas, e as queries do Step3 selecionadas (patente/artigo).
-// Cria research_session + a cadeia de session_input + as linhas de
-// session_probe_query no backend numa tacada só.
-export async function finalizeSession(
+// Fatia do useFormStore necessária pra montar o payload de save - qualquer
+// objeto com pelo menos esses campos serve (ex: `useFormStore.getState()`).
+export interface SaveSessionFormState {
+  input: FormInput
+  step2SelectedTheme: { id: string; theme: string; description: string } | null
+  step2Iterations: number
+  step3Queries: QueryOptionResult[] | null
+  step3SelectedIndex: number | null
+  step3Iterations: number
+  step3PatentResults: { resultsCount: number } | null
+  step3ArticleQueries: QueryOptionResult[] | null
+  step3ArticleSelectedIndex: number | null
+  step3ArticleIterations: number
+  step3ArticleResults: { resultsCount: number } | null
+}
+
+export interface SaveSessionPayload {
+  root: SessionInputRootPayload
+  generated: SessionInputGeneratedPayload | null
+  probe_queries: SessionProbeQueryPayload[]
+  completed: boolean
+}
+
+// Monta o payload de save a partir do estado atual do form store - tolera
+// progresso parcial (só o Step1 preenchido já basta: `root.theme` é o único
+// campo obrigatório no backend). Usado tanto pelo botão "Salvar progresso"
+// (completed=false) quanto pelo botão de finalizar (completed=true).
+export function buildSaveSessionPayload(
+  formState: SaveSessionFormState,
+  completed: boolean,
+): SaveSessionPayload {
+  const wasRefinedByAI =
+    !!formState.step2SelectedTheme && formState.step2SelectedTheme.id !== 'input'
+  const generated = wasRefinedByAI
+    ? {
+        theme: formState.step2SelectedTheme!.theme,
+        description: formState.step2SelectedTheme!.description || null,
+        iterations: formState.step2Iterations,
+      }
+    : null
+
+  const patentQuery = buildProbeQueryPayload(
+    formState.step3SelectedIndex !== null ? formState.step3Queries?.[formState.step3SelectedIndex] : undefined,
+    'ops',
+    formState.step3Iterations,
+    formState.step3PatentResults?.resultsCount ?? null,
+  )
+  const articleQuery = buildProbeQueryPayload(
+    formState.step3ArticleSelectedIndex !== null
+      ? formState.step3ArticleQueries?.[formState.step3ArticleSelectedIndex]
+      : undefined,
+    'scopus',
+    formState.step3ArticleIterations,
+    formState.step3ArticleResults?.resultsCount ?? null,
+  )
+
+  return {
+    root: mapInputToSessionInputRoot(formState.input),
+    generated,
+    probe_queries: [patentQuery, articleQuery].filter(
+      (q): q is SessionProbeQueryPayload => q !== null
+    ),
+    completed,
+  }
+}
+
+// Salva (cria, se `sessionId` for null) ou atualiza (se já existir) a sessão.
+// A primeira chamada de "Salvar progresso" ou "Finalizar" cria a sessão via
+// POST; qualquer save seguinte (inclusive o finalize de uma sessão retomada)
+// faz PUT, evitando duplicar as linhas de session_input/session_probe_query.
+export async function saveSession(
+  sessionId: number | null,
   name: string,
-  root: FormInput,
-  generated: GeneratedTheme | null,
-  iterations: number,
-  probeQueries: SessionProbeQueryPayload[] = [],
-): Promise<FinalizeSessionResponse> {
-  const { data } = await apiClient.post('/session-input', {
-    name,
-    root: mapInputToSessionInputRoot(root),
-    generated: generated
-      ? {
-          theme: generated.theme,
-          description: generated.description,
-          iterations,
-        }
-      : null,
-    probe_queries: probeQueries,
-  })
+  payload: SaveSessionPayload,
+): Promise<SaveSessionResponse> {
+  const body = { name, ...payload }
+  const { data } = sessionId
+    ? await apiClient.put(`/research-session/${sessionId}`, body)
+    : await apiClient.post('/session-input', body)
   return data.data
 }

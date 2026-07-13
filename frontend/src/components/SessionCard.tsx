@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Trash2, ChevronDown } from 'lucide-react'
+import { Trash2, ChevronDown, Play } from 'lucide-react'
 import { selectableCardClass } from './CandidatePicker'
 import { FieldCard } from './FieldCard'
 import { PROBE_FIELDS_BY_API } from '../constants/probeFields'
@@ -119,9 +119,18 @@ interface SessionCardProps {
   isExpanded: boolean
   onToggle: () => void
   onDeleteClick: () => void
+  onContinueClick: () => void
+  isResuming?: boolean
 }
 
-export function SessionCard({ session, isExpanded, onToggle, onDeleteClick }: SessionCardProps) {
+export function SessionCard({
+  session,
+  isExpanded,
+  onToggle,
+  onDeleteClick,
+  onContinueClick,
+  isResuming = false,
+}: SessionCardProps) {
   const root = session.inputs.find((i) => i.parent_id === null)
   const generated = session.inputs.find((i) => i.parent_id !== null)
   const patentQuery = session.probe_queries.find((q) => q.fonte === 'ops')
@@ -168,6 +177,15 @@ export function SessionCard({ session, isExpanded, onToggle, onDeleteClick }: Se
 
             <div className="flex flex-col items-end gap-1 shrink-0">
               <span className="text-xs text-gray-400">{formatDate(session.created_at)}</span>
+              <span
+                className={`text-xs font-semibold rounded-full px-2 py-0.5 ${
+                  session.completed
+                    ? 'text-[#0f9448] bg-[#0f9448]/10'
+                    : 'text-amber-600 bg-amber-100'
+                }`}
+              >
+                {session.completed ? 'Concluída' : 'Pendente'}
+              </span>
               <span className="text-xs font-semibold text-[#0f9448] bg-[#0f9448]/10 rounded-full px-2 py-0.5">
                 {totalIterations} {totalIterations === 1 ? 'iteração total' : 'iterações totais'}
               </span>
@@ -179,6 +197,22 @@ export function SessionCard({ session, isExpanded, onToggle, onDeleteClick }: Se
           size={18}
           className={`shrink-0 mt-1 text-gray-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
         />
+
+        {!session.completed && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onContinueClick()
+            }}
+            disabled={isResuming}
+            className="shrink-0 p-2 rounded-lg text-gray-400 hover:text-[#0f9448] hover:bg-[#0f9448]/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            aria-label="Continuar pesquisa"
+            title="Continuar pesquisa"
+          >
+            <Play size={18} />
+          </button>
+        )}
 
         <button
           type="button"

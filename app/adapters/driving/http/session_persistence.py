@@ -1,0 +1,122 @@
+"""
+Shared persistence logic for creating or updating a research_session and its
+session_input/session_probe_query rows from a SessionInputSaveRequest.
+
+Used by both POST /session-input (new session) and PUT /research-session/{id}
+(update an existing, previously-saved session) - kept as a plain adapter-layer
+helper (not a repository/service abstraction) to match the direct-ORM style
+already used throughout this session-centric flow.
+"""
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from db.research_session_models import ResearchSession, SessionInput, SessionProbeQuery
+from schemas.session_input import (
+    SessionInputGenerated,
+    SessionInputRoot,
+    SessionInputRow,
+    SessionInputSaveRequest,
+    SessionInputSaveResponse,
+    SessionProbeQueryInput,
+    SessionProbeQueryRow,
+)
+
+
+def apply_root_fields(row: SessionInput, root: SessionInputRoot) -> None:
+    row.theme = root.theme
+    row.description = root.description
+    row.area_of_study = root.area_of_study
+    row.keywords = root.keywords
+    row.year_from = root.year_from
+    row.year_to = root.year_to
+
+
+def apply_generated_fields(
+    row: SessionInput, generated: SessionInputGenerated, root: SessionInputRoot
+) -> None:
+    row.theme = generated.theme
+    row.description = generated.description
+    row.area_of_study = root.area_of_study
+    row.keywords = root.keywords
+    row.year_from = root.year_from
+    row.year_to = root.year_to
+    row.iterations = generated.iterations
+
+
+def apply_probe_query_fields(row: SessionProbeQuery, item: SessionProbeQueryInput) -> None:
+    row.query_text = item.query_text
+    row.fields = item.fields
+    row.year_from = item.year_from
+    row.year_to = item.year_to
+    row.complexity_score = item.complexity_score
+    row.complexity_level = item.complexity_level
+    row.iterations = item.iterations
+    row.result_count = item.result_count
+
+
+async def persist_session_input(
+    session: AsyncSession,
+    research_session: ResearchSession,
+    payload: SessionInputSaveRequest,
+) -> SessionInputSaveResponse:
+    """Upsert de root/generated/probe_queries em `research_session` (nova ou
+    existente); espera `.inputs`/`.probe_queries` já carregados (vazios numa
+    sessão recém-criada)."""
+    research_session.name = payload.name
+    research_session.completed = payload.completed
+
+    root = next((i for i in research_session.inputs if i.parent_id is None), None)
+    if root is None:
+        root = SessionInput(session_id=research_session.id, parent_id=None, iterations=0)
+        session.add(root)
+        research_session.inputs.append(root)
+    apply_root_fields(root, payload.root)
+    await session.flush()
+
+    generated_row = next(
+        (i for i in research_session.inputs if i.parent_id == root.id), None
+    )
+    if payload.generated is not None:
+        if generated_row is None:
+            generated_row = SessionInput(
+                session_id=research_session.id, parent_id=root.id, iterations=0
+            )
+            session.add(generated_row)
+            research_session.inputs.append(generated_row)
+        apply_generated_fields(generated_row, payload.generated, payload.root)
+    elif generated_row is not None:
+        # payload sem `generated`: usuário voltou pro input cru - remove o
+        # resquício da geração/refinamento anterior.
+        research_session.inputs.remove(generated_row)
+        await session.delete(generated_row)
+        generated_row = None
+
+    existing_probe_by_fonte = {q.fonte: q for q in research_session.probe_queries}
+    probe_query_rows = []
+    for item in payload.probe_queries:
+        row = existing_probe_by_fonte.get(item.fonte)
+        if row is None:
+            row = SessionProbeQuery(session_id=research_session.id, fonte=item.fonte)
+            session.add(row)
+        apply_probe_query_fields(row, item)
+        probe_query_rows.append(row)
+    # Fontes que existiam no banco mas não vieram no payload são preservadas -
+    # não há hoje um fluxo de "desselecionar" uma query já escolhida.
+
+    await session.commit()
+    await session.refresh(research_session)
+    await session.refresh(root)
+    if generated_row is not None:
+        await session.refresh(generated_row)
+    for row in probe_query_rows:
+        await session.refresh(row)
+
+    return SessionInputSaveResponse(
+        session_id=research_session.id,
+        session_public_id=research_session.public_id,
+        session_name=research_session.name,
+        completed=research_session.completed,
+        root=SessionInputRow.model_validate(root),
+        generated=SessionInputRow.model_validate(generated_row) if generated_row else None,
+        probe_queries=[SessionProbeQueryRow.model_validate(row) for row in probe_query_rows],
+    )

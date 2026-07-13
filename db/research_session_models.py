@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -29,7 +29,7 @@ class ResearchSession(Base):
         String(36), unique=True, nullable=False, index=True, default=lambda: str(uuid.uuid4())
     )
     name: Mapped[Optional[str]] = mapped_column(String(255))
-    status: Mapped[str] = mapped_column(String(50), nullable=False, default="input")
+    completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     patent_source: Mapped[Optional[str]] = mapped_column(String(50))
     scholarly_source: Mapped[Optional[str]] = mapped_column(String(50))
     relevance_threshold: Mapped[float] = mapped_column(
