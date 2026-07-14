@@ -51,6 +51,11 @@ export interface SessionProbeQueryPayload {
   complexity_level: string | null
   iterations: number
   result_count: number | null
+  // Dicts crus dos documentos encontrados por essa query (só um dos dois
+  // preenchido, conforme `fonte`) - o backend faz o mapeamento campo-a-campo
+  // e persiste em patent/article (ver session_probe_documents.py).
+  patents: Record<string, unknown>[]
+  articles: Record<string, unknown>[]
 }
 
 // Monta o payload de uma query do Step3 pronta pra enviar no finalize, a
@@ -66,6 +71,7 @@ export function buildProbeQueryPayload(
   fonte: 'ops' | 'scopus',
   iterations: number,
   resultCount: number | null = null,
+  rawItems: Record<string, unknown>[] = [],
 ): SessionProbeQueryPayload | null {
   if (!selected?.success) return null
   return {
@@ -78,12 +84,18 @@ export function buildProbeQueryPayload(
     complexity_level: selected.complexity?.level ?? null,
     iterations: iterations + 1,
     result_count: resultCount,
+    patents: fonte === 'ops' ? rawItems : [],
+    articles: fonte === 'scopus' ? rawItems : [],
   }
 }
 
 export interface SessionProbeQueryRow extends SessionProbeQueryPayload {
   id: number
   session_id: number
+  // Documentos persistidos (patent/article) vinculados a essa query, no
+  // formato "cru" que o probe search devolveria - só vem populado por GET
+  // /research-session/{id} (retomar sessão), usado por sessionHydration.ts.
+  documents: Record<string, unknown>[]
 }
 
 export interface SessionInputRow {
@@ -118,11 +130,11 @@ export interface SaveSessionFormState {
   step3Queries: QueryOptionResult[] | null
   step3SelectedIndex: number | null
   step3Iterations: number
-  step3PatentResults: { resultsCount: number } | null
+  step3PatentResults: { resultsCount: number; rawItems: Record<string, unknown>[] } | null
   step3ArticleQueries: QueryOptionResult[] | null
   step3ArticleSelectedIndex: number | null
   step3ArticleIterations: number
-  step3ArticleResults: { resultsCount: number } | null
+  step3ArticleResults: { resultsCount: number; rawItems: Record<string, unknown>[] } | null
 }
 
 export interface SaveSessionPayload {
@@ -155,6 +167,7 @@ export function buildSaveSessionPayload(
     'ops',
     formState.step3Iterations,
     formState.step3PatentResults?.resultsCount ?? null,
+    formState.step3PatentResults?.rawItems ?? [],
   )
   const articleQuery = buildProbeQueryPayload(
     formState.step3ArticleSelectedIndex !== null
@@ -163,6 +176,7 @@ export function buildSaveSessionPayload(
     'scopus',
     formState.step3ArticleIterations,
     formState.step3ArticleResults?.resultsCount ?? null,
+    formState.step3ArticleResults?.rawItems ?? [],
   )
 
   return {

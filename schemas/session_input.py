@@ -5,7 +5,7 @@ mid-wizard ("save progress", completed=False), or as a full finalization
 (POST /session-input) and the update path (PUT /research-session/{id}).
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -67,6 +67,8 @@ class SessionProbeQueryInput(BaseModel):
     complexity_level: Optional[str] = None
     iterations: int = Field(default=1, ge=1)
     result_count: Optional[int] = Field(default=None, ge=0)
+    patents: list[dict[str, Any]] = Field(default_factory=list, max_items=200)
+    articles: list[dict[str, Any]] = Field(default_factory=list, max_items=200)
 
 
 class SessionProbeQueryRow(SessionProbeQueryInput):
@@ -75,6 +77,11 @@ class SessionProbeQueryRow(SessionProbeQueryInput):
     id: int
     session_id: int
     result_count: Optional[int] = None
+    # Documentos persistidos (patent/article) vinculados a essa query,
+    # reconstruídos no formato "cru" que o probe search devolveria (ver
+    # patent_to_raw_item/article_to_raw_item) - só populado por GET
+    # /research-session/{id} (retomar sessão), não faz parte do payload de save.
+    documents: list[dict[str, Any]] = Field(default_factory=list)
 
     class Config:
         from_attributes = True

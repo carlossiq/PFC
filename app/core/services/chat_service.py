@@ -901,25 +901,39 @@ class ChatService:
         API key - falta entitlement de Text Mining na Elsevier (ver
         notes/pendencias.md). Busca o abstract complementar no OpenAlex via
         DOI (prism:doi, público e sem key) e descarta os itens sem abstract
-        disponível em nenhuma das duas fontes, priorizando qualidade sobre
-        quantidade. Janela de candidatos com margem (3x top_k) porque nem
-        todo DOI está indexado no OpenAlex ou tem abstract liberado pela
-        editora (~70% de cobertura observada em teste manual).
+        disponível em nenhuma das duas fontes, ou com abstract em idioma
+        diferente do inglês (evita que a IA "traduza errado" termos técnicos
+        na hora de montar a busca final - ver services/nlp/language_filter.py),
+        priorizando qualidade sobre quantidade. Janela de candidatos com
+        margem (3x top_k) porque nem todo DOI está indexado no OpenAlex ou
+        tem abstract liberado pela editora (~70% de cobertura observada em
+        teste manual).
         """
+        from services.nlp.language_filter import is_non_english_abstract
+
         if not self.openalex or not items:
             return items[:top_k]
 
         candidate_window = items[: max(top_k * 3, top_k)]
         dois = [item["prism:doi"] for item in candidate_window if item.get("prism:doi")]
-        abstracts = await self.openalex.fetch_abstracts(dois)
+        openalex_data = await self.openalex.fetch_metadata_batch(dois)
 
         enriched: list[dict[str, Any]] = []
+        discarded_non_english = 0
         for item in candidate_window:
             doi = item.get("prism:doi")
-            abstract = abstracts.get(doi) if doi else None
+            meta = openalex_data.get(doi) if doi else None
+            abstract = meta.get("abstract") if meta else None
             if not abstract:
                 continue
-            enriched.append({**item, "dc:description": abstract})
+            if is_non_english_abstract(abstract):
+                discarded_non_english += 1
+                continue
+            enriched.append({
+                **item,
+                "dc:description": abstract,
+                "openalex_field_of_study": meta.get("field_of_study") or [],
+            })
             if len(enriched) >= top_k:
                 break
 
@@ -927,15 +941,18 @@ class ChatService:
             "scopus_abstract_enrichment",
             candidates=len(candidate_window),
             with_abstract=len(enriched),
+            discarded_non_english=discarded_non_english,
             requested=top_k,
         )
         return enriched
 
     # Faixas de anos (mais recente -> mais antiga) e o peso de cada uma na
     # amostra final - dá ênfase ao mais recente sem excluir o resto, evitando
-    # que a probe (sem nenhum critério de relevância no OPS - ver
+    # que a probe (sem nenhum critério de relevância no OPS/Scopus - ver
     # notes/pendencias.md) venha inteira de uma janela estreita de tempo.
-    _OPS_YEAR_BUCKET_OFFSETS: list[tuple[int, int, float]] = [
+    # Compartilhado entre OPS e Scopus - é só matemática de faixa de ano, não
+    # depende da sintaxe de query de nenhuma API específica.
+    _YEAR_BUCKET_OFFSETS: list[tuple[int, int, float]] = [
         (1, 0, 0.4),  # últimos 2 anos
         (4, 2, 0.3),  # 3-5 anos atrás
         (7, 5, 0.3),  # 6-8 anos atrás
@@ -943,14 +960,14 @@ class ChatService:
     ]
 
     @classmethod
-    def _ops_year_buckets(cls, year_from: int, year_to: int) -> list[tuple[int, int, float]]:
+    def _year_buckets(cls, year_from: int, year_to: int) -> list[tuple[int, int, float]]:
         """
         Recorta [year_from, year_to] em faixas com peso decrescente conforme
         a idade. Faixas que caem fora do range configurado são descartadas e
         os pesos das restantes são renormalizados pra somar 1.
         """
         raw = []
-        for from_offset, to_offset, weight in cls._OPS_YEAR_BUCKET_OFFSETS:
+        for from_offset, to_offset, weight in cls._YEAR_BUCKET_OFFSETS:
             b_to = year_to - to_offset
             b_from = year_from if from_offset is None else year_to - from_offset
             raw.append((b_from, b_to, weight))
@@ -969,7 +986,7 @@ class ChatService:
         return [(f, t, w / total_weight) for f, t, w in valid]
 
     @staticmethod
-    def _ops_bucket_quotas(buckets: list[tuple[int, int, float]], top_k: int) -> list[int]:
+    def _bucket_quotas(buckets: list[tuple[int, int, float]], top_k: int) -> list[int]:
         """Converte os pesos das faixas em nº de itens, garantindo que a soma bata com top_k."""
         quotas = [max(1, round(top_k * weight)) for _, _, weight in buckets]
         quotas[0] += top_k - sum(quotas)
@@ -985,6 +1002,15 @@ class ChatService:
             return re.sub(pattern, new_clause, cql_query)
         return f"{cql_query} AND {new_clause}" if cql_query else new_clause
 
+    @staticmethod
+    def _scopus_replace_date_clause(scopus_query: str, year_from: int, year_to: int) -> str:
+        """Substitui a cláusula `(PUBYEAR > X AND PUBYEAR < Y)` da query original pelo intervalo da faixa (ver ScopusQueryBuilder._build_date_query)."""
+        new_clause = f"(PUBYEAR > {year_from - 1} AND PUBYEAR < {year_to + 1})"
+        pattern = r"\(PUBYEAR > \d+ AND PUBYEAR < \d+\)"
+        if re.search(pattern, scopus_query):
+            return re.sub(pattern, new_clause, scopus_query)
+        return f"{scopus_query} AND {new_clause}" if scopus_query else new_clause
+
     async def _run_ops_year_diversified_search(
         self,
         adapter: Any,
@@ -998,13 +1024,17 @@ class ChatService:
         quando o tema tem muita atividade recente. Busca por faixa de ano
         (mais cota pras faixas recentes) e sorteia uma amostra dentro de
         cada faixa, em vez de pegar sempre os N mais recentes de cada uma.
+        Descarta itens com abstract em idioma diferente do inglês antes de
+        sortear a amostra de cada faixa (ver services/nlp/language_filter.py).
         """
+        from services.nlp.language_filter import filter_english_abstracts
+
         cql_query = query.get("query", "")
         year_from = getattr(self.settings, "search_year_from", 2015)
         year_to = getattr(self.settings, "search_year_to", 2026)
 
-        buckets = self._ops_year_buckets(year_from, year_to)
-        quotas = self._ops_bucket_quotas(buckets, top_k)
+        buckets = self._year_buckets(year_from, year_to)
+        quotas = self._bucket_quotas(buckets, top_k)
 
         collected: list[dict[str, Any]] = []
         total_available = 0
@@ -1027,10 +1057,67 @@ class ChatService:
                 continue
 
             total_available += result.total_count or 0
-            collected.extend(random.sample(result.results, min(quota, len(result.results))))
+            candidates = filter_english_abstracts(result.results)
+            collected.extend(random.sample(candidates, min(quota, len(candidates))))
 
         logger.info(
             "ops_year_diversified_search",
+            buckets=[(f, t) for f, t, _ in buckets],
+            quotas=quotas,
+            collected=len(collected),
+            requested=top_k,
+        )
+        return collected, (total_available or None)
+
+    async def _run_scopus_year_diversified_search(
+        self,
+        adapter: Any,
+        query: dict[str, Any],
+        top_k: int,
+    ) -> tuple[list[dict[str, Any]], Optional[int]]:
+        """
+        Mesma ideia de _run_ops_year_diversified_search, mas pro Scopus: a
+        ordenação default da API não tem nenhum critério de relevância
+        explícito, então um tema com muita atividade recente pode vir com a
+        probe inteira concentrada num único ano. Busca por faixa de ano
+        (PUBYEAR) e enriquece (abstract via OpenAlex + filtro de idioma)
+        cada faixa separadamente, respeitando a cota de cada uma - não dá
+        pra combinar todas as faixas antes de enriquecer, porque o corte por
+        top_k do enriquecimento poderia descartar as faixas mais antigas só
+        por ordem de chegada na lista combinada.
+        """
+        scopus_query = query.get("query", "")
+        year_from = getattr(self.settings, "search_year_from", 2015)
+        year_to = getattr(self.settings, "search_year_to", 2026)
+
+        buckets = self._year_buckets(year_from, year_to)
+        quotas = self._bucket_quotas(buckets, top_k)
+
+        collected: list[dict[str, Any]] = []
+        total_available = 0
+
+        for (b_from, b_to, _weight), quota in zip(buckets, quotas):
+            bucket_query = {**query, "query": self._scopus_replace_date_clause(scopus_query, b_from, b_to)}
+            fetch_n = min(max(quota * 3, quota), 100)
+            try:
+                result = await adapter.search(bucket_query, max_results=fetch_n)
+            except Exception as exc:
+                logger.warning(
+                    "scopus_year_bucket_search_failed",
+                    year_from=b_from,
+                    year_to=b_to,
+                    error=str(exc),
+                )
+                continue
+
+            if not result.success:
+                continue
+
+            total_available += result.total_count or 0
+            collected.extend(await self._enrich_scopus_abstracts(result.results, top_k=quota))
+
+        logger.info(
+            "scopus_year_diversified_search",
             buckets=[(f, t) for f, t, _ in buckets],
             quotas=quotas,
             collected=len(collected),
@@ -1044,14 +1131,32 @@ class ChatService:
         api: str,
         top_k: int = 10,
     ) -> dict[str, Any]:
+        from services.nlp.language_filter import filter_english_abstracts
+
         adapter = self._find_search_adapter(api)
         if adapter is None:
             return {"success": False, "api": api, "error": f"API '{api}' not enabled or not found"}
 
-        effective_top_k = min(top_k + 5, 100)
+        # +10 (não +5): além dos itens sem abstract (Scopus), agora também
+        # descartamos abstracts em idioma diferente do inglês - margem maior
+        # pra compensar os dois motivos de descarte.
+        effective_top_k = min(top_k + 10, 100)
         try:
             if api == "ops" and hasattr(adapter, "search_with_biblio"):
                 items, total_available = await self._run_ops_year_diversified_search(
+                    adapter, query, top_k=effective_top_k
+                )
+                return {
+                    "success": True,
+                    "api": api,
+                    "results_count": len(items),
+                    "total_available": total_available,
+                    "results": items,
+                    "error": None,
+                }
+
+            if api == "scopus":
+                items, total_available = await self._run_scopus_year_diversified_search(
                     adapter, query, top_k=effective_top_k
                 )
                 return {
@@ -1068,10 +1173,7 @@ class ChatService:
             if not result.success:
                 return {"success": False, "api": api, "error": result.error_message}
 
-            if api == "scopus":
-                items = await self._enrich_scopus_abstracts(result.results, top_k=effective_top_k)
-            else:
-                items = result.results[:effective_top_k]
+            items = filter_english_abstracts(result.results)[:effective_top_k]
 
             return {
                 "success": True,
@@ -1091,6 +1193,8 @@ class ChatService:
         api: str,
         max_results: int = 500,
     ) -> dict[str, Any]:
+        from services.nlp.language_filter import filter_english_abstracts
+
         adapter = self._find_search_adapter(api)
         if adapter is None:
             return {"success": False, "api": api, "error": f"API '{api}' not enabled or not found"}
@@ -1107,7 +1211,7 @@ class ChatService:
             if api == "scopus":
                 items = await self._enrich_scopus_abstracts(result.results, top_k=max_results)
             else:
-                items = result.results[:max_results]
+                items = filter_english_abstracts(result.results)[:max_results]
 
             return {
                 "success": True,

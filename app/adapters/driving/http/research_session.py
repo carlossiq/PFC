@@ -11,8 +11,9 @@ from sqlalchemy.orm import selectinload
 
 from app.adapters.driving.http.dependencies import get_db_session
 from app.adapters.driving.http.session_persistence import persist_session_input
+from app.adapters.driving.http.session_probe_documents import article_to_raw_item, patent_to_raw_item
 from core.logging import get_logger
-from db.research_session_models import ResearchSession, SessionInput
+from db.research_session_models import ResearchSession, SessionInput, SessionProbeQuery
 from schemas.research_session import ResearchSessionSummary
 from schemas.response import SuccessResponse
 from schemas.session_input import SessionInputSaveRequest, SessionInputSaveResponse
@@ -65,7 +66,11 @@ async def get_session(
     stmt = (
         select(ResearchSession)
         .where(ResearchSession.id == session_id)
-        .options(selectinload(ResearchSession.inputs), selectinload(ResearchSession.probe_queries))
+        .options(
+            selectinload(ResearchSession.inputs),
+            selectinload(ResearchSession.probe_queries).selectinload(SessionProbeQuery.patent_links),
+            selectinload(ResearchSession.probe_queries).selectinload(SessionProbeQuery.article_links),
+        )
     )
     result = await session.execute(stmt)
     research_session = result.scalar_one_or_none()
@@ -73,7 +78,17 @@ async def get_session(
     if research_session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    return SuccessResponse(data=ResearchSessionSummary.model_validate(research_session))
+    summary = ResearchSessionSummary.model_validate(research_session)
+    # Reconstrói os documentos persistidos (patent/article) de cada probe query
+    # no formato "cru" que o probe search devolveria, pra retomar uma sessão
+    # sem precisar rebuscar na OPS/Scopus (ver session_probe_documents.py).
+    for row, probe_query in zip(summary.probe_queries, research_session.probe_queries):
+        if probe_query.fonte == "ops":
+            row.documents = [patent_to_raw_item(link.patent) for link in probe_query.patent_links]
+        elif probe_query.fonte == "scopus":
+            row.documents = [article_to_raw_item(link.article) for link in probe_query.article_links]
+
+    return SuccessResponse(data=summary)
 
 
 @router.put("/{session_id}", response_model=SuccessResponse[SessionInputSaveResponse])
@@ -88,7 +103,11 @@ async def update_session(
     stmt = (
         select(ResearchSession)
         .where(ResearchSession.id == session_id)
-        .options(selectinload(ResearchSession.inputs), selectinload(ResearchSession.probe_queries))
+        .options(
+            selectinload(ResearchSession.inputs),
+            selectinload(ResearchSession.probe_queries).selectinload(SessionProbeQuery.patent_links),
+            selectinload(ResearchSession.probe_queries).selectinload(SessionProbeQuery.article_links),
+        )
     )
     result = await session.execute(stmt)
     research_session = result.scalar_one_or_none()

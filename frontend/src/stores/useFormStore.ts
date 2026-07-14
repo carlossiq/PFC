@@ -46,6 +46,10 @@ export type FormStorePatch = Partial<
     | 'step3ArticleSelectedIndex'
     | 'step3ArticleGeneratedForIntake'
     | 'step3ArticleIterations'
+    | 'step3PatentResults'
+    | 'step3PatentResultsQuery'
+    | 'step3ArticleResults'
+    | 'step3ArticleResultsQuery'
   >
 >
 
@@ -349,10 +353,6 @@ export const useFormStore = create<FormStore>((set, get) => ({
     set({
       ...patch,
       shouldRegenerateStep2: false,
-      step3PatentResults: null,
-      step3PatentResultsQuery: null,
-      step3ArticleResults: null,
-      step3ArticleResultsQuery: null,
     }),
 
   reset: () =>

@@ -10,6 +10,10 @@ already used throughout this session-centric flow.
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.driving.http.session_probe_documents import (
+    sync_probe_query_articles,
+    sync_probe_query_patents,
+)
 from db.research_session_models import ResearchSession, SessionInput, SessionProbeQuery
 from schemas.session_input import (
     SessionInputGenerated,
@@ -100,6 +104,11 @@ async def persist_session_input(
             session.add(row)
         apply_probe_query_fields(row, item)
         probe_query_rows.append(row)
+        await session.flush()  # garante row.id antes de sincronizar os links de documentos
+        if item.fonte == "ops" and item.patents:
+            await sync_probe_query_patents(session, row, item.patents)
+        elif item.fonte == "scopus" and item.articles:
+            await sync_probe_query_articles(session, row, item.articles)
     # Fontes que existiam no banco mas não vieram no payload são preservadas -
     # não há hoje um fluxo de "desselecionar" uma query já escolhida.
 

@@ -108,3 +108,124 @@ class SessionProbeQuery(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     session: Mapped["ResearchSession"] = relationship("ResearchSession", back_populates="probe_queries")
+    patent_links: Mapped[list["ProbeQueryPatent"]] = relationship(
+        "ProbeQueryPatent",
+        back_populates="probe_query",
+        cascade="all, delete-orphan",
+    )
+    article_links: Mapped[list["ProbeQueryArticle"]] = relationship(
+        "ProbeQueryArticle",
+        back_populates="probe_query",
+        cascade="all, delete-orphan",
+    )
+
+
+class Patent(Base):
+    """
+    Patente encontrada por uma ou mais probe queries (Resultados Iniciais).
+    dedup_key identifica o documento em si (independe de qual query o achou),
+    então a mesma patente encontrada por duas queries gera uma única linha
+    aqui e duas linhas em probe_query_patent.
+    """
+
+    __tablename__ = "patent"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    dedup_key: Mapped[str] = mapped_column(String(500), unique=True, nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_record_id: Mapped[Optional[str]] = mapped_column(String(255))
+
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    abstract: Mapped[Optional[str]] = mapped_column(Text)
+    publication_number: Mapped[Optional[str]] = mapped_column(String(100))
+    application_number: Mapped[Optional[str]] = mapped_column(String(100))
+    family_id: Mapped[Optional[str]] = mapped_column(String(100))
+    applicants: Mapped[Optional[list[str]]] = mapped_column(JSON)
+    inventors: Mapped[Optional[list[str]]] = mapped_column(JSON)
+    ipc_codes: Mapped[Optional[list[str]]] = mapped_column(JSON)
+    cpc_codes: Mapped[Optional[list[str]]] = mapped_column(JSON)
+    filing_date: Mapped[Optional[str]] = mapped_column(String(10))
+    publication_date: Mapped[Optional[str]] = mapped_column(String(10))
+    grant_date: Mapped[Optional[str]] = mapped_column(String(10))
+    year: Mapped[Optional[int]] = mapped_column()
+    legal_status: Mapped[Optional[str]] = mapped_column(String(100))
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    query_links: Mapped[list["ProbeQueryPatent"]] = relationship(
+        "ProbeQueryPatent",
+        back_populates="patent",
+        cascade="all, delete-orphan",
+    )
+
+
+class Article(Base):
+    """Artigo encontrado por uma ou mais probe queries (Resultados Iniciais). Ver Patent para a lógica de dedup_key."""
+
+    __tablename__ = "article"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    dedup_key: Mapped[str] = mapped_column(String(500), unique=True, nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_record_id: Mapped[Optional[str]] = mapped_column(String(255))
+
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    abstract: Mapped[Optional[str]] = mapped_column(Text)
+    doi: Mapped[Optional[str]] = mapped_column(String(255))
+    authors: Mapped[Optional[list[str]]] = mapped_column(JSON)
+    affiliations: Mapped[Optional[list[str]]] = mapped_column(JSON)
+    journal_or_source: Mapped[Optional[str]] = mapped_column(String(500))
+    volume: Mapped[Optional[str]] = mapped_column(String(50))
+    issue: Mapped[Optional[str]] = mapped_column(String(50))
+    pages: Mapped[Optional[str]] = mapped_column(String(50))
+    publication_date: Mapped[Optional[str]] = mapped_column(String(10))
+    year: Mapped[Optional[int]] = mapped_column()
+    keywords: Mapped[Optional[list[str]]] = mapped_column(JSON)
+    field_of_study: Mapped[Optional[list[str]]] = mapped_column(JSON)
+    citations: Mapped[Optional[int]] = mapped_column()
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    query_links: Mapped[list["ProbeQueryArticle"]] = relationship(
+        "ProbeQueryArticle",
+        back_populates="article",
+        cascade="all, delete-orphan",
+    )
+
+
+class ProbeQueryPatent(Base):
+    """Associação N:N entre session_probe_query e patent, com o score de relevância daquele par especificamente."""
+
+    __tablename__ = "probe_query_patent"
+    __table_args__ = (
+        UniqueConstraint("probe_query_id", "patent_id", name="uq_probe_query_patent_probe_query_id_patent_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    probe_query_id: Mapped[int] = mapped_column(ForeignKey("session_probe_query.id"), nullable=False, index=True)
+    patent_id: Mapped[int] = mapped_column(ForeignKey("patent.id"), nullable=False, index=True)
+    relevance_score: Mapped[Optional[float]] = mapped_column()
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    probe_query: Mapped["SessionProbeQuery"] = relationship("SessionProbeQuery", back_populates="patent_links")
+    patent: Mapped["Patent"] = relationship("Patent", back_populates="query_links")
+
+
+class ProbeQueryArticle(Base):
+    """Associação N:N entre session_probe_query e article, com o score de relevância daquele par especificamente."""
+
+    __tablename__ = "probe_query_article"
+    __table_args__ = (
+        UniqueConstraint("probe_query_id", "article_id", name="uq_probe_query_article_probe_query_id_article_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    probe_query_id: Mapped[int] = mapped_column(ForeignKey("session_probe_query.id"), nullable=False, index=True)
+    article_id: Mapped[int] = mapped_column(ForeignKey("article.id"), nullable=False, index=True)
+    relevance_score: Mapped[Optional[float]] = mapped_column()
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    probe_query: Mapped["SessionProbeQuery"] = relationship("SessionProbeQuery", back_populates="article_links")
+    article: Mapped["Article"] = relationship("Article", back_populates="query_links")

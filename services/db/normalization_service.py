@@ -4,6 +4,7 @@ Metadata normalization service for standardizing document metadata.
 
 from typing import Any, Optional, Union
 
+from core.config import settings
 from core.logging import get_logger
 from schemas.normalized_metadata import StandardizedPatentMetadata, StandardizedScholarlyMetadata
 from app.core.services.dedup_service import DedupService
@@ -114,7 +115,7 @@ class NormalizationService:
             year=year,
             legal_status=data.get("legal_status") or data.get("status"),
             relevance_score=relevance_score,
-            raw_payload=data if logger.level <= 10 else None,  # Debug only
+            raw_payload=data if settings.log_level == "DEBUG" else None,  # Debug only
         )
 
     def normalize_scholarly(
@@ -214,7 +215,7 @@ class NormalizationService:
             field_of_study=field_of_study,
             citations=int(citations) if citations else None,
             relevance_score=relevance_score,
-            raw_payload=data if logger.level <= 10 else None,  # Debug only
+            raw_payload=data if settings.log_level == "DEBUG" else None,  # Debug only
         )
 
     def normalize_from_lens_patent(
@@ -276,31 +277,33 @@ class NormalizationService:
         Returns:
             StandardizedPatentMetadata.
         """
-        # Mapear estrutura OPS
+        # Mapear estrutura OPS - dict achatado (não aninhado) produzido por
+        # _extract_biblio_fields/_extract_biblio_fields_xml em services/search/ops_service.py
         mapped_data = {
-            "id": data.get("@id"),
-            "title": data.get("biblio", {}).get("title"),
-            "abstract": data.get("biblio", {}).get("abstract"),
-            "publication_number": data.get("@id"),
-            "application_number": data.get("biblio", {}).get("application-number"),
+            "id": data.get("docdb_id"),
+            "title": data.get("invention_title"),
+            "abstract": data.get("abstract"),
+            "publication_number": data.get("docdb_id"),
+            "application_number": data.get("application_reference"),
+            "family_id": data.get("family_id"),
             "applicants": self._extract_list_field(
-                data.get("biblio", {}),
-                ["applicant", "applicants"],
+                data,
+                ["applicants", "applicant"],
             ),
             "inventors": self._extract_list_field(
-                data.get("biblio", {}),
-                ["inventor", "inventors"],
+                data,
+                ["inventors", "inventor"],
             ),
             "ipc": self._extract_list_field(
-                data.get("biblio", {}),
-                ["ipc-main", "ipc-codes"],
+                data,
+                ["ipc_classifications"],
             ),
             "cpc": self._extract_list_field(
-                data.get("biblio", {}),
-                ["cpc-codes"],
+                data,
+                ["cpc_classifications"],
             ),
-            "publication_date": data.get("biblio", {}).get("publication-date"),
-            "status": data.get("biblio", {}).get("status"),
+            "publication_date": data.get("publication_date"),
+            "status": None,  # não existe no dict achatado atual do OPS
         }
 
         return self.normalize_patent(
@@ -326,26 +329,30 @@ class NormalizationService:
         Returns:
             StandardizedScholarlyMetadata.
         """
-        # Extrair informações aninhadas
-        dc = data.get("dc", {})
-        biblio_info = data.get("biblio-info", {})
-        source_info = biblio_info.get("source-info", {})
-
-        # Mapear estrutura Scopus
+        # Mapear estrutura Scopus - chaves reais são planas, com dois-pontos
+        # literais no nome ("dc:title", "prism:doi"), não aninhadas em
+        # sub-dicts. "dc:description" é injetado pelo enriquecimento via
+        # OpenAlex (ChatService._enrich_scopus_abstracts), assim como
+        # "openalex_field_of_study" (concepts do OpenAlex, já que a Scopus
+        # não libera área de assunto por artigo pra essa API key).
         mapped_data = {
             "id": data.get("eid"),
-            "title": dc.get("title"),
-            "abstract": data.get("abstract"),
-            "doi": dc.get("identifier"),  # Scopus usa identifier para DOI
+            "title": data.get("dc:title"),
+            "abstract": data.get("dc:description"),
+            "doi": data.get("prism:doi") or data.get("dc:identifier"),
             "authors": self._extract_scopus_authors(data),
             "affiliations": self._extract_scopus_affiliations(data),
-            "source": source_info.get("sourcetitle"),
-            "journal": source_info.get("sourcetitle"),
-            "publication_date": biblio_info.get("pubdate"),
+            "source": data.get("prism:publicationName"),
+            "journal": data.get("prism:publicationName"),
+            "volume": data.get("prism:volume"),
+            "issue": data.get("prism:issueIdentifier"),
+            "pages": data.get("prism:pageRange"),
+            "publication_date": data.get("prism:coverDate"),
             "keywords": self._extract_list_field(
                 data,
-                ["keywords-plus", "keywords"],
+                ["authkeywords", "keywords"],
             ),
+            "field_of_study": data.get("openalex_field_of_study") or [],
             "cited_by_count": data.get("citedby-count"),
         }
 
@@ -419,6 +426,12 @@ class NormalizationService:
         """
         Extrai autores de estrutura Scopus.
 
+        Tenta primeiro a lista "author" (dicts com authname/surname) - formato
+        não confirmado contra resposta real desta API key. Cai pra "dc:creator"
+        (string única com o primeiro autor) se a lista vier vazia - esse
+        campo é o confirmado-confiável, já usado em outros pontos do app
+        (ver extractResultAuthor no frontend).
+
         Args:
             data: Documento Scopus.
 
@@ -427,7 +440,6 @@ class NormalizationService:
         """
         authors = []
 
-        # Scopus usa "author" como lista de dicts
         author_list = data.get("author", [])
         for author in author_list:
             if isinstance(author, dict):
@@ -437,7 +449,11 @@ class NormalizationService:
             elif isinstance(author, str):
                 authors.append(author)
 
-        return authors
+        if authors:
+            return authors
+
+        creator = data.get("dc:creator")
+        return [creator] if isinstance(creator, str) and creator.strip() else []
 
     @staticmethod
     def _extract_scopus_affiliations(data: dict[str, Any]) -> list[str]:

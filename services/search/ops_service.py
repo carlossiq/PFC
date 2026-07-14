@@ -108,6 +108,32 @@ def _find_first_by_local_name(element: ET.Element, local_name: str) -> Optional[
     return None
 
 
+def _extract_party_names_xml(party_elems: list[ET.Element], name_wrapper_tag: str) -> list[str]:
+    """
+    Extrai nomes de uma lista de elementos <applicant>/<inventor> da OPS
+    (formato XML) - ver OPSService._extract_party_names (versão JSON) pro
+    mesmo problema: cada parte aparece duas vezes (data-format "original" e
+    "epodoc") e o nome vem aninhado num wrapper (<applicant-name>/
+    <inventor-name>), não direto no elemento da parte.
+
+    Args:
+        party_elems: Elementos <applicant> ou <inventor> já encontrados.
+        name_wrapper_tag: "applicant-name" ou "inventor-name".
+
+    Returns:
+        Lista de nomes, sem duplicar data-format.
+    """
+    names = []
+    for party_elem in party_elems:
+        if party_elem.attrib.get("data-format") not in (None, "original"):
+            continue
+        name_wrapper = _find_first_by_local_name(party_elem, name_wrapper_tag)
+        name_elem = _find_first_by_local_name(name_wrapper, "name") if name_wrapper is not None else None
+        if name_elem is not None and name_elem.text:
+            names.append(name_elem.text)
+    return names
+
+
 def _find_all_by_local_name(element: ET.Element, local_name: str) -> list[ET.Element]:
     """
     Encontra todos elementos descendentes por nome local, ignorando namespace.
@@ -631,19 +657,13 @@ class OPSService:
             applicants_container = _find_first_by_local_name(exchange_doc_elem, "applicants")
             if applicants_container is not None:
                 applicant_elems = _find_all_by_local_name(applicants_container, "applicant")
-                for applicant_elem in applicant_elems:
-                    name_elem = _find_first_by_local_name(applicant_elem, "name")
-                    if name_elem is not None and name_elem.text:
-                        result["applicants"].append(name_elem.text)
+                result["applicants"] = _extract_party_names_xml(applicant_elems, "applicant-name")
 
             # Extract inventors
             inventors_container = _find_first_by_local_name(exchange_doc_elem, "inventors")
             if inventors_container is not None:
                 inventor_elems = _find_all_by_local_name(inventors_container, "inventor")
-                for inventor_elem in inventor_elems:
-                    name_elem = _find_first_by_local_name(inventor_elem, "name")
-                    if name_elem is not None and name_elem.text:
-                        result["inventors"].append(name_elem.text)
+                result["inventors"] = _extract_party_names_xml(inventor_elems, "inventor-name")
 
             # Extract IPC classifications
             ipc_container = _find_first_by_local_name(exchange_doc_elem, "classifications-ipcr")
@@ -668,6 +688,43 @@ class OPSService:
             pass
 
         return result
+
+    @staticmethod
+    def _extract_party_names(entries: Any, name_key: str) -> list[str]:
+        """
+        Extrai nomes de uma lista de applicant/inventor da OPS (formato JSON).
+
+        Cada parte aparece duas vezes na resposta - uma com "@data-format":
+        "original" (nome legível, ex: "Shen, Hai Jun") e outra "epodoc" (nome
+        normalizado/abreviado, ex: "SHEN HAI JUN [CN]") - sem filtrar isso a
+        mesma pessoa/empresa apareceria duplicada. O nome também vem aninhado
+        sob um wrapper ("applicant-name"/"inventor-name", o `name_key`), não
+        direto no dict da parte.
+
+        Args:
+            entries: Valor de parties["applicants"]["applicant"] ou
+                parties["inventors"]["inventor"] (dict único ou lista).
+            name_key: "applicant-name" ou "inventor-name".
+
+        Returns:
+            Lista de nomes, sem duplicar data-format.
+        """
+        if not isinstance(entries, list):
+            entries = [entries] if entries else []
+
+        names = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                if entry:
+                    names.append(str(entry))
+                continue
+            if entry.get("@data-format") not in (None, "original"):
+                continue
+            name_wrapper = entry.get(name_key, {})
+            name = name_wrapper.get("name", {}).get("$") if isinstance(name_wrapper, dict) else None
+            if name:
+                names.append(name)
+        return names
 
     def _extract_biblio_fields(self, exchange_doc: dict) -> dict[str, Any]:
         """
@@ -773,32 +830,14 @@ class OPSService:
                 priority_date = doc_id.get("date", {}).get("$") if isinstance(doc_id, dict) else None
                 result["priority_date"] = priority_date
 
-            # Extract applicants
+            # Extract applicants/inventors (parties.applicants.applicant / parties.inventors.inventor)
             parties = biblio_data.get("parties", {})
-            applicants = parties.get("applicants", {}).get("applicant", [])
-            if not isinstance(applicants, list):
-                applicants = [applicants] if applicants else []
-            for applicant in applicants:
-                if isinstance(applicant, dict):
-                    name_data = applicant.get("name", {})
-                    name = name_data.get("$") if isinstance(name_data, dict) else str(applicant)
-                else:
-                    name = str(applicant)
-                if name:
-                    result["applicants"].append(name)
-
-            # Extract inventors
-            inventors = parties.get("inventors", {}).get("inventor", [])
-            if not isinstance(inventors, list):
-                inventors = [inventors] if inventors else []
-            for inventor in inventors:
-                if isinstance(inventor, dict):
-                    name_data = inventor.get("name", {})
-                    name = name_data.get("$") if isinstance(name_data, dict) else str(inventor)
-                else:
-                    name = str(inventor)
-                if name:
-                    result["inventors"].append(name)
+            result["applicants"] = self._extract_party_names(
+                parties.get("applicants", {}).get("applicant", []), "applicant-name"
+            )
+            result["inventors"] = self._extract_party_names(
+                parties.get("inventors", {}).get("inventor", []), "inventor-name"
+            )
 
             # Extract IPC classifications
             classifications = biblio_data.get("classifications-ipcr", {})
@@ -1242,26 +1281,14 @@ class OPSService:
                         break
                 result["abstract"] = abstract_text if abstract_text else None
 
-            # Extract inventors
+            # Extract inventors/applicants (mesma estrutura aninhada - ver _extract_party_names)
             parties = biblio_data_section.get("parties", {})
-            inventors = parties.get("inventors", {}).get("inventor", [])
-            if inventors:
-                if not isinstance(inventors, list):
-                    inventors = [inventors]
-                for inventor in inventors:
-                    name = inventor.get("name", {}).get("$") if isinstance(inventor, dict) else str(inventor)
-                    if name:
-                        result["inventors"].append(name)
-
-            # Extract applicants
-            applicants = parties.get("applicants", {}).get("applicant", [])
-            if applicants:
-                if not isinstance(applicants, list):
-                    applicants = [applicants]
-                for applicant in applicants:
-                    name = applicant.get("name", {}).get("$") if isinstance(applicant, dict) else str(applicant)
-                    if name:
-                        result["applicants"].append(name)
+            result["inventors"] = self._extract_party_names(
+                parties.get("inventors", {}).get("inventor", []), "inventor-name"
+            )
+            result["applicants"] = self._extract_party_names(
+                parties.get("applicants", {}).get("applicant", []), "applicant-name"
+            )
 
         except Exception:
             pass

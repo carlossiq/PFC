@@ -75,11 +75,12 @@ export async function rebuildProbeQuery(
 
 export interface ProbeSearchResultItem {
   title: string
-  // Dono/titular da patente (campo "applicants") ou autor do artigo (campo
+  //  autor do artigo (campo
   // "dc:creator") - null se a API não retornou o campo pro item.
   author: string | null
-  // Ano de publicação - OPS: "publication_date" (YYYYMMDD); Scopus:
-  // "prism:coverDate" (YYYY-MM-DD). null se não veio ou não deu pra parsear.
+  // Inventor da patente (campo "inventors") - só preenchido pra OPS. 
+  inventor: string | null
+  // Ano de publicação - OPS: "publication_date" (YYYYMMDD); 
   year: number | null
   // Só preenchido pra OPS (patentes).
   ipcCodes: string[]
@@ -110,6 +111,11 @@ export interface ProbeSearchResult {
   resultsCount: number
   totalAvailable: number | null
   items: ProbeSearchResultItem[]
+  // Dicts crus (não transformados) devolvidos pelo backend - carregados até o
+  // save da sessão pra persistir os documentos encontrados em patent/article
+  // (ver sessionInput.ts). O mapeamento campo-a-campo pras colunas do banco
+  // acontece no backend (NormalizationService), não aqui.
+  rawItems: Record<string, unknown>[]
   summary: ProbeSearchSummary
 }
 
@@ -129,6 +135,15 @@ export function extractResultAuthor(item: Record<string, unknown>, api: ProbeApi
   }
   const creator = item['dc:creator']
   return typeof creator === 'string' && creator.trim() ? creator : null
+}
+
+// Só a OPS retorna o inventor por item (campo "inventors") - diferente de
+// "applicants" (titular/assignee), que é quem detém a patente, não quem
+// de fato inventou.
+export function extractResultInventor(item: Record<string, unknown>, api: ProbeApi): string | null {
+  if (api !== 'ops') return null
+  const inventors = item['inventors']
+  return Array.isArray(inventors) && inventors.length > 0 ? inventors.join(', ') : null
 }
 
 // OPS: "publication_date" vem como "YYYYMMDD" (ver _extract_biblio_fields no
@@ -189,6 +204,35 @@ function summarizeItems(items: ProbeSearchResultItem[]): ProbeSearchSummary {
   }
 }
 
+// Constrói um ProbeSearchResult a partir de dicts crus (title/author/ipc/etc
+// por chave específica de cada API) - usado tanto pela busca real quanto pra
+// reconstruir os resultados de uma sessão retomada (ver sessionHydration.ts),
+// a partir dos documentos persistidos em patent/article.
+export function buildProbeSearchResult(
+  rawItems: Record<string, unknown>[],
+  api: ProbeApi,
+  totalAvailable: number | null = null,
+): ProbeSearchResult {
+  const items = rawItems.map((r) => ({
+    title: extractResultTitle(r, api),
+    author: extractResultAuthor(r, api),
+    inventor: extractResultInventor(r, api),
+    year: extractResultYear(r, api),
+    ipcCodes: extractIpcCodes(r, api),
+    country: extractResultCountry(r, api),
+    sourceTitle: extractSourceTitle(r, api),
+    openAccess: extractOpenAccess(r, api),
+  }))
+  return {
+    success: true,
+    resultsCount: items.length,
+    totalAvailable,
+    items,
+    rawItems,
+    summary: summarizeItems(items),
+  }
+}
+
 // Roda a busca real (OPS ou Scopus) com a query já montada no Step3 - é a
 // mesma query devolvida por generateProbeQueriesMulti/rebuildProbeQuery
 // (campo `query` de QueryOptionResult). O backend pede topK+5 como buffer
@@ -205,20 +249,9 @@ export async function runProbeSearch(
   }
   const result = data.data
   const results: Record<string, unknown>[] = result.results ?? []
-  const items = results.map((r) => ({
-    title: extractResultTitle(r, api),
-    author: extractResultAuthor(r, api),
-    year: extractResultYear(r, api),
-    ipcCodes: extractIpcCodes(r, api),
-    country: extractResultCountry(r, api),
-    sourceTitle: extractSourceTitle(r, api),
-    openAccess: extractOpenAccess(r, api),
-  }))
   return {
+    ...buildProbeSearchResult(results, api, result.total_available ?? null),
     success: result.success,
     resultsCount: result.results_count,
-    totalAvailable: result.total_available ?? null,
-    items,
-    summary: summarizeItems(items),
   }
 }

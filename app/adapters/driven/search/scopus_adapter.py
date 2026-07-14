@@ -22,6 +22,7 @@ class ScopusAdapter:
         self,
         query: dict[str, Any],
         run_id: Optional[str] = None,
+        max_results: int = 500,
     ) -> SearchResult:
-        result = await self._service.search(query, run_id)
+        result = await self._service.search(query, run_id, max_results=max_results)
         return to_domain(result)

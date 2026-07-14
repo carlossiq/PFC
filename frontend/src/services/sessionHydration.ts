@@ -1,6 +1,7 @@
 import { resolveIntakePayload } from './refineTopic'
 import type { ResearchSessionSummary } from './researchSession'
 import type { SessionProbeQueryRow } from './sessionInput'
+import { buildProbeSearchResult } from './probeQuery'
 import type { QueryOptionResult } from './probeQuery'
 import type { FormStorePatch } from '../stores/useFormStore'
 
@@ -53,6 +54,22 @@ export function mapSessionToFormStorePatch(session: ResearchSessionSummary): For
     ]
   }
 
+  // Reconstrói o resultado da busca a partir dos documentos persistidos
+  // (patent/article), pra "Próximo" no Step3 não refazer a busca à toa ao
+  // retomar uma sessão. A assinatura precisa bater exatamente com o que
+  // Step3.handleConfirm vai calcular a partir do query reconstruído acima
+  // (`{ query: row.query_text }`), senão o cache não é reconhecido.
+  function toResults(row: SessionProbeQueryRow | undefined, api: 'ops' | 'scopus') {
+    if (!row || row.documents.length === 0) return { result: null, querySignature: null }
+    return {
+      result: buildProbeSearchResult(row.documents, api),
+      querySignature: JSON.stringify({ query: row.query_text }),
+    }
+  }
+
+  const patentResults = toResults(patentQuery, 'ops')
+  const articleResults = toResults(articleQuery, 'scopus')
+
   return {
     sessionId: session.id,
     sessionPublicId: session.public_id,
@@ -72,5 +89,9 @@ export function mapSessionToFormStorePatch(session: ResearchSessionSummary): For
     step3ArticleSelectedIndex: articleQuery ? 0 : null,
     step3ArticleGeneratedForIntake: articleQuery ? intakeSignature : null,
     step3ArticleIterations: articleQuery ? Math.max(0, articleQuery.iterations - 1) : 0,
+    step3PatentResults: patentResults.result,
+    step3PatentResultsQuery: patentResults.querySignature,
+    step3ArticleResults: articleResults.result,
+    step3ArticleResultsQuery: articleResults.querySignature,
   }
 }

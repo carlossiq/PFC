@@ -45,17 +45,18 @@ function ProbeResultsStatTiles({ api, results }: { api: ProbeApi; results: Probe
 
   return (
     <div className="grid grid-cols-3 gap-2">
+        <StatTile
+        label="Anos cobertos"
+        value={formatYearRange(summary)}
+        sub={summary.distinctYears > 0 ? `${summary.distinctYears} distintos` : undefined}
+        />
       <StatTile
         label="Acesso aberto"
         value={`${results.resultsCount > 0 ? Math.round((summary.openAccessCount / results.resultsCount) * 100) : 0}%`}
         tooltip="Publicação Open Access: o artigo em si está disponível gratuitamente ao público, sem paywall nem assinatura institucional. Não indica se temos o abstract - todo artigo listado aqui já tem abstract garantido."
         sub={`${summary.openAccessCount} de ${results.resultsCount}`}
       />
-      <StatTile
-        label="Anos cobertos"
-        value={formatYearRange(summary)}
-        sub={summary.distinctYears > 0 ? `${summary.distinctYears} distintos` : undefined}
-      />
+    
       <StatTile label="Revistas/fontes" value={summary.distinctSources} />
     </div>
   )
@@ -121,8 +122,8 @@ function ProbeResultsPanel({ title, api, results, isExpanded, onToggle }: ProbeR
                     <p className="text-sm font-medium text-gray-900 leading-snug">{item.title}</p>
                     <p className="text-xs text-gray-500 mt-0.5">
                       {item.year && <span className="font-semibold text-gray-400">{item.year}</span>}
-                      {item.year && item.author && ' · '}
-                      {item.author}
+                      {item.year && (api === 'ops' ? item.inventor : item.author) && ' · '}
+                      {api === 'ops' ? item.inventor : item.author}
                     </p>
                   </div>
                 </li>

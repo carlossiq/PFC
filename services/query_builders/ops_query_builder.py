@@ -254,9 +254,17 @@ class OPSQueryBuilder(BaseQueryBuilder):
         if not field.values:
             return None
 
+        values = field.values
+        if ops_field in ("ipc", "cpc"):
+            # A notação oficial de IPC/CPC tem espaço (ex: "G06N 3/00"), mas a
+            # OPS devolve erro 500 (SERVER.DomainAccess) se esse espaço for
+            # incluído na CQL - precisa vir compacto ("G06N3/00"). A IA gera o
+            # valor no formato oficial (com espaço), então normaliza aqui.
+            values = [val.replace(" ", "") for val in values]
+
         term_clauses = [
             f'{ops_field} = {self._escape_cql_term(val)}'
-            for val in field.values
+            for val in values
         ]
 
         if len(term_clauses) == 1:
