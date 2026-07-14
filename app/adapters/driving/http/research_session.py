@@ -13,7 +13,13 @@ from app.adapters.driving.http.dependencies import get_db_session
 from app.adapters.driving.http.session_persistence import persist_session_input
 from app.adapters.driving.http.session_probe_documents import article_to_raw_item, patent_to_raw_item
 from core.logging import get_logger
-from db.research_session_models import ResearchSession, SessionInput, SessionProbeQuery
+from db.research_session_models import (
+    ProbeQueryArticle,
+    ProbeQueryPatent,
+    ResearchSession,
+    SessionInput,
+    SessionProbeQuery,
+)
 from schemas.research_session import ResearchSessionSummary
 from schemas.response import SuccessResponse
 from schemas.session_input import SessionInputSaveRequest, SessionInputSaveResponse
@@ -68,8 +74,12 @@ async def get_session(
         .where(ResearchSession.id == session_id)
         .options(
             selectinload(ResearchSession.inputs),
-            selectinload(ResearchSession.probe_queries).selectinload(SessionProbeQuery.patent_links),
-            selectinload(ResearchSession.probe_queries).selectinload(SessionProbeQuery.article_links),
+            selectinload(ResearchSession.probe_queries)
+            .selectinload(SessionProbeQuery.patent_links)
+            .selectinload(ProbeQueryPatent.patent),
+            selectinload(ResearchSession.probe_queries)
+            .selectinload(SessionProbeQuery.article_links)
+            .selectinload(ProbeQueryArticle.article),
         )
     )
     result = await session.execute(stmt)
@@ -103,11 +113,7 @@ async def update_session(
     stmt = (
         select(ResearchSession)
         .where(ResearchSession.id == session_id)
-        .options(
-            selectinload(ResearchSession.inputs),
-            selectinload(ResearchSession.probe_queries).selectinload(SessionProbeQuery.patent_links),
-            selectinload(ResearchSession.probe_queries).selectinload(SessionProbeQuery.article_links),
-        )
+        .options(selectinload(ResearchSession.inputs), selectinload(ResearchSession.probe_queries))
     )
     result = await session.execute(stmt)
     research_session = result.scalar_one_or_none()
