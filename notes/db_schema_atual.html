@@ -1,0 +1,201 @@
+
+<h2 class="sr-only">Esquema relacional atual — session-centric (schema ativo)</h2>
+<style>
+#erd3 { width: 100%; overflow-x: auto; }
+#erd3 svg { min-width: 860px; }
+#erd3 svg.erDiagram .divider path { stroke-opacity: 0.5; }
+#erd3 svg.erDiagram .row-rect-odd path,
+#erd3 svg.erDiagram .row-rect-odd rect,
+#erd3 svg.erDiagram .row-rect-even path,
+#erd3 svg.erDiagram .row-rect-even rect { stroke: none !important; }
+</style>
+<p style="font-size:13px;color:#73726c;max-width:860px;margin:0 0 12px;">
+  Esquema atual do módulo <strong>session-centric</strong> (o que está sendo evoluído agora, em
+  <code>db/research_session_models.py</code>, migrado via Alembic). O <code>research_session</code>
+  antigo (com <code>status</code>) virou <code>completed: boolean</code>; <code>llm_candidate</code> e
+  <code>search_run</code> saíram do desenho — a refinação de estratégia agora é o auto-relacionamento
+  <code>session_input.parent_id</code>, e cada busca por fonte vira uma linha em
+  <code>session_probe_query</code>. <code>patent</code>/<code>article</code> são desnormalizados e
+  deduplicados globalmente (não pertencem a uma sessão específica), e se conectam às buscas via
+  tabelas de associação N:N. <code>session_metrics</code> e <code>session_asset</code> do esquema
+  antigo não existem aqui ainda — métricas e relatório continuam rodando sobre uma tabela
+  <code>research</code> legada e desconectada (<code>db/research_models.py</code>), fora deste diagrama.
+</p>
+<div id="erd3"></div>
+<script type="module">
+import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+await document.fonts.ready;
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  fontFamily: '"Anthropic Sans", sans-serif',
+  themeVariables: {
+    darkMode: dark,
+    fontSize: '13px',
+    fontFamily: '"Anthropic Sans", sans-serif',
+    lineColor: dark ? '#9c9a92' : '#73726c',
+    textColor: dark ? '#c2c0b6' : '#3d3d3a',
+    primaryColor: dark ? '#2a2860' : '#EEEDFE',
+    primaryBorderColor: dark ? '#534AB7' : '#534AB7',
+    primaryTextColor: dark ? '#CECBF6' : '#26215C',
+    secondaryColor: dark ? '#043430' : '#E1F5EE',
+    tertiaryColor: dark ? '#3d2800' : '#FAEEDA',
+  },
+});
+
+const diagram = `erDiagram
+
+  research_session {
+    int id PK
+    string public_id UK
+    string name
+    boolean completed
+    string patent_source
+    string scholarly_source
+    float relevance_threshold
+    timestamp created_at
+    timestamp updated_at
+  }
+
+  session_input {
+    int id PK
+    int session_id FK
+    int parent_id FK
+    string theme
+    text description
+    string area_of_study
+    json keywords
+    int year_from
+    int year_to
+    int iterations
+  }
+
+  session_probe_query {
+    int id PK
+    int session_id FK
+    string fonte UK
+    text query_text
+    json fields
+    int year_from
+    int year_to
+    float complexity_score
+    string complexity_level
+    int result_count
+    int iterations
+    timestamp created_at
+  }
+
+  session_ai_call {
+    int id PK
+    int session_id FK
+    string step
+    string provider
+    string model
+    float duration_ms
+    int input_tokens
+    int output_tokens
+    int total_tokens
+    int attempts
+    timestamp created_at
+  }
+
+  patent {
+    int id PK
+    string dedup_key UK
+    string source
+    string source_record_id
+    text title
+    text abstract
+    string publication_number
+    string application_number
+    string family_id
+    json applicants
+    json inventors
+    json ipc_codes
+    json cpc_codes
+    string filing_date
+    string publication_date
+    string grant_date
+    int year
+    string legal_status
+    string country
+    timestamp created_at
+  }
+
+  article {
+    int id PK
+    string dedup_key UK
+    string source
+    string source_record_id
+    text title
+    text abstract
+    string doi
+    json authors
+    json affiliations
+    json affiliation_countries
+    string journal_or_source
+    string volume
+    string issue
+    string pages
+    string publication_date
+    int year
+    json keywords
+    json field_of_study
+    int citations
+    timestamp created_at
+  }
+
+  probe_query_patent {
+    int id PK
+    int probe_query_id FK
+    int patent_id FK
+    float relevance_score
+    timestamp created_at
+  }
+
+  probe_query_article {
+    int id PK
+    int probe_query_id FK
+    int article_id FK
+    float relevance_score
+    timestamp created_at
+  }
+
+  research_session ||--o{ session_input : "define"
+  session_input ||--o{ session_input : "refina"
+  research_session ||--o{ session_probe_query : "executa"
+  research_session ||--o{ session_ai_call : "registra"
+  session_probe_query ||--o{ probe_query_patent : "encontra"
+  patent ||--o{ probe_query_patent : "aparece em"
+  session_probe_query ||--o{ probe_query_article : "encontra"
+  article ||--o{ probe_query_article : "aparece em"
+`;
+
+const { svg } = await mermaid.render('erd3-svg', diagram);
+document.getElementById('erd3').innerHTML = svg;
+
+document.querySelectorAll('#erd3 svg.erDiagram .node').forEach(node => {
+  const firstPath = node.querySelector('path[d]');
+  if (!firstPath) return;
+  const d = firstPath.getAttribute('d');
+  const nums = d.match(/-?[\d.]+/g)?.map(Number);
+  if (!nums || nums.length < 8) return;
+  const xs = [nums[0], nums[2], nums[4], nums[6]];
+  const ys = [nums[1], nums[3], nums[5], nums[7]];
+  const x = Math.min(...xs), y = Math.min(...ys);
+  const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+  const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  rect.setAttribute('x', x); rect.setAttribute('y', y);
+  rect.setAttribute('width', w); rect.setAttribute('height', h);
+  rect.setAttribute('rx', '8');
+  for (const a of ['fill', 'stroke', 'stroke-width', 'class', 'style']) {
+    if (firstPath.hasAttribute(a)) rect.setAttribute(a, firstPath.getAttribute(a));
+  }
+  firstPath.replaceWith(rect);
+});
+
+document.querySelectorAll('#erd3 svg.erDiagram .row-rect-odd path, #erd3 svg.erDiagram .row-rect-even path').forEach(p => {
+  p.setAttribute('stroke', 'none');
+});
+</script>
