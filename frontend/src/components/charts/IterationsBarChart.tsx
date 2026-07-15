@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { getSessionTotalIterations, type ResearchSessionSummary } from '../services/researchSession'
+import { getSessionTotalIterations, type ResearchSessionSummary } from '../../services/researchSession'
 import {
   CHART_AXIS_LABEL_TEXT, CHART_AXIS_TICK_TEXT, CHART_BASELINE, CHART_BRAND_GREEN,
   CHART_BRAND_GREEN_HOVER, CHART_GRID_LINE, CHART_HEIGHT, CHART_MAX_BUCKETS, CHART_VALUE_LABEL_TEXT,
-} from '../constants/charts'
+} from '../../constants/charts'
 
 interface Bucket {
   key: string
@@ -82,7 +82,8 @@ export function IterationsBarChart({ sessions }: IterationsBarChartProps) {
     return () => observer.disconnect()
   }, [showTable])
 
-  const values = sessions.map(getSessionTotalIterations)
+  const completedSessions = sessions.filter((s) => s.completed)
+  const values = completedSessions.map(getSessionTotalIterations)
   const data = buildBuckets(values).filter((d) => d.count > 0)
 
   if (data.length === 0) {
@@ -127,6 +128,7 @@ export function IterationsBarChart({ sessions }: IterationsBarChartProps) {
           <p className="text-xs text-gray-500 mt-1">
             Quanta sessões consumiram um certo valor de iterações
             com a IA para gerar os resultados das propecções.
+            Considera apenas sessões completas.
           </p>
         </div>
         <div className="flex gap-1 shrink-0 bg-gray-100 rounded-lg p-1">

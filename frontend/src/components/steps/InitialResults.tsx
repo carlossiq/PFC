@@ -23,9 +23,9 @@ function formatYearRange(summary: ProbeSearchResult['summary']): string {
 }
 
 // As outras 2 estatísticas variam por API: patentes destacam classificação
-// IPC e jurisdição (dados que só o OPS retorna); artigos destacam acesso
-// aberto e revista/fonte (só o Scopus retorna). O tile "Anos cobertos" é
-// idêntico nos dois painéis (mesmo texto, mesmo tamanho).
+// IPC e jurisdição (dados que só o OPS retorna); artigos destacam países
+// (afiliação dos autores) e revista/fonte (só o Scopus retorna). O tile
+// "Anos cobertos" é idêntico nos dois painéis (mesmo texto, mesmo tamanho).
 function ProbeResultsStatTiles({ api, results }: { api: ProbeApi; results: ProbeSearchResult }) {
   const { summary } = results
 
@@ -51,12 +51,10 @@ function ProbeResultsStatTiles({ api, results }: { api: ProbeApi; results: Probe
         sub={summary.distinctYears > 0 ? `${summary.distinctYears} distintos` : undefined}
         />
       <StatTile
-        label="Acesso aberto"
-        value={`${results.resultsCount > 0 ? Math.round((summary.openAccessCount / results.resultsCount) * 100) : 0}%`}
-        tooltip="Publicação Open Access: o artigo em si está disponível gratuitamente ao público, sem paywall nem assinatura institucional. Não indica se temos o abstract - todo artigo listado aqui já tem abstract garantido."
-        sub={`${summary.openAccessCount} de ${results.resultsCount}`}
-      />
-    
+        label="Países"
+        value={summary.distinctCountries}
+              />
+
       <StatTile label="Revistas/fontes" value={summary.distinctSources} />
     </div>
   )
@@ -144,7 +142,7 @@ interface InitialResultsProps {
 }
 
 export function InitialResults({ step, substep, onBack, onNext }: InitialResultsProps) {
-  const { step3PatentResults, step3ArticleResults, setSessionId } = useFormStore()
+  const { step3PatentResults, step3ArticleResults, setSessionId, aiCallsInFlight } = useFormStore()
 
   const [expandedPanel, setExpandedPanel] = useState<'patent' | 'article' | null>(null)
 
@@ -156,9 +154,7 @@ export function InitialResults({ step, substep, onBack, onNext }: InitialResults
 
   // Marca a sessão como concluída (completed=true). Os steps seguintes
   // (Exploração Final, Geração do Relatório) ainda são placeholder
-  // (OutrosSteps.tsx), então "finalizar" aqui é o fim do fluxo implementado
-  // até agora, não do wizard completo. Atualiza (PUT) em vez de criar de novo
-  // se a sessão já tiver sido salva antes via "Salvar progresso".
+  
   async function handleFinalize() {
     setIsFinalizing(true)
     setFinalizeError(null)
@@ -168,6 +164,8 @@ export function InitialResults({ step, substep, onBack, onNext }: InitialResults
       const payload = buildSaveSessionPayload(formState, true)
       const result = await saveSession(formState.sessionId, formState.sessionName, payload)
       setSessionId(result.session_id, result.session_public_id)
+      // Evita reenviar (e duplicar) as mesmas chamadas de IA num próximo save.
+      useFormStore.getState().clearAiCallLog()
       setFinalizeResult(
         `Sessão ${result.session_public_id} finalizada (session_id=${result.session_id}, root_input_id=${result.root.id}${
           result.generated ? `, generated_input_id=${result.generated.id}, iterations=${result.generated.iterations}` : ''
@@ -231,7 +229,7 @@ export function InitialResults({ step, substep, onBack, onNext }: InitialResults
         <button
           type="button"
           onClick={handleFinalize}
-          disabled={isFinalizing}
+          disabled={isFinalizing || aiCallsInFlight > 0}
           className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors"
         >
           {isFinalizing ? 'Finalizando...' : 'Finalizar Sessão'}

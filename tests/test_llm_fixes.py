@@ -104,7 +104,7 @@ class TestMockService:
         )
 
         service = MockLLMService()
-        output = await service.process_intake(intake, "dummy prompt")
+        output, usage = await service.process_intake(intake, "dummy prompt")
 
         # TITLE should have groups
         assert output.title.groups
@@ -133,7 +133,7 @@ class TestMockService:
         )
 
         service = MockLLMService()
-        output = await service.process_intake(intake, "dummy prompt")
+        output, usage = await service.process_intake(intake, "dummy prompt")
 
         # Should contain multi-word expressions, not split words
         all_terms = []
@@ -156,7 +156,7 @@ class TestMockService:
         )
 
         service = MockLLMService()
-        output = await service.process_intake(intake, "dummy prompt")
+        output, usage = await service.process_intake(intake, "dummy prompt")
 
         # Simple fields should be empty
         assert output.ipc.values == []

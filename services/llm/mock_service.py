@@ -5,8 +5,10 @@ Returns realistic structured outputs respecting enabled fields and contract rule
 """
 
 import re
-from typing import Optional
+import time
+from typing import Any, Optional
 
+from app.core.domain.types import LLMUsage
 from schemas.intake import InputIntake
 from schemas.llm import LLMOutput, OperatorEnum, SimpleFieldQuery, TermGroup, TextualFieldQuery
 from services.llm.base import BaseLLMService
@@ -41,7 +43,7 @@ class MockLLMService(BaseLLMService):
         self,
         intake: InputIntake,
         system_prompt: str,
-    ) -> LLMOutput:
+    ) -> tuple[LLMOutput, LLMUsage]:
         """
         Generate realistic mock LLM output respecting contract rules.
 
@@ -50,8 +52,12 @@ class MockLLMService(BaseLLMService):
             system_prompt: System prompt (used to extract enabled fields)
 
         Returns:
-            LLMOutput with realistic structured queries
+            LLMOutput with realistic structured queries, and a LLMUsage with
+            no real token/cost data (mock never calls a real API) - it exists
+            only so callers can treat every LLMPort implementation uniformly.
         """
+        start = time.perf_counter()
+
         # Extract semantic concepts from input
         concepts = self._extract_concepts(intake)
 
@@ -67,7 +73,7 @@ class MockLLMService(BaseLLMService):
         ipc_query = SimpleFieldQuery(values=[])
         cpc_query = SimpleFieldQuery(values=[])
 
-        return LLMOutput(
+        output = LLMOutput(
             title=title_query,
             abstract=abstract_query,
             claims=claims_query,
@@ -84,6 +90,56 @@ class MockLLMService(BaseLLMService):
             source_title=SimpleFieldQuery(values=[]),
             year=SimpleFieldQuery(values=[]),
         )
+        usage = LLMUsage(
+            provider=self.provider_name,
+            model="mock",
+            duration_ms=(time.perf_counter() - start) * 1000,
+        )
+        return output, usage
+
+    async def call_raw_json(
+        self,
+        prompt: str,
+        user_input: str,
+    ) -> tuple[dict[str, Any], LLMUsage]:
+        """
+        Generate a plausible mock JSON response for the raw-JSON flows
+        (topic refinement/specification) - shares the same concept
+        extraction as process_intake, just formatted as a raw dict instead
+        of a validated LLMOutput.
+
+        Args:
+            prompt: System prompt (unused - mock doesn't branch on it).
+            user_input: Formatted user input block (e.g. "Tema: ...\\nDescrição: ...").
+
+        Returns:
+            Dict resembling both the refine-topic ("candidates") and
+            specify-topic ("theme"/"description") response shapes, and a
+            LLMUsage with no real token/cost data.
+        """
+        start = time.perf_counter()
+
+        theme_match = re.search(r"Tema:\s*(.+)", user_input)
+        theme = theme_match.group(1).strip() if theme_match else "tema de exemplo"
+        description_match = re.search(r"Descrição:\s*(.+)", user_input)
+        description = description_match.group(1).strip() if description_match else None
+
+        candidates = [
+            {"theme": f"{theme} (variação {i + 1})", "description": description or f"Descrição gerada para {theme}"}
+            for i in range(4)
+        ]
+
+        result = {
+            "theme": candidates[0]["theme"],
+            "description": candidates[0]["description"],
+            "candidates": candidates,
+        }
+        usage = LLMUsage(
+            provider=self.provider_name,
+            model="mock",
+            duration_ms=(time.perf_counter() - start) * 1000,
+        )
+        return result, usage
 
     def _extract_concepts(self, intake: InputIntake) -> list[list[str]]:
         """

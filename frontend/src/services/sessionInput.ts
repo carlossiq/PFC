@@ -1,5 +1,6 @@
 import { apiClient } from './api'
 import type { QueryOptionResult } from './probeQuery'
+import type { AiUsage } from './aiUsage'
 
 export interface SessionInputRootPayload {
   theme: string
@@ -111,6 +112,24 @@ export interface SessionInputRow {
   iterations: number
 }
 
+// Uma chamada de IA (refino de tema, especificação, geração de query
+// probe/final) medida no backend e registrada na sessão - log append-only,
+// pode ter várias linhas por step (inclusive tentativas descartadas em
+// "gerar outras"). Ver schemas/session_input.py:SessionAiCallRow.
+export interface SessionAiCallRow {
+  id: number
+  session_id: number
+  step: string
+  provider: string
+  model: string
+  duration_ms: number
+  input_tokens: number | null
+  output_tokens: number | null
+  total_tokens: number | null
+  attempts: number
+  created_at: string
+}
+
 export interface SaveSessionResponse {
   session_id: number
   session_public_id: string
@@ -119,6 +138,7 @@ export interface SaveSessionResponse {
   root: SessionInputRow
   generated: SessionInputRow | null
   probe_queries: SessionProbeQueryRow[]
+  ai_calls: SessionAiCallRow[]
 }
 
 // Fatia do useFormStore necessária pra montar o payload de save - qualquer
@@ -135,12 +155,14 @@ export interface SaveSessionFormState {
   step3ArticleSelectedIndex: number | null
   step3ArticleIterations: number
   step3ArticleResults: { resultsCount: number; rawItems: Record<string, unknown>[] } | null
+  aiCallLog: AiUsage[]
 }
 
 export interface SaveSessionPayload {
   root: SessionInputRootPayload
   generated: SessionInputGeneratedPayload | null
   probe_queries: SessionProbeQueryPayload[]
+  ai_calls: AiUsage[]
   completed: boolean
 }
 
@@ -185,6 +207,7 @@ export function buildSaveSessionPayload(
     probe_queries: [patentQuery, articleQuery].filter(
       (q): q is SessionProbeQueryPayload => q !== null
     ),
+    ai_calls: formState.aiCallLog,
     completed,
   }
 }

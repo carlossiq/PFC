@@ -9,6 +9,7 @@ import type { FormInput, ThemeInput } from '../services/refineTopic'
 import type { ProbeApi } from '../constants/probeFields'
 import { toCsv, parseCsv } from '../components/CandidatePicker'
 import { STEPS } from '../constants/steps'
+import { useFormStore } from '../stores/useFormStore'
 
 // A API da IA (Gemini/Anthropic) pode devolver mensagens de erro brutas e
 // longas (ex: 429 com detalhes de quota) — resume pros casos conhecidos em
@@ -82,6 +83,9 @@ export function useProbeQuerySection({
     incrementIterations,
     resetIterations,
   } = slice
+  const addAiUsage = useFormStore((state) => state.addAiUsage)
+  const beginAiCall = useFormStore((state) => state.beginAiCall)
+  const endAiCall = useFormStore((state) => state.endAiCall)
 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -99,15 +103,27 @@ export function useProbeQuerySection({
   // Assinatura do intake que seria usado AGORA pra gerar queries - comparada
   // com generatedForIntake pra saber se as queries existentes ainda são
   // válidas pro parâmetro atual.
-  const currentIntakeSignature = JSON.stringify(resolveIntakePayload(input, step2SelectedTheme))
+  const currentIntake = resolveIntakePayload(input, step2SelectedTheme)
+  const currentIntakeSignature = JSON.stringify(currentIntake)
+  // theme é obrigatório no backend (InputIntake.theme, min_length=1) - sem
+  // isso a chamada sempre falha com 422. Pode ficar vazio momentaneamente se
+  // o useFormStore for reinicializado (ex: reset por Fast Refresh) enquanto
+  // o Step3 permanece montado; sem essa guarda, o efeito abaixo dispara a
+  // geração automaticamente com um intake inválido.
+  const hasValidTheme = !!currentIntake.theme?.trim()
 
   const generateQueries = useCallback(async () => {
     const requestId = ++requestIdRef.current
     setIsLoading(true)
     setError(null)
+    // Trava os botões de salvar/finalizar enquanto essa chamada está em
+    // andamento - sem isso, salvar antes dela resolver deixaria essa chamada
+    // de fora do `ai_calls` enviado (addAiUsage só roda depois do await).
+    beginAiCall()
     try {
-      const results = await generateProbeQueriesMulti(input, step2SelectedTheme, api)
+      const { queries: results, aiUsage } = await generateProbeQueriesMulti(input, step2SelectedTheme, api)
       if (requestIdRef.current !== requestId) return
+      addAiUsage(aiUsage)
       setQueries(results, currentIntakeSignature)
       const firstSuccessIndex = results.findIndex((q) => q.success)
       setSelectedIndex(firstSuccessIndex !== -1 ? firstSuccessIndex : 0)
@@ -122,13 +138,15 @@ export function useProbeQuerySection({
       )
     } finally {
       if (requestIdRef.current === requestId) setIsLoading(false)
+      endAiCall()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input, step2SelectedTheme, api, setQueries, setSelectedIndex])
+  }, [input, step2SelectedTheme, api, setQueries, setSelectedIndex, addAiUsage, beginAiCall, endAiCall])
 
   useEffect(() => {
     if (step !== STEPS.INITIAL_EXPLORATION || substep !== null) return
     if (isGeneratingRef.current) return
+    if (!hasValidTheme) return
     const needsRegeneration = !queries || generatedForIntake !== currentIntakeSignature
     if (needsRegeneration) {
       // Regeneração automática (primeira geração ou input de origem mudou) -

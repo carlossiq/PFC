@@ -5,6 +5,7 @@ Base abstract class for LLM service providers.
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
+from app.core.domain.types import LLMUsage
 from schemas.intake import InputIntake
 from schemas.llm import LLMOutput
 
@@ -45,7 +46,7 @@ class BaseLLMService(ABC):
         self,
         intake: InputIntake,
         system_prompt: str,
-    ) -> LLMOutput:
+    ) -> tuple[LLMOutput, LLMUsage]:
         """
         Processa entrada de prospecção e retorna consultas estruturadas.
 
@@ -54,7 +55,8 @@ class BaseLLMService(ABC):
             system_prompt: Prompt do sistema com instruções para o LLM.
 
         Returns:
-            Saída estruturada do LLM com campos de busca.
+            Saída estruturada do LLM com campos de busca, e a duração/tokens
+            da chamada.
 
         Raises:
             Exception: Se o processamento falhar.
@@ -66,7 +68,7 @@ class BaseLLMService(ABC):
         self,
         prompt: str,
         user_input: str,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], LLMUsage]:
         """
         Chama LLM e retorna JSON bruto parseado.
 
@@ -78,7 +80,8 @@ class BaseLLMService(ABC):
             user_input: Entrada do usuário.
 
         Returns:
-            Dicionário com resposta JSON bruta da LLM.
+            Dicionário com resposta JSON bruta da LLM, e a duração/tokens da
+            chamada.
 
         Raises:
             Exception: Se a chamada LLM falhar ou JSON for inválido.

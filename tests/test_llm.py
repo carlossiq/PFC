@@ -35,7 +35,7 @@ async def test_mock_llm_processes_intake():
     llm = LLMServiceFactory.create(provider="mock")
     intake = InputIntake(theme="machine learning")
 
-    output = await llm.process_intake(
+    output, usage = await llm.process_intake(
         intake=intake,
         system_prompt="test prompt",
     )

@@ -114,6 +114,7 @@ class NormalizationService:
             grant_date=grant_date,
             year=year,
             legal_status=data.get("legal_status") or data.get("status"),
+            country=data.get("country"),
             relevance_score=relevance_score,
             raw_payload=data if settings.log_level == "DEBUG" else None,  # Debug only
         )
@@ -152,6 +153,10 @@ class NormalizationService:
         affiliations = self._extract_list_field(
             data,
             ["affiliations", "affiliation", "author_affiliations", "institutions"],
+        )
+        affiliation_countries = self._extract_list_field(
+            data,
+            ["affiliation_countries"],
         )
 
         # Extrair publicação
@@ -205,6 +210,7 @@ class NormalizationService:
             doi=doi,
             authors=authors,
             affiliations=affiliations,
+            affiliation_countries=affiliation_countries,
             journal_or_source=journal_or_source,
             volume=volume,
             issue=issue,
@@ -304,6 +310,7 @@ class NormalizationService:
             ),
             "publication_date": data.get("publication_date"),
             "status": None,  # não existe no dict achatado atual do OPS
+            "country": data.get("country"),
         }
 
         return self.normalize_patent(
@@ -342,6 +349,7 @@ class NormalizationService:
             "doi": data.get("prism:doi") or data.get("dc:identifier"),
             "authors": self._extract_scopus_authors(data),
             "affiliations": self._extract_scopus_affiliations(data),
+            "affiliation_countries": self._extract_scopus_affiliation_countries(data),
             "source": data.get("prism:publicationName"),
             "journal": data.get("prism:publicationName"),
             "volume": data.get("prism:volume"),
@@ -481,6 +489,33 @@ class NormalizationService:
                 affiliations.append(aff)
 
         return affiliations
+
+    @staticmethod
+    def _extract_scopus_affiliation_countries(data: dict[str, Any]) -> list[str]:
+        """
+        Extrai os países distintos das afiliações de uma entrada Scopus - usa
+        o campo real da API ("affiliation-country" dentro de cada item de
+        "affiliation"), não o "country" genérico usado (sem confirmação
+        contra a resposta real desta API key) em _extract_scopus_affiliations.
+        "affiliation" vem como lista normalmente, mas a Scopus devolve um
+        dict solto (não envolto em lista) quando há só 1 afiliação.
+
+        Args:
+            data: Documento Scopus.
+
+        Returns:
+            Lista de países distintos (na ordem em que aparecem).
+        """
+        raw = data.get("affiliation")
+        affiliation_list = raw if isinstance(raw, list) else [raw] if raw else []
+
+        countries: list[str] = []
+        for aff in affiliation_list:
+            if isinstance(aff, dict):
+                country = aff.get("affiliation-country")
+                if country and country not in countries:
+                    countries.append(country)
+        return countries
 
     def normalize_batch(
         self,

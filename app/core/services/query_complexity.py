@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Optional
 
 
 class QueryComplexityAnalyzer:
@@ -37,17 +37,45 @@ class QueryComplexityAnalyzer:
         }
 
     def _calculate_nesting_depth(self) -> dict[str, Any]:
+        # Os query builders (OPS, Scopus, Lens) embrulham cada cláusula em
+        # parênteses "por segurança" mesmo quando o conteúdo já tem
+        # parênteses próprios (ex: ScopusQueryBuilder._build_textual_query
+        # gera `TITLE((...))`, e o join final embrulha cada cláusula de
+        # novo). Isso empilha parênteses consecutivos sem nenhum aninhamento
+        # lógico real - como as queries são geradas mecanicamente (não são
+        # boolean livre escrita por humano/LLM), um "(" cujo caractere
+        # anterior (ignorando espaços) também é "(" não abre um nível novo
+        # de complexidade, só repete o wrapping do nível de fora. Cada
+        # abertura carrega no stack se ela contou ou não, e o fechamento
+        # correspondente (via LIFO - correto mesmo quando o run de ")" que
+        # fecha múltiplos níveis de uma vez não é textualmente adjacente ao
+        # run de "(" que os abriu) só decrementa a profundidade efetiva se a
+        # abertura correspondente tiver contado.
+        raw_depth = 0
+        effective_depth = 0
         max_depth = 0
-        current_depth = 0
+        counted_stack: list[bool] = []
+        prev_non_space: Optional[str] = None
         for char in self.query:
             if char == "(":
-                current_depth += 1
-                max_depth = max(max_depth, current_depth)
+                raw_depth += 1
+                counted = prev_non_space != "("
+                if counted:
+                    effective_depth += 1
+                    max_depth = max(max_depth, effective_depth)
+                counted_stack.append(counted)
+                prev_non_space = char
             elif char == ")":
-                current_depth -= 1
+                raw_depth -= 1
+                if counted_stack and counted_stack.pop():
+                    effective_depth -= 1
+                prev_non_space = char
+            elif not char.isspace():
+                prev_non_space = char
+
         return {
             "max_depth": max_depth,
-            "parentheses_balanced": current_depth == 0,
+            "parentheses_balanced": raw_depth == 0,
         }
 
     def _count_terms(self) -> dict[str, int]:

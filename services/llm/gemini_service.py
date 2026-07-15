@@ -4,10 +4,12 @@ Google Gemini LLM service implementation.
 
 import json
 import re
+import time
 from typing import Any, Optional
 
 from pydantic import ValidationError
 
+from app.core.domain.types import LLMUsage
 from core.logging import get_logger
 from schemas.intake import InputIntake
 from schemas.llm import LLMOutput
@@ -84,7 +86,7 @@ class GeminiLLMService(BaseLLMService):
         self,
         intake: InputIntake,
         system_prompt: str,
-    ) -> LLMOutput:
+    ) -> tuple[LLMOutput, LLMUsage]:
         """
         Processa entrada usando Google Gemini API.
 
@@ -96,7 +98,8 @@ class GeminiLLMService(BaseLLMService):
             system_prompt: Prompt do sistema com instruções.
 
         Returns:
-            Saída estruturada do Gemini validada como LLMOutput.
+            Saída estruturada do Gemini validada como LLMOutput, e a
+            duração/tokens da chamada.
 
         Raises:
             Exception: Se Gemini API falhar ou resposta inválida.
@@ -109,7 +112,7 @@ class GeminiLLMService(BaseLLMService):
 
         try:
             # Chamar Gemini API
-            response = await self._call_gemini(system_prompt, user_message)
+            response, usage = await self._call_gemini(system_prompt, user_message)
 
             # Log raw response para debugging
             logger.info(
@@ -159,7 +162,7 @@ class GeminiLLMService(BaseLLMService):
                 has_queries=llm_output.has_any_queries(),
             )
 
-            return llm_output
+            return llm_output, usage
 
         except ValidationError as exc:
             logger.error(
@@ -180,7 +183,7 @@ class GeminiLLMService(BaseLLMService):
         self,
         prompt: str,
         user_input: str,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], LLMUsage]:
         """
         Chama Gemini e retorna JSON bruto parseado.
 
@@ -192,7 +195,8 @@ class GeminiLLMService(BaseLLMService):
             user_input: Entrada do usuário.
 
         Returns:
-            Dicionário com resposta JSON bruta da Gemini.
+            Dicionário com resposta JSON bruta da Gemini, e a duração/tokens
+            da chamada.
 
         Raises:
             Exception: Se a chamada Gemini falhar ou JSON for inválido.
@@ -201,7 +205,7 @@ class GeminiLLMService(BaseLLMService):
             raise RuntimeError("Gemini service is not available")
 
         try:
-            response = await self._call_gemini(prompt, user_input)
+            response, usage = await self._call_gemini(prompt, user_input)
 
             logger.info(
                 "gemini_raw_json_response",
@@ -215,7 +219,7 @@ class GeminiLLMService(BaseLLMService):
                 json_keys=list(json_output.keys()),
             )
 
-            return json_output
+            return json_output, usage
 
         except Exception as exc:
             logger.error(
@@ -251,7 +255,7 @@ class GeminiLLMService(BaseLLMService):
         self,
         system_prompt: str,
         user_message: str,
-    ) -> str:
+    ) -> tuple[str, LLMUsage]:
         """
         Faz chamada à API Gemini de forma assíncrona.
 
@@ -260,7 +264,7 @@ class GeminiLLMService(BaseLLMService):
             user_message: Mensagem do usuário.
 
         Returns:
-            Resposta em texto do Gemini.
+            Resposta em texto do Gemini, e a duração/tokens da chamada.
 
         Raises:
             Exception: Se chamada à API falhar.
@@ -279,12 +283,23 @@ class GeminiLLMService(BaseLLMService):
             )
 
             # Fazer chamada assíncrona à API
+            start = time.perf_counter()
             response = await self.client.generate_content_async(
                 full_prompt,
                 generation_config=generation_config,
             )
+            duration_ms = (time.perf_counter() - start) * 1000
 
-            return response.text
+            usage_metadata = response.usage_metadata
+            usage = LLMUsage(
+                provider=self.provider_name,
+                model=self.model,
+                duration_ms=duration_ms,
+                input_tokens=usage_metadata.prompt_token_count,
+                output_tokens=usage_metadata.candidates_token_count,
+                total_tokens=usage_metadata.total_token_count,
+            )
+            return response.text, usage
 
         except Exception as exc:
             logger.error(f"Gemini API call failed: {exc}")

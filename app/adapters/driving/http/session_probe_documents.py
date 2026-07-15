@@ -41,6 +41,7 @@ def build_patent_fields(item: dict[str, Any]) -> dict[str, Any]:
         grant_date=metadata.grant_date,
         year=metadata.year,
         legal_status=metadata.legal_status,
+        country=metadata.country,
     )
 
 
@@ -55,6 +56,7 @@ def build_article_fields(item: dict[str, Any]) -> dict[str, Any]:
         doi=metadata.doi,
         authors=metadata.authors or None,
         affiliations=metadata.affiliations or None,
+        affiliation_countries=metadata.affiliation_countries or None,
         journal_or_source=metadata.journal_or_source,
         volume=metadata.volume,
         issue=metadata.issue,
@@ -120,6 +122,7 @@ def patent_to_raw_item(patent: Patent) -> dict[str, Any]:
         "docdb_id": patent.publication_number,
         "application_reference": patent.application_number,
         "family_id": patent.family_id,
+        "country": patent.country,
     }
 
 
@@ -137,6 +140,7 @@ def article_to_raw_item(article: Article) -> dict[str, Any]:
         "prism:coverDate": article.publication_date,
         "citedby-count": str(article.citations) if article.citations is not None else None,
         "openalex_field_of_study": article.field_of_study or [],
+        "affiliation": [{"affiliation-country": c} for c in (article.affiliation_countries or [])],
     }
 
 

@@ -166,7 +166,7 @@ If empty:
 
         # 5. PROCESSAR COM LLM
         llm_service = LLMServiceFactory.get_instance()
-        llm_output = await llm_service.process_intake(
+        llm_output, _usage = await llm_service.process_intake(
             intake=intake,
             system_prompt=complete_prompt,
         )
@@ -318,7 +318,7 @@ Return ONLY these fields in your JSON response. Do not include any other fields.
 
         # Processar com LLM
         llm_service = LLMServiceFactory.get_instance()
-        llm_output = await llm_service.process_intake(
+        llm_output, _usage = await llm_service.process_intake(
             intake=intake,
             system_prompt=enriched_prompt,
         )
@@ -460,7 +460,7 @@ Return ONLY the fields listed below with their specified types.
 
         # Chamar LLM real (não mock)
         llm_service = LLMServiceFactory.get_instance()
-        llm_output = await llm_service.process_intake(intake, enriched_prompt)
+        llm_output, _usage = await llm_service.process_intake(intake, enriched_prompt)
 
         # Normalizar
         llm_output = LLMOutputNormalizer.normalize(
@@ -590,7 +590,7 @@ async def test_query_builder(
         # Gerar estratégia LLM
         llm_service = LLMServiceFactory.get_instance()
         system_prompt = PromptLoader.load_general_system_prompt()
-        llm_output = await llm_service.process_intake(intake, system_prompt)
+        llm_output, _usage = await llm_service.process_intake(intake, system_prompt)
         normalized = LLMOutputNormalizer.normalize(llm_output)
 
         # Construir query
@@ -710,7 +710,7 @@ async def test_probe_search(
         probe_fields = field_schema_service.get_fields_for_probe()
         probe_api = getattr(settings, "probe_api", "lens_patent")
         # Processar com LLM
-        llm_output = await llm_service.process_intake(
+        llm_output, _usage = await llm_service.process_intake(
             intake=intake,
             system_prompt=system_prompt,
         )

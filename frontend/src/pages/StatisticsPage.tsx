@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { IterationsBarChart } from '../components/IterationsBarChart'
+import { IterationsBarChart } from '../components/charts/IterationsBarChart'
+import { SessionStatusBarChart } from '../components/charts/SessionStatusBarChart'
 import { searchSessions, type ResearchSessionSummary } from '../services/researchSession'
 
 export function StatisticsPage() {
@@ -28,7 +29,13 @@ export function StatisticsPage() {
 
       {isLoading && <p className="text-sm text-gray-500">Carregando...</p>}
       {!isLoading && error && <p className="text-sm text-red-600 font-medium">{error}</p>}
-      {!isLoading && !error && <IterationsBarChart sessions={sessions} />}
+      {!isLoading && !error && (
+        <div className="flex flex-col md:flex-row gap-4">
+          <SessionStatusBarChart sessions={sessions} />
+          <IterationsBarChart sessions={sessions} />
+          
+        </div>
+      )}
     </div>
   )
 }

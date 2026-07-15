@@ -3,7 +3,12 @@ import { Trash2, ChevronDown, Play } from 'lucide-react'
 import { selectableCardClass } from './CandidatePicker'
 import { FieldCard } from './FieldCard'
 import { PROBE_FIELDS_BY_API } from '../constants/probeFields'
-import { getSessionTotalIterations, type ResearchSessionSummary } from '../services/researchSession'
+import {
+  getSessionModel,
+  getSessionTotalIterations,
+  getSessionTotalTokens,
+  type ResearchSessionSummary,
+} from '../services/researchSession'
 import type { SessionInputRow, SessionProbeQueryRow } from '../services/sessionInput'
 
 function formatDate(iso: string): string {
@@ -136,6 +141,8 @@ export function SessionCard({
   const patentQuery = session.probe_queries.find((q) => q.fonte === 'ops')
   const articleQuery = session.probe_queries.find((q) => q.fonte === 'scopus')
   const totalIterations = getSessionTotalIterations(session)
+  const totalTokens = getSessionTotalTokens(session)
+  const model = getSessionModel(session)
 
   // Independentes: os dois podem ficar abertos ao mesmo tempo, cada um
   // ocupando metade da grid.
@@ -170,6 +177,12 @@ export function SessionCard({
               {root && (
                 <p className="text-sm font-medium text-gray-700 mt-1">{root.theme}</p>
               )}
+              <p className="text-xs text-gray-500 mt-1">
+                Tokens utilizados na sessão: {totalTokens}
+              </p>
+              <p className="text-xs text-gray-500">
+                Modelo Utilizado: {model ?? '—'}
+              </p>
               {root?.description && (
                 <p className="text-sm text-gray-500 mt-1 line-clamp-2">{root.description}</p>
               )}

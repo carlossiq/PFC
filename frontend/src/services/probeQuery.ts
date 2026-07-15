@@ -2,6 +2,7 @@ import { apiClient } from './api'
 import { resolveIntakePayload } from './refineTopic'
 import type { FormInput, ThemeInput } from './refineTopic'
 import type { ProbeApi } from '../constants/probeFields'
+import type { AiUsage } from './aiUsage'
 
 // Genérico porque os campos variam por API (patente: title/abstract/ipc/year;
 // artigo: title/abstract/field_of_study/year) — ver PROBE_FIELDS_BY_API em
@@ -43,11 +44,16 @@ export interface QueryOptionResult {
 // caminhos. O probe é sempre "específico" por natureza (ver ChatService.
 // build_probe_queries_multi) - as N opções não são variantes de precisão/cobertura,
 // só tentativas independentes com a mesma instrução.
+export interface ProbeQueriesMultiResult {
+  queries: QueryOptionResult[]
+  aiUsage: AiUsage | null
+}
+
 export async function generateProbeQueriesMulti(
   input: FormInput,
   step2SelectedTheme: (ThemeInput & { id: string }) | null,
   api = 'ops'
-): Promise<QueryOptionResult[]> {
+): Promise<ProbeQueriesMultiResult> {
   const intake = resolveIntakePayload(input, step2SelectedTheme)
   const { data } = await apiClient.post('/chat/probe/queries-multi', intake, { params: { api } })
 
@@ -55,7 +61,10 @@ export async function generateProbeQueriesMulti(
     throw new Error(data.message || 'Falha ao gerar queries com IA')
   }
 
-  return data.data.queries
+  return {
+    queries: data.data.queries,
+    aiUsage: data.data?.ai_usage ?? null,
+  }
 }
 
 // Reconstrói a CQL a partir de campos estruturados editados pelo usuário, sem
@@ -84,10 +93,10 @@ export interface ProbeSearchResultItem {
   year: number | null
   // Só preenchido pra OPS (patentes).
   ipcCodes: string[]
+  // OPS: país/jurisdição da patente. Scopus: país da primeira afiliação.
   country: string | null
   // Só preenchido pra Scopus (artigos).
   sourceTitle: string | null
-  openAccess: boolean | null
 }
 
 // Estatísticas agregadas sobre o conjunto de resultados retornado - pensado
@@ -103,7 +112,6 @@ export interface ProbeSearchSummary {
   distinctCountries: number
   // Artigos (Scopus)
   distinctSources: number
-  openAccessCount: number
 }
 
 export interface ProbeSearchResult {
@@ -163,11 +171,28 @@ export function extractIpcCodes(item: Record<string, unknown>, api: ProbeApi): s
   return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string' && v.trim() !== '') : []
 }
 
-// Só a OPS retorna o país/jurisdição de publicação por item (campo "country").
+// OPS: país/jurisdição de publicação da patente (campo "country"), um valor
+// só por item. Scopus não expõe um "país do artigo" - só países de afiliação
+// dos autores (campo "affiliation", cada entrada com "affiliation-country");
+// usamos o país da primeira afiliação, mesmo modelo "um valor por item" da
+// OPS, o bastante pra alimentar a mesma estatística de países distintos.
+// "affiliation" vem como array normalmente, mas a Scopus devolve um objeto
+// solto (não envolto em array) quando há só 1 afiliação.
 export function extractResultCountry(item: Record<string, unknown>, api: ProbeApi): string | null {
-  if (api !== 'ops') return null
-  const raw = item['country']
-  return typeof raw === 'string' && raw.trim() ? raw : null
+  if (api === 'ops') {
+    const raw = item['country']
+    return typeof raw === 'string' && raw.trim() ? raw : null
+  }
+
+  const raw = item['affiliation']
+  const affiliations = Array.isArray(raw) ? raw : raw ? [raw] : []
+  for (const aff of affiliations) {
+    if (aff && typeof aff === 'object') {
+      const country = (aff as Record<string, unknown>)['affiliation-country']
+      if (typeof country === 'string' && country.trim()) return country
+    }
+  }
+  return null
 }
 
 // Só o Scopus retorna o nome da revista/fonte por item (campo
@@ -178,13 +203,6 @@ export function extractSourceTitle(item: Record<string, unknown>, api: ProbeApi)
   if (api !== 'scopus') return null
   const raw = item['prism:publicationName']
   return typeof raw === 'string' && raw.trim() ? raw : null
-}
-
-// Só o Scopus retorna a flag de acesso aberto por item (campo "openaccessFlag").
-export function extractOpenAccess(item: Record<string, unknown>, api: ProbeApi): boolean | null {
-  if (api !== 'scopus') return null
-  const raw = item['openaccessFlag']
-  return typeof raw === 'boolean' ? raw : null
 }
 
 function summarizeItems(items: ProbeSearchResultItem[]): ProbeSearchSummary {
@@ -200,7 +218,6 @@ function summarizeItems(items: ProbeSearchResultItem[]): ProbeSearchSummary {
     distinctIpc: ipcSet.size,
     distinctCountries: countrySet.size,
     distinctSources: sourceSet.size,
-    openAccessCount: items.filter((i) => i.openAccess === true).length,
   }
 }
 
@@ -221,7 +238,6 @@ export function buildProbeSearchResult(
     ipcCodes: extractIpcCodes(r, api),
     country: extractResultCountry(r, api),
     sourceTitle: extractSourceTitle(r, api),
-    openAccess: extractOpenAccess(r, api),
   }))
   return {
     success: true,

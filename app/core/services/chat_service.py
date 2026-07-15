@@ -4,9 +4,10 @@ import asyncio
 import json
 import random
 import re
+import time
 from typing import Any, Optional
 
-from app.core.domain.types import LLMRequest
+from app.core.domain.types import LLMRequest, LLMUsage
 from app.core.services.query_complexity import QueryComplexityAnalyzer
 from core.config import Settings
 from core.logging import get_logger
@@ -71,6 +72,68 @@ class ChatService:
             area_of_study=intake.area_of_study,
             keywords=intake.keywords or [],
         )
+
+    @staticmethod
+    def _aggregate_usage(usages: list[LLMUsage], step: str) -> Optional[dict[str, Any]]:
+        """
+        Agrega uma ou mais chamadas de LLM (ex: tentativas sequenciais de um
+        mesmo _build_query_with_retry) num único ai_usage. Duração é somada
+        porque as tentativas rodam sequencialmente (um await após o outro) -
+        soma sequencial = tempo de parede real. Tokens são sempre somados
+        (custo é aditivo, independe de paralelismo).
+        """
+        if not usages:
+            return None
+
+        def _sum_field(field: str) -> Optional[int]:
+            values = [getattr(u, field) for u in usages if getattr(u, field) is not None]
+            return sum(values) if values else None
+
+        return {
+            "step": step,
+            "provider": usages[0].provider,
+            "model": usages[0].model,
+            "duration_ms": sum(u.duration_ms for u in usages),
+            "input_tokens": _sum_field("input_tokens"),
+            "output_tokens": _sum_field("output_tokens"),
+            "total_tokens": _sum_field("total_tokens"),
+            "attempts": len(usages),
+        }
+
+    @staticmethod
+    def _aggregate_multi_usage(
+        results: list[dict[str, Any]],
+        step: str,
+        duration_ms: float,
+    ) -> Optional[dict[str, Any]]:
+        """
+        Agrega os ai_usage já calculados de N sub-chamadas independentes
+        (ex: as N tentativas de build_probe_queries_multi, rodadas em
+        paralelo via asyncio.gather, ou as 3 variantes sequenciais de
+        build_final_queries_multi). Ao contrário de _aggregate_usage, a
+        duração NÃO é derivada somando as sub-durações (isso superestimaria
+        o tempo real quando as chamadas rodam em paralelo) - é medida
+        diretamente pelo chamador ao redor do bloco inteiro (gather ou loop)
+        e recebida aqui pronta. Tokens continuam sendo somados.
+        """
+        usages = [r["ai_usage"] for r in results if r.get("ai_usage")]
+        if not usages:
+            return None
+
+        def _sum_field(field: str) -> Optional[int]:
+            values = [u[field] for u in usages if u.get(field) is not None]
+            return sum(values) if values else None
+
+        return {
+            "step": step,
+            "provider": usages[0]["provider"],
+            "model": usages[0]["model"],
+            "duration_ms": duration_ms,
+            "input_tokens": _sum_field("input_tokens"),
+            "output_tokens": _sum_field("output_tokens"),
+            "total_tokens": _sum_field("total_tokens"),
+            "attempts": sum(u.get("attempts", 1) for u in usages),
+        }
 
     def _complexity_from_query(self, cql_query: str) -> dict[str, Any]:
         analysis = QueryComplexityAnalyzer(cql_query).analyze()
@@ -205,6 +268,7 @@ class ChatService:
         api: str,
         search_mode: str,
         prompt_loader_method: str,
+        step: str,
     ) -> dict[str, Any]:
         """
         Chama LLM → QueryBuilder → QueryComplexityAnalyzer em loop de até
@@ -222,6 +286,7 @@ class ChatService:
         attempts_history: list[dict] = []
         complexity: Optional[dict] = None
         last_error: Optional[Exception] = None
+        usages: list[LLMUsage] = []
 
         year_from = getattr(self.settings, "search_year_from", 2015)
         year_to = getattr(self.settings, "search_year_to", 2026)
@@ -239,7 +304,8 @@ class ChatService:
                 system_prompt += self._simplification_suffix(complexity, attempt)
 
             try:
-                llm_response = await self.llm.process_intake(llm_request, system_prompt)
+                llm_response, usage = await self.llm.process_intake(llm_request, system_prompt)
+                usages.append(usage)
                 query = qb.build_query(
                     strategy=llm_response,
                     year_from=year_from,
@@ -283,6 +349,7 @@ class ChatService:
                     "attempt": attempt,
                     "fields": fields,
                     "year_range": year_range,
+                    "ai_usage": self._aggregate_usage(usages, step),
                 }
 
         if not attempts_history:
@@ -300,6 +367,7 @@ class ChatService:
                 "success": False,
                 "api": api,
                 "error": f"Falha ao gerar query após {max_attempts} tentativas: {last_error}",
+                "ai_usage": self._aggregate_usage(usages, step),
             }
 
         best = min(attempts_history, key=lambda x: x["complexity"]["score"])
@@ -318,6 +386,7 @@ class ChatService:
             "attempt": best["attempt"],
             "fields": best["fields"],
             "year_range": year_range,
+            "ai_usage": self._aggregate_usage(usages, step),
             "warning": (
                 f"Query complexity ({best['complexity']['score']:.1f}/100) exceeds limit "
                 f"({max_allowed:.0f}) after {max_attempts} attempts. "
@@ -495,8 +564,9 @@ class ChatService:
 
         system_prompt = PromptLoader.load_refine_topic_system_prompt()
 
+        usage: Optional[LLMUsage] = None
         try:
-            raw = await self.llm.call_raw_json(system_prompt, user_input)
+            raw, usage = await self.llm.call_raw_json(system_prompt, user_input)
         except LLMJSONParseError as exc:
             candidates = self._salvage_candidates(exc.raw_response)
             if not candidates:
@@ -541,6 +611,8 @@ class ChatService:
             }
 
         result: dict[str, Any] = {"success": True, "candidates": processed}
+        if usage is not None:
+            result["ai_usage"] = self._aggregate_usage([usage], step="refine_topic")
         if len(processed) < 4:
             result["warning"] = f"Apenas {len(processed)} de 4 variações puderam ser geradas."
         return result
@@ -564,7 +636,7 @@ class ChatService:
         system_prompt = PromptLoader.load_prompt("specify_topic_system_prompt.txt")
 
         try:
-            raw = await self.llm.call_raw_json(system_prompt, user_input)
+            raw, usage = await self.llm.call_raw_json(system_prompt, user_input)
         except Exception as exc:
             logger.error("specify_topic_llm_error", error=str(exc))
             return {
@@ -585,6 +657,7 @@ class ChatService:
         if intake.keywords:
             result["keywords"] = intake.keywords
         result["user_input"] = intake.model_dump()
+        result["ai_usage"] = self._aggregate_usage([usage], step="specify_topic")
 
         return {"success": True, **result}
 
@@ -610,6 +683,7 @@ class ChatService:
                 api=api,
                 search_mode="probe",
                 prompt_loader_method="load_probe_system_prompt",
+                step="probe_query",
             )
         except Exception as exc:
             logger.error("build_probe_query_error", error=str(exc))
@@ -633,6 +707,7 @@ class ChatService:
                     api=api,
                     search_mode="probe",
                     prompt_loader_method="load_probe_system_prompt",
+                    step="probe_query",
                 )
             except Exception as exc:
                 logger.error(
@@ -646,7 +721,12 @@ class ChatService:
         # As N tentativas são independentes (mesmo intake, mesmo prompt) - rodar
         # em paralelo em vez de sequencialmente evita serializar até 3N chamadas
         # de LLM (cada tentativa já retenta até 3x internamente por complexidade).
+        # Medido com perf_counter ao redor do gather (não somando as durações
+        # individuais de cada tentativa) porque elas rodam concorrentemente -
+        # somar superestimaria o tempo de espera real do usuário.
+        start = time.perf_counter()
         queries = await asyncio.gather(*(_attempt(i) for i in range(count)))
+        duration_ms = (time.perf_counter() - start) * 1000
         success = any(q.get("success") for q in queries)
 
         result: dict[str, Any] = {
@@ -654,6 +734,7 @@ class ChatService:
             "api": api,
             "user_input": intake.model_dump(),
             "queries": queries,
+            "ai_usage": self._aggregate_multi_usage(queries, step="probe_queries_multi", duration_ms=duration_ms),
         }
         if not success:
             # Nenhuma tentativa deu certo - propaga o erro real (ex: rate
@@ -714,6 +795,7 @@ class ChatService:
                 api=api,
                 search_mode="final",
                 prompt_loader_method="load_probe_system_prompt",
+                step="final_query",
             )
         except Exception as exc:
             logger.error("build_final_query_error", error=str(exc))
@@ -776,6 +858,7 @@ class ChatService:
         api: str,
         extracted_terms: list[dict[str, Any]],
         variant: str,
+        step: str,
     ) -> dict[str, Any]:
         from services.prompt.prompt_loader import PromptLoader
 
@@ -784,6 +867,7 @@ class ChatService:
         max_attempts = 3
         attempts_history: list[dict] = []
         complexity: Optional[dict] = None
+        usages: list[LLMUsage] = []
 
         llm_request = self._intake_to_request(intake)
         qb = _get_qb_adapter(api, search_mode="final")
@@ -795,7 +879,8 @@ class ChatService:
             if attempt > 1:
                 system_prompt += self._simplification_suffix(complexity, attempt)
 
-            llm_response = await self.llm.process_intake(llm_request, system_prompt)
+            llm_response, usage = await self.llm.process_intake(llm_request, system_prompt)
+            usages.append(usage)
 
             query = qb.build_query(
                 strategy=llm_response,
@@ -826,6 +911,7 @@ class ChatService:
                     "query": query,
                     "complexity": complexity,
                     "attempt": attempt,
+                    "ai_usage": self._aggregate_usage(usages, step),
                 }
 
         best = min(attempts_history, key=lambda x: x["complexity"]["score"])
@@ -841,6 +927,7 @@ class ChatService:
             "query": best["query"],
             "complexity": best["complexity"],
             "attempt": best["attempt"],
+            "ai_usage": self._aggregate_usage(usages, step),
             "warning": (
                 f"Query complexity ({best['complexity']['score']:.1f}/100) exceeds limit "
                 f"({max_score:.0f}) after {max_attempts} attempts. "
@@ -868,6 +955,7 @@ class ChatService:
             "queries": {},
         }
 
+        start = time.perf_counter()
         for variant in ("specific", "balanced", "generic"):
             try:
                 results["queries"][variant] = await self._build_final_variant_query(
@@ -875,6 +963,7 @@ class ChatService:
                     api=api,
                     extracted_terms=extracted_terms,
                     variant=variant,
+                    step="final_query",
                 )
             except Exception as exc:
                 logger.error(
@@ -884,7 +973,11 @@ class ChatService:
                     error=str(exc),
                 )
                 results["queries"][variant] = {"success": False, "error": str(exc)}
+        duration_ms = (time.perf_counter() - start) * 1000
 
+        results["ai_usage"] = self._aggregate_multi_usage(
+            list(results["queries"].values()), step="final_queries_multi", duration_ms=duration_ms
+        )
         return results
 
     # ------------------------------------------------------------------

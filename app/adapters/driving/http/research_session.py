@@ -40,7 +40,9 @@ async def search_sessions(
     com todas as suas linhas de session_input carregadas.
     """
     stmt = select(ResearchSession).options(
-        selectinload(ResearchSession.inputs), selectinload(ResearchSession.probe_queries)
+        selectinload(ResearchSession.inputs),
+        selectinload(ResearchSession.probe_queries),
+        selectinload(ResearchSession.ai_calls),
     )
 
     if theme and theme.strip():
@@ -80,6 +82,7 @@ async def get_session(
             selectinload(ResearchSession.probe_queries)
             .selectinload(SessionProbeQuery.article_links)
             .selectinload(ProbeQueryArticle.article),
+            selectinload(ResearchSession.ai_calls),
         )
     )
     result = await session.execute(stmt)

@@ -51,6 +51,11 @@ class ResearchSession(Base):
         back_populates="session",
         cascade="all, delete-orphan",
     )
+    ai_calls: Mapped[list["SessionAiCall"]] = relationship(
+        "SessionAiCall",
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
 
 
 class SessionInput(Base):
@@ -120,6 +125,36 @@ class SessionProbeQuery(Base):
     )
 
 
+class SessionAiCall(Base):
+    """
+    Log append-only de uma chamada de IA feita durante o wizard (refino de
+    tema, especificação, geração de query probe/final, inclusive tentativas
+    de "gerar outras" - nunca upsertado, sempre uma linha nova por chamada,
+    pra manter o total de tokens/tempo gasto na sessão completo mesmo
+    contando tentativas descartadas). Como as chamadas de IA acontecem antes
+    da sessão existir (ver session_persistence.py), essas linhas só são
+    inseridas quando o frontend reenvia o histórico acumulado junto de um
+    save de progresso/finalização.
+    """
+
+    __tablename__ = "session_ai_call"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("research_session.id"), nullable=False, index=True)
+    step: Mapped[str] = mapped_column(String(50), nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    duration_ms: Mapped[float] = mapped_column(Float, nullable=False)
+    input_tokens: Mapped[Optional[int]] = mapped_column()
+    output_tokens: Mapped[Optional[int]] = mapped_column()
+    total_tokens: Mapped[Optional[int]] = mapped_column()
+    attempts: Mapped[int] = mapped_column(nullable=False, default=1)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    session: Mapped["ResearchSession"] = relationship("ResearchSession", back_populates="ai_calls")
+
+
 class Patent(Base):
     """
     Patente encontrada por uma ou mais probe queries (Resultados Iniciais).
@@ -149,6 +184,7 @@ class Patent(Base):
     grant_date: Mapped[Optional[str]] = mapped_column(String(10))
     year: Mapped[Optional[int]] = mapped_column()
     legal_status: Mapped[Optional[str]] = mapped_column(String(100))
+    country: Mapped[Optional[str]] = mapped_column(String(10))
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -174,6 +210,7 @@ class Article(Base):
     doi: Mapped[Optional[str]] = mapped_column(String(255))
     authors: Mapped[Optional[list[str]]] = mapped_column(JSON)
     affiliations: Mapped[Optional[list[str]]] = mapped_column(JSON)
+    affiliation_countries: Mapped[Optional[list[str]]] = mapped_column(JSON)
     journal_or_source: Mapped[Optional[str]] = mapped_column(String(500))
     volume: Mapped[Optional[str]] = mapped_column(String(50))
     issue: Mapped[Optional[str]] = mapped_column(String(50))

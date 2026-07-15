@@ -45,6 +45,7 @@ export function WorkflowPage() {
     setShouldRegenerateStep2,
     resetStep2Iterations,
     incrementStep2Iterations,
+    aiCallsInFlight,
     reset: formReset,
   } = useFormStore();
   const { push: historyPush, pop: historyPop, reset: historyReset } = useHistoryStore();
@@ -153,6 +154,8 @@ export function WorkflowPage() {
     const payload = buildSaveSessionPayload(formState, false)
     const result = await saveSession(formState.sessionId, formState.sessionName, payload)
     useFormStore.getState().setSessionId(result.session_id, result.session_public_id)
+    // Evita reenviar (e duplicar) as mesmas chamadas de IA num próximo save.
+    useFormStore.getState().clearAiCallLog()
   }
 
   // Volta ao step anterior restaurando o estado salvo no histórico
@@ -178,7 +181,10 @@ export function WorkflowPage() {
 
         <div className="relative flex-1 overflow-y-auto px-4 py-3">
           {isStartProspection && (
-            <SaveProgressButton disabled={!input.theme.trim()} onSave={handleSaveProgress} />
+            <SaveProgressButton
+              disabled={!input.theme.trim() || aiCallsInFlight > 0}
+              onSave={handleSaveProgress}
+            />
           )}
           {isStartProspection ? (
             <>

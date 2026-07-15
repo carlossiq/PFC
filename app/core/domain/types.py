@@ -49,6 +49,18 @@ class LLMRequest:
 
 
 @dataclass
+class LLMUsage:
+    """Duração e tokens de uma chamada real (ou mock) à LLM, medidos na origem."""
+
+    provider: str
+    model: str
+    duration_ms: float
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+
+
+@dataclass
 class TermGroup:
     terms: list[str] = field(default_factory=list)
     operator: str = "OR"  # "AND" | "OR"

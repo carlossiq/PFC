@@ -1,5 +1,5 @@
 import { apiClient } from './api'
-import type { SessionInputRow, SessionProbeQueryRow } from './sessionInput'
+import type { SessionAiCallRow, SessionInputRow, SessionProbeQueryRow } from './sessionInput'
 
 export interface ResearchSessionSummary {
   id: number
@@ -9,6 +9,7 @@ export interface ResearchSessionSummary {
   created_at: string
   inputs: SessionInputRow[]
   probe_queries: SessionProbeQueryRow[]
+  ai_calls: SessionAiCallRow[]
 }
 
 // Busca sessões pelo tema de qualquer um de seus session_input (raiz ou gerado
@@ -42,4 +43,19 @@ export function getSessionTotalIterations(session: ResearchSessionSummary): numb
   const patentQuery = session.probe_queries.find((q) => q.fonte === 'ops')
   const articleQuery = session.probe_queries.find((q) => q.fonte === 'scopus')
   return (generated?.iterations ?? 0) + (patentQuery?.iterations ?? 0) + (articleQuery?.iterations ?? 0)
+}
+
+// Soma o total de tokens (entrada + saída) de todas as chamadas de IA
+// registradas na sessão - inclui tentativas descartadas (retries por
+// complexidade, "gerar outras"), não só a query final escolhida.
+export function getSessionTotalTokens(session: ResearchSessionSummary): number {
+  return session.ai_calls.reduce((sum, call) => sum + (call.total_tokens ?? 0), 0)
+}
+
+// Modelo de IA usado na sessão. O provedor é uma configuração global do
+// backend (core/config.py: llm_provider) - todas as chamadas de uma mesma
+// sessão usam o mesmo provider/model, então a primeira linha já representa
+// o modelo usado na sessão inteira.
+export function getSessionModel(session: ResearchSessionSummary): string | null {
+  return session.ai_calls[0]?.model ?? null
 }

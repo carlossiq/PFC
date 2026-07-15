@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from services.llm.mock_service import MockLLMService
-from app.core.domain.types import LLMRequest, LLMResponse
+from app.core.domain.types import LLMRequest, LLMResponse, LLMUsage
 from app.adapters.driven.llm._converters import output_to_response, request_to_intake
 
 
@@ -22,14 +22,14 @@ class MockLLMAdapter:
         self,
         request: LLMRequest,
         system_prompt: str,
-    ) -> LLMResponse:
+    ) -> tuple[LLMResponse, LLMUsage]:
         intake = request_to_intake(request)
-        output = await self._service.process_intake(intake, system_prompt)
-        return output_to_response(output)
+        output, usage = await self._service.process_intake(intake, system_prompt)
+        return output_to_response(output), usage
 
     async def call_raw_json(
         self,
         prompt: str,
         user_input: str,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], LLMUsage]:
         return await self._service.call_raw_json(prompt, user_input)

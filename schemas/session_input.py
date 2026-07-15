@@ -5,6 +5,7 @@ mid-wizard ("save progress", completed=False), or as a full finalization
 (POST /session-input) and the update path (PUT /research-session/{id}).
 """
 
+from datetime import datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -71,6 +72,32 @@ class SessionProbeQueryInput(BaseModel):
     articles: list[dict[str, Any]] = Field(default_factory=list, max_items=200)
 
 
+class SessionAiCallInput(BaseModel):
+    """Uma chamada de IA (refino de tema, especificação, geração de query
+    probe/final) medida no backend e reenviada pelo frontend junto do save -
+    sempre acrescentada como linha nova (log), nunca upsertada."""
+
+    step: str = Field(..., max_length=50)
+    provider: str = Field(..., max_length=50)
+    model: str = Field(..., max_length=100)
+    duration_ms: float = Field(..., ge=0)
+    input_tokens: Optional[int] = Field(default=None, ge=0)
+    output_tokens: Optional[int] = Field(default=None, ge=0)
+    total_tokens: Optional[int] = Field(default=None, ge=0)
+    attempts: int = Field(default=1, ge=1)
+
+
+class SessionAiCallRow(SessionAiCallInput):
+    """Representação persistida de uma linha session_ai_call."""
+
+    id: int
+    session_id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class SessionProbeQueryRow(SessionProbeQueryInput):
     """Representação persistida de uma linha session_probe_query."""
 
@@ -96,6 +123,7 @@ class SessionInputSaveRequest(BaseModel):
     root: SessionInputRoot
     generated: Optional[SessionInputGenerated] = None
     probe_queries: list[SessionProbeQueryInput] = Field(default_factory=list, max_items=2)
+    ai_calls: list[SessionAiCallInput] = Field(default_factory=list)
     completed: bool = Field(default=False)
 
     @field_validator("name")
@@ -132,3 +160,4 @@ class SessionInputSaveResponse(BaseModel):
     root: SessionInputRow
     generated: Optional[SessionInputRow] = None
     probe_queries: list[SessionProbeQueryRow] = Field(default_factory=list)
+    ai_calls: list[SessionAiCallRow] = Field(default_factory=list)

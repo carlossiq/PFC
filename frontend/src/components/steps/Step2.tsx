@@ -38,6 +38,9 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
     shouldRegenerateStep2,
     setShouldRegenerateStep2,
     incrementStep2Iterations,
+    addAiUsage,
+    beginAiCall,
+    endAiCall,
   } = useFormStore()
 
   const [isLoading, setIsLoading] = useState(false)
@@ -52,10 +55,15 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
     const requestId = ++requestIdRef.current
     setIsLoading(true)
     setError(null)
+    // Trava os botões de salvar/finalizar enquanto essa chamada está em
+    // andamento - sem isso, salvar antes dela resolver deixaria essa chamada
+    // de fora do `ai_calls` enviado (addAiUsage só roda depois do await).
+    beginAiCall()
     const generatedForInput = JSON.stringify(input)
     try {
-      const results = await refineTopic(input)
+      const { candidates: results, aiUsage } = await refineTopic(input)
       if (requestIdRef.current !== requestId) return
+      addAiUsage(aiUsage)
       setCandidates(
         results.map((candidate, index) => ({
           id: `candidate-${index}`,
@@ -75,8 +83,9 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
       setCandidates([])
     } finally {
       if (requestIdRef.current === requestId) setIsLoading(false)
+      endAiCall()
     }
-  }, [input, setCandidates])
+  }, [input, setCandidates, addAiUsage, beginAiCall, endAiCall])
 
   // Guarda contra o double-invoke do StrictMode em dev, e contra regenerar os
   // parâmetros toda vez que o componente remonta (ex: ao navegar para outro
@@ -190,8 +199,10 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
     incrementStep2Iterations()
     setIsSpecifying(true)
     setSpecifyError(null)
+    beginAiCall()
     try {
-      const result = await specifyTopic(selectedData)
+      const { candidate: result, aiUsage } = await specifyTopic(selectedData)
+      addAiUsage(aiUsage)
       const updated: Theme = {
         ...selectedData,
         theme: result.theme,
@@ -204,6 +215,7 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
       setSpecifyError('Não foi possível especificar o tema com IA. Tente novamente.')
     } finally {
       setIsSpecifying(false)
+      endAiCall()
     }
   }
 
@@ -438,7 +450,7 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
           disabled={isBusy}
           className="flex-1 bg-gray-400 hover:bg-gray-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-300"
         >
-          Back
+          Voltar
         </button>
 
         <button
@@ -446,7 +458,7 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
           disabled={isBusy}
           className="flex-1 font-semibold py-2 px-4 rounded-lg text-white transition-colors duration-300 bg-[#0f9448] hover:bg-[#0d843f] disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          {isSaving ? 'Confirming...' : 'Confirm'}
+          {isSaving ? 'Carregando...' : 'Proximo'}
         </button>
 
         <button

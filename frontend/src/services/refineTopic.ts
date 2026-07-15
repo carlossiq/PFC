@@ -1,4 +1,5 @@
 import { apiClient } from './api'
+import type { AiUsage } from './aiUsage'
 
 export interface RefineTopicCandidate {
   theme: string
@@ -30,8 +31,13 @@ export function mapInputToIntakePayload(input: FormInput) {
   }
 }
 
+export interface RefineTopicResult {
+  candidates: RefineTopicCandidate[]
+  aiUsage: AiUsage | null
+}
+
 // Chama a LLM (via backend) para gerar 4 variações mais específicas do tema informado.
-export async function refineTopic(input: FormInput): Promise<RefineTopicCandidate[]> {
+export async function refineTopic(input: FormInput): Promise<RefineTopicResult> {
   const payload = mapInputToIntakePayload(input)
   const { data } = await apiClient.post('/chat/refine-topic', payload)
 
@@ -39,7 +45,10 @@ export async function refineTopic(input: FormInput): Promise<RefineTopicCandidat
     throw new Error(data.message || 'Falha ao gerar parâmetros com IA')
   }
 
-  return data.data?.candidates ?? []
+  return {
+    candidates: data.data?.candidates ?? [],
+    aiUsage: data.data?.ai_usage ?? null,
+  }
 }
 
 export interface ThemeInput {
@@ -73,10 +82,15 @@ export function resolveIntakePayload(
   return wasRefinedByAI ? mapThemeToIntakePayload(step2SelectedTheme!) : mapInputToIntakePayload(input)
 }
 
+export interface SpecifyTopicResult {
+  candidate: RefineTopicCandidate
+  aiUsage: AiUsage | null
+}
+
 // Chama a LLM (via backend) para aprofundar um único tema já selecionado em uma
 // versão mais específica/estreita do mesmo assunto (ao contrário de refineTopic,
 // que gera 4 variações diversas).
-export async function specifyTopic(theme: ThemeInput): Promise<RefineTopicCandidate> {
+export async function specifyTopic(theme: ThemeInput): Promise<SpecifyTopicResult> {
   const payload = mapThemeToIntakePayload(theme)
   const { data } = await apiClient.post('/chat/specify-topic', payload)
 
@@ -84,5 +98,8 @@ export async function specifyTopic(theme: ThemeInput): Promise<RefineTopicCandid
     throw new Error(data.message || 'Falha ao especificar o tema com IA')
   }
 
-  return data.data
+  return {
+    candidate: data.data,
+    aiUsage: data.data?.ai_usage ?? null,
+  }
 }

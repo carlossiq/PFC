@@ -99,6 +99,10 @@ class StandardizedPatentMetadata(BaseModel):
         default=None,
         description="Status legal (active, expired, abandoned, etc.)",
     )
+    country: Optional[str] = Field(
+        default=None,
+        description="País/jurisdição de publicação da patente",
+    )
 
     # Relevância
     relevance_score: Optional[float] = Field(
@@ -193,6 +197,10 @@ class StandardizedScholarlyMetadata(BaseModel):
     affiliations: list[str] = Field(
         default_factory=list,
         description="Afiliações dos autores",
+    )
+    affiliation_countries: list[str] = Field(
+        default_factory=list,
+        description="Países distintos das afiliações dos autores",
     )
 
     # Publicação

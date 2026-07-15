@@ -3,10 +3,12 @@ Anthropic Claude LLM service implementation.
 """
 
 import json
+import time
 from typing import Any, Optional
 
 from pydantic import ValidationError
 
+from app.core.domain.types import LLMUsage
 from core.logging import get_logger
 from schemas.intake import InputIntake
 from schemas.llm import LLMOutput
@@ -79,7 +81,7 @@ class AnthropicLLMService(BaseLLMService):
         self,
         intake: InputIntake,
         system_prompt: str,
-    ) -> LLMOutput:
+    ) -> tuple[LLMOutput, LLMUsage]:
         """
         Processa entrada usando Anthropic Claude API.
 
@@ -91,7 +93,8 @@ class AnthropicLLMService(BaseLLMService):
             system_prompt: Prompt do sistema com instruções.
 
         Returns:
-            Saída estruturada do Claude validada como LLMOutput.
+            Saída estruturada do Claude validada como LLMOutput, e a
+            duração/tokens da chamada.
 
         Raises:
             Exception: Se Claude API falhar ou resposta inválida.
@@ -104,7 +107,7 @@ class AnthropicLLMService(BaseLLMService):
 
         try:
             # Chamar Claude API
-            response = await self._call_claude(system_prompt, user_message)
+            response, usage = await self._call_claude(system_prompt, user_message)
 
             # Log raw response para debugging
             logger.info(
@@ -154,7 +157,7 @@ class AnthropicLLMService(BaseLLMService):
                 has_queries=llm_output.has_any_queries(),
             )
 
-            return llm_output
+            return llm_output, usage
 
         except ValidationError as exc:
             logger.error(
@@ -175,7 +178,7 @@ class AnthropicLLMService(BaseLLMService):
         self,
         prompt: str,
         user_input: str,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], LLMUsage]:
         """
         Chama Claude e retorna JSON bruto parseado.
 
@@ -187,7 +190,8 @@ class AnthropicLLMService(BaseLLMService):
             user_input: Entrada do usuário.
 
         Returns:
-            Dicionário com resposta JSON bruta do Claude.
+            Dicionário com resposta JSON bruta do Claude, e a duração/tokens
+            da chamada.
 
         Raises:
             Exception: Se a chamada Claude falhar ou JSON for inválido.
@@ -196,7 +200,7 @@ class AnthropicLLMService(BaseLLMService):
             raise RuntimeError("Anthropic service is not available")
 
         try:
-            response = await self._call_claude(prompt, user_input)
+            response, usage = await self._call_claude(prompt, user_input)
 
             logger.info(
                 "anthropic_raw_json_response",
@@ -210,7 +214,7 @@ class AnthropicLLMService(BaseLLMService):
                 json_keys=list(json_output.keys()),
             )
 
-            return json_output
+            return json_output, usage
 
         except Exception as exc:
             logger.error(
@@ -246,7 +250,7 @@ class AnthropicLLMService(BaseLLMService):
         self,
         system_prompt: str,
         user_message: str,
-    ) -> str:
+    ) -> tuple[str, LLMUsage]:
         """
         Faz chamada à API Claude.
 
@@ -255,12 +259,13 @@ class AnthropicLLMService(BaseLLMService):
             user_message: Mensagem do usuário.
 
         Returns:
-            Resposta em texto do Claude.
+            Resposta em texto do Claude, e a duração/tokens da chamada.
 
         Raises:
             Exception: Se chamada à API falhar.
         """
         try:
+            start = time.perf_counter()
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=4096,
@@ -272,8 +277,17 @@ class AnthropicLLMService(BaseLLMService):
                     }
                 ],
             )
+            duration_ms = (time.perf_counter() - start) * 1000
 
-            return response.content[0].text
+            usage = LLMUsage(
+                provider=self.provider_name,
+                model=self.model,
+                duration_ms=duration_ms,
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                total_tokens=response.usage.input_tokens + response.usage.output_tokens,
+            )
+            return response.content[0].text, usage
 
         except Exception as exc:
             logger.error(f"Claude API call failed: {exc}")

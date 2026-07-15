@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { ProbeSearchResult, QueryOptionResult } from '../services/probeQuery'
+import type { AiUsage } from '../services/aiUsage'
 
 // Dados de entrada do formulário (durante edição ou persistidos)
 interface InputData {
@@ -171,6 +172,25 @@ interface FormStore {
   step3ArticleResultsQuery: string | null
   setStep3ArticleResults: (result: ProbeSearchResult | null, querySignature: string | null) => void
 
+  // Log local de chamadas de IA medidas durante a sessão atual (duração +
+  // tokens de cada resposta de /chat/*), acumulado a cada geração/refinamento
+  // e reenviado como `ai_calls` no próximo save de progresso/finalização (ver
+  // sessionInput.ts) - limpo após um save bem-sucedido pra não reenviar as
+  // mesmas entradas duas vezes.
+  aiCallLog: AiUsage[]
+  addAiUsage: (usage: AiUsage | null | undefined) => void
+  clearAiCallLog: () => void
+
+  // Contador de chamadas de IA em andamento (Step2 refinar/especializar, Step3
+  // gerar queries) - usado só pra travar os botões de salvar/finalizar
+  // enquanto há uma resposta pendente, evitando salvar antes de addAiUsage
+  // rodar (o que deixaria a chamada em andamento de fora do `ai_calls`
+  // enviado). Contador em vez de boolean porque patente e artigo no Step3
+  // podem gerar em paralelo.
+  aiCallsInFlight: number
+  beginAiCall: () => void
+  endAiCall: () => void
+
   // Utilitários
   getFormData: () => {
     input: InputData
@@ -222,6 +242,8 @@ export const useFormStore = create<FormStore>((set, get) => ({
   step3PatentResultsQuery: null,
   step3ArticleResults: null,
   step3ArticleResultsQuery: null,
+  aiCallLog: [],
+  aiCallsInFlight: 0,
 
   setSessionId: (id, publicId) =>
     set({
@@ -341,6 +363,28 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step3ArticleResultsQuery: querySignature,
     }),
 
+  addAiUsage: (usage) => {
+    if (!usage) return
+    set((state) => ({
+      aiCallLog: [...state.aiCallLog, usage],
+    }))
+  },
+
+  clearAiCallLog: () =>
+    set({
+      aiCallLog: [],
+    }),
+
+  beginAiCall: () =>
+    set((state) => ({
+      aiCallsInFlight: state.aiCallsInFlight + 1,
+    })),
+
+  endAiCall: () =>
+    set((state) => ({
+      aiCallsInFlight: Math.max(0, state.aiCallsInFlight - 1),
+    })),
+
   getFormData: () => {
     const state = get()
     return {
@@ -353,6 +397,7 @@ export const useFormStore = create<FormStore>((set, get) => ({
     set({
       ...patch,
       shouldRegenerateStep2: false,
+      aiCallLog: [],
     }),
 
   reset: () =>
@@ -379,5 +424,7 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step3PatentResultsQuery: null,
       step3ArticleResults: null,
       step3ArticleResultsQuery: null,
+      aiCallLog: [],
+      aiCallsInFlight: 0,
     }),
 }))

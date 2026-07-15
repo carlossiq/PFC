@@ -14,8 +14,10 @@ from app.adapters.driving.http.session_probe_documents import (
     sync_probe_query_articles,
     sync_probe_query_patents,
 )
-from db.research_session_models import ResearchSession, SessionInput, SessionProbeQuery
+from db.research_session_models import ResearchSession, SessionAiCall, SessionInput, SessionProbeQuery
 from schemas.session_input import (
+    SessionAiCallInput,
+    SessionAiCallRow,
     SessionInputGenerated,
     SessionInputRoot,
     SessionInputRow,
@@ -112,12 +114,24 @@ async def persist_session_input(
     # Fontes que existiam no banco mas não vieram no payload são preservadas -
     # não há hoje um fluxo de "desselecionar" uma query já escolhida.
 
+    # ai_calls é um log append-only (não upsert): o frontend só reenvia as
+    # chamadas de IA medidas desde o último save, então cada item vira uma
+    # linha nova.
+    ai_call_rows = [
+        SessionAiCall(session_id=research_session.id, **item.model_dump())
+        for item in payload.ai_calls
+    ]
+    for row in ai_call_rows:
+        session.add(row)
+
     await session.commit()
     await session.refresh(research_session)
     await session.refresh(root)
     if generated_row is not None:
         await session.refresh(generated_row)
     for row in probe_query_rows:
+        await session.refresh(row)
+    for row in ai_call_rows:
         await session.refresh(row)
 
     return SessionInputSaveResponse(
@@ -128,4 +142,5 @@ async def persist_session_input(
         root=SessionInputRow.model_validate(root),
         generated=SessionInputRow.model_validate(generated_row) if generated_row else None,
         probe_queries=[SessionProbeQueryRow.model_validate(row) for row in probe_query_rows],
+        ai_calls=[SessionAiCallRow.model_validate(row) for row in ai_call_rows],
     )

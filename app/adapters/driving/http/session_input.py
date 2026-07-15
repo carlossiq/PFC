@@ -10,6 +10,7 @@ shares the same upsert logic (see session_persistence.py).
 """
 
 from fastapi import APIRouter, Depends
+from sqlalchemy.orm.attributes import set_committed_value
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.driving.http.dependencies import get_db_session
@@ -33,6 +34,17 @@ async def finalize_session(
     research_session = ResearchSession(name=payload.name, completed=payload.completed)
     session.add(research_session)
     await session.flush()
+    # Marca as coleções como já carregadas (sabemos que estão vazias - a sessão
+    # acabou de ser criada nesta mesma transação), sem passar pelo `__set__`
+    # normal do relationship: persist_session_input acessa
+    # research_session.inputs/probe_queries/ai_calls de forma síncrona, e tanto
+    # um lazy load quanto uma atribuição comum (que primeiro busca o valor
+    # antigo pra bookkeeping de cascade) disparam uma query - o que quebra com
+    # MissingGreenlet fora do greenlet que o AsyncSession prepara para chamadas
+    # await. set_committed_value evita as duas coisas.
+    set_committed_value(research_session, "inputs", [])
+    set_committed_value(research_session, "probe_queries", [])
+    set_committed_value(research_session, "ai_calls", [])
 
     data = await persist_session_input(session, research_session, payload)
 
