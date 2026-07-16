@@ -10,6 +10,7 @@ interface ProbeQuerySectionViewProps {
   title: string
   tooltip: string
   cardsSectionLabel: string
+  cardLabels?: string[]
   fieldOrder: readonly string[]
   fieldLabels: Record<string, string>
   queries: QueryOptionResult[] | null
@@ -37,6 +38,7 @@ export function ProbeQuerySectionView({
   title,
   tooltip,
   cardsSectionLabel,
+  cardLabels,
   fieldOrder,
   fieldLabels,
   queries,
@@ -95,7 +97,7 @@ export function ProbeQuerySectionView({
                 disabled={!result.success}
                 className={`${selectableCardClass(selectedIndex === index, 'w-full')} ${!result.success ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                <h4 className="font-semibold text-sm text-gray-900 mb-1">Opção {index + 1}</h4>
+                <h4 className="font-semibold text-sm text-gray-900 mb-1">{cardLabels?.[index] ?? `Opção ${index + 1}`}</h4>
                 {!result.success && (
                   <p className="text-xs text-red-600">{friendlyErrorMessage(result.error)}</p>
                 )}

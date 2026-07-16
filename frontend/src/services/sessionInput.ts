@@ -1,6 +1,7 @@
 import { apiClient } from './api'
 import type { QueryOptionResult } from './probeQuery'
 import type { AiUsage } from './aiUsage'
+import type { FinalQueryVariant } from './finalQuery'
 
 export interface SessionInputRootPayload {
   theme: string
@@ -44,6 +45,11 @@ export function mapInputToSessionInputRoot(input: FormInput): SessionInputRootPa
 
 export interface SessionProbeQueryPayload {
   fonte: 'ops' | 'scopus'
+  // null = a query da probe (Exploração Inicial); specific/balanced/generic
+  // = a variante de query final escolhida (Escolha da Query Final) -
+  // auto-relacionada à linha de probe da mesma fonte (ver
+  // db/research_session_models.py:SessionProbeQuery).
+  tipo: FinalQueryVariant | null
   query_text: string
   fields: Record<string, string[]> | null
   year_from: number | null
@@ -59,24 +65,30 @@ export interface SessionProbeQueryPayload {
   articles: Record<string, unknown>[]
 }
 
-// Monta o payload de uma query do Step3 pronta pra enviar no finalize, a
-// partir da opção selecionada numa seção (patente ou artigo). `iterations`
-// é o contador interno da store (0-based: 0 = gerada uma vez, sem retry) -
-// aqui vira o valor de negócio "nº de vezes que a query foi gerada" (1+).
-// `resultCount` vem da busca real já rodada no Step3 (ver runProbeSearch),
-// null se por algum motivo não tiver rodado ainda.
-// Retorna null se não há uma seleção válida (nada gerado, ou a tentativa
-// selecionada falhou) - mesma condição usada no `canProceed` do Step3.
+// Monta o payload de uma linha de session_probe_query pronta pra enviar no
+// finalize/save - usado tanto pra linha de probe (tipo=null, Step3) quanto
+// pra linha de query final (tipo=variante escolhida, Escolha da Query
+// Final), a partir da opção selecionada numa seção. `iterations` é o
+// contador interno da store (0-based: 0 = gerada uma vez, sem retry) - aqui
+// vira o valor de negócio "nº de vezes que a query foi gerada" (1+); pra
+// query final, o chamador já soma iterações de amostragem de termos +
+// regeneração da query final antes de passar aqui. `resultCount` vem da
+// busca real já rodada (Step3 ou Escolha da Query Final), null se ainda não
+// rodou. Retorna null se não há uma seleção válida (nada gerado, ou a
+// tentativa selecionada falhou) - mesma condição usada no `canProceed` do
+// Step3/FinalExploration.
 export function buildProbeQueryPayload(
   selected: QueryOptionResult | undefined,
   fonte: 'ops' | 'scopus',
   iterations: number,
   resultCount: number | null = null,
   rawItems: Record<string, unknown>[] = [],
+  tipo: FinalQueryVariant | null = null,
 ): SessionProbeQueryPayload | null {
   if (!selected?.success) return null
   return {
     fonte,
+    tipo,
     query_text: selected.query?.query ?? '',
     fields: selected.fields ?? null,
     year_from: selected.year_range?.from ?? null,
@@ -85,8 +97,8 @@ export function buildProbeQueryPayload(
     complexity_level: selected.complexity?.level ?? null,
     iterations: iterations + 1,
     result_count: resultCount,
-    patents: fonte === 'ops' ? rawItems : [],
-    articles: fonte === 'scopus' ? rawItems : [],
+    patents: fonte === 'ops' && tipo === null ? rawItems : [],
+    articles: fonte === 'scopus' && tipo === null ? rawItems : [],
   }
 }
 
@@ -155,6 +167,20 @@ export interface SaveSessionFormState {
   step3ArticleSelectedIndex: number | null
   step3ArticleIterations: number
   step3ArticleResults: { resultsCount: number; rawItems: Record<string, unknown>[] } | null
+  // Escolha da Query Final (ver TermSampling.tsx/FinalExploration.tsx) -
+  // usados só pra montar a linha de query final (tipo=variante escolhida)
+  // quando houver uma. Termos/seleção da Amostragem de Termos em si não são
+  // enviados - só a soma das iterações de ambas as etapas.
+  step4PatentIterations: number
+  step4PatentQueries: Record<FinalQueryVariant, QueryOptionResult> | null
+  step4PatentSelectedVariant: FinalQueryVariant | null
+  step4PatentQueryIterations: number
+  step4PatentResults: { resultsCount: number } | null
+  step4ArticleIterations: number
+  step4ArticleQueries: Record<FinalQueryVariant, QueryOptionResult> | null
+  step4ArticleSelectedVariant: FinalQueryVariant | null
+  step4ArticleQueryIterations: number
+  step4ArticleResults: { resultsCount: number } | null
   aiCallLog: AiUsage[]
 }
 
@@ -184,10 +210,15 @@ export function buildSaveSessionPayload(
       }
     : null
 
+  // `iterations` da linha de probe soma as duas etapas que ainda acontecem
+  // dentro da Exploração Inicial: regeneração da própria query probe
+  // (Step3, "Gerar outras") + reextração de termos (Amostragem de Termos,
+  // "Gerar novos" - substep dessa mesma etapa, sempre roda antes da query
+  // final existir).
   const patentQuery = buildProbeQueryPayload(
     formState.step3SelectedIndex !== null ? formState.step3Queries?.[formState.step3SelectedIndex] : undefined,
     'ops',
-    formState.step3Iterations,
+    formState.step3Iterations + formState.step4PatentIterations,
     formState.step3PatentResults?.resultsCount ?? null,
     formState.step3PatentResults?.rawItems ?? [],
   )
@@ -196,15 +227,41 @@ export function buildSaveSessionPayload(
       ? formState.step3ArticleQueries?.[formState.step3ArticleSelectedIndex]
       : undefined,
     'scopus',
-    formState.step3ArticleIterations,
+    formState.step3ArticleIterations + formState.step4ArticleIterations,
     formState.step3ArticleResults?.resultsCount ?? null,
     formState.step3ArticleResults?.rawItems ?? [],
+  )
+
+  // Linha da query final escolhida (Escolha da Query Final), auto-
+  // relacionada à linha de probe da mesma fonte - null se o usuário ainda
+  // não chegou a escolher uma variante. `iterations` aqui é só a
+  // regeneração dessa variante ("Gerar outras" na Escolha da Query Final) -
+  // a reextração de termos já foi contabilizada na linha de probe acima.
+  const patentFinalQuery = buildProbeQueryPayload(
+    formState.step4PatentSelectedVariant !== null
+      ? formState.step4PatentQueries?.[formState.step4PatentSelectedVariant]
+      : undefined,
+    'ops',
+    formState.step4PatentQueryIterations,
+    formState.step4PatentResults?.resultsCount ?? null,
+    [],
+    formState.step4PatentSelectedVariant,
+  )
+  const articleFinalQuery = buildProbeQueryPayload(
+    formState.step4ArticleSelectedVariant !== null
+      ? formState.step4ArticleQueries?.[formState.step4ArticleSelectedVariant]
+      : undefined,
+    'scopus',
+    formState.step4ArticleQueryIterations,
+    formState.step4ArticleResults?.resultsCount ?? null,
+    [],
+    formState.step4ArticleSelectedVariant,
   )
 
   return {
     root: mapInputToSessionInputRoot(formState.input),
     generated,
-    probe_queries: [patentQuery, articleQuery].filter(
+    probe_queries: [patentQuery, articleQuery, patentFinalQuery, articleFinalQuery].filter(
       (q): q is SessionProbeQueryPayload => q !== null
     ),
     ai_calls: formState.aiCallLog,

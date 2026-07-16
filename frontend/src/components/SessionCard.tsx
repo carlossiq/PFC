@@ -4,7 +4,7 @@ import { selectableCardClass } from './CandidatePicker'
 import { FieldCard } from './FieldCard'
 import { PROBE_FIELDS_BY_API } from '../constants/probeFields'
 import {
-  getSessionModel,
+  getSessionModels,
   getSessionTotalIterations,
   getSessionTotalTokens,
   type ResearchSessionSummary,
@@ -138,11 +138,14 @@ export function SessionCard({
 }: SessionCardProps) {
   const root = session.inputs.find((i) => i.parent_id === null)
   const generated = session.inputs.find((i) => i.parent_id !== null)
-  const patentQuery = session.probe_queries.find((q) => q.fonte === 'ops')
-  const articleQuery = session.probe_queries.find((q) => q.fonte === 'scopus')
+  // tipo === null identifica a linha de probe (Exploração Inicial) - a
+  // sessão pode ter uma segunda linha por fonte pra query final (Escolha da
+  // Query Final), não exibida neste card ainda.
+  const patentQuery = session.probe_queries.find((q) => q.fonte === 'ops' && q.tipo === null)
+  const articleQuery = session.probe_queries.find((q) => q.fonte === 'scopus' && q.tipo === null)
   const totalIterations = getSessionTotalIterations(session)
   const totalTokens = getSessionTotalTokens(session)
-  const model = getSessionModel(session)
+  const models = getSessionModels(session)
 
   // Independentes: os dois podem ficar abertos ao mesmo tempo, cada um
   // ocupando metade da grid.
@@ -181,7 +184,7 @@ export function SessionCard({
                 Tokens utilizados na sessão: {totalTokens}
               </p>
               <p className="text-xs text-gray-500">
-                Modelo Utilizado: {model ?? '—'}
+                {models.length > 1 ? 'Modelos Utilizados' : 'Modelo Utilizado'}: {models.length > 0 ? models.join(' + ') : '—'}
               </p>
               {root?.description && (
                 <p className="text-sm text-gray-500 mt-1 line-clamp-2">{root.description}</p>

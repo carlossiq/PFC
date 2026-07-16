@@ -11,8 +11,12 @@ import type { FormStorePatch } from '../stores/useFormStore'
 export function mapSessionToFormStorePatch(session: ResearchSessionSummary): FormStorePatch {
   const root = session.inputs.find((i) => i.parent_id === null)
   const generated = session.inputs.find((i) => i.parent_id !== null)
-  const patentQuery = session.probe_queries.find((q) => q.fonte === 'ops')
-  const articleQuery = session.probe_queries.find((q) => q.fonte === 'scopus')
+  // tipo === null identifica a linha de probe (Exploração Inicial) - session
+  // pode ter uma segunda linha por fonte (tipo=variante escolhida) pra query
+  // final, que essa retomada ainda não reidrata (Escolha da Query Final
+  // sempre reabre do zero, mesmo padrão de step3PatentResults hoje).
+  const patentQuery = session.probe_queries.find((q) => q.fonte === 'ops' && q.tipo === null)
+  const articleQuery = session.probe_queries.find((q) => q.fonte === 'scopus' && q.tipo === null)
 
   const input = {
     theme: root?.theme ?? '',
@@ -82,13 +86,11 @@ export function mapSessionToFormStorePatch(session: ResearchSessionSummary): For
     step3Queries: toQueryOption(patentQuery),
     step3SelectedIndex: patentQuery ? 0 : null,
     step3GeneratedForIntake: patentQuery ? intakeSignature : null,
-    // buildProbeQueryPayload sempre grava `iterations + 1` ao salvar; desfaz
-    // aqui pra continuar contando certo se "Gerar outras" for clicado de novo.
-    step3Iterations: patentQuery ? Math.max(0, patentQuery.iterations - 1) : 0,
+    step3Iterations: patentQuery ? Math.max(0, patentQuery.iterations) : 0,
     step3ArticleQueries: toQueryOption(articleQuery),
     step3ArticleSelectedIndex: articleQuery ? 0 : null,
     step3ArticleGeneratedForIntake: articleQuery ? intakeSignature : null,
-    step3ArticleIterations: articleQuery ? Math.max(0, articleQuery.iterations - 1) : 0,
+    step3ArticleIterations: articleQuery ? Math.max(0, articleQuery.iterations -1) : 0,
     step3PatentResults: patentResults.result,
     step3PatentResultsQuery: patentResults.querySignature,
     step3ArticleResults: articleResults.result,

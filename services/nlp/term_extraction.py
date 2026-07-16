@@ -92,6 +92,7 @@ class TermExtractor:
         """Load spaCy model for linguistic analysis."""
         if not SPACY_AVAILABLE:
             logger.warning("spacy_not_available", message="spaCy not installed")
+            self.nlp = None
             return
 
         try:
@@ -735,88 +736,6 @@ class TermExtractor:
 
         return filtered_terms
 
-    def _calculate_mmr_ranking(
-        self,
-        candidates: list[str],
-        scores: dict[str, float],
-        lambda_param: float = 0.4,
-        top_k: int = 20,
-        similarity_threshold: float = 0.5,
-    ) -> list[str]:
-        """
-        Rank terms using Maximal Marginal Relevance (MMR) with hard diversity constraint.
-
-        MMR = lambda * relevance_score - (1 - lambda) * max_similarity_to_selected
-
-        Hard constraint: Skip terms with >similarity_threshold overlap with selected terms.
-
-        With lambda=0.4 and threshold=0.5:
-        - 40% weight on relevance (high-scoring terms)
-        - 60% weight on diversity (avoiding similar terms)
-        - Skip any term >50% similar to already selected terms
-
-        Args:
-            candidates: List of candidate terms to rank
-            scores: Dict mapping term -> relevance_score
-            lambda_param: Weight for relevance vs diversity (0-1), default 0.4
-            top_k: Number of top terms to return
-            similarity_threshold: Skip terms more similar than this (0-1)
-
-        Returns:
-            List of top-k terms ranked by MMR with diversity guarantee
-        """
-        if not candidates or top_k <= 0:
-            return []
-
-        # Use Jaccard similarity for word overlap diversity
-        def jaccard_similarity(term_a: str, term_b: str) -> float:
-            words_a = set(term_a.lower().split())
-            words_b = set(term_b.lower().split())
-            if not words_a or not words_b:
-                return 0.0
-            intersection = len(words_a & words_b)
-            union = len(words_a | words_b)
-            return intersection / union if union > 0 else 0.0
-
-        selected = []
-        remaining = set(candidates)
-
-        # Iteratively select top-k terms by MMR with hard similarity constraint
-        for _ in range(min(top_k, len(candidates))):
-            best_term = None
-            best_mmr = float("-inf")
-
-            for candidate in remaining:
-                relevance = scores.get(candidate, 0.0)
-
-                # Calculate diversity penalty: max similarity to any already selected term
-                if selected:
-                    max_similarity = max(
-                        jaccard_similarity(candidate, term) for term in selected
-                    )
-
-                    # Hard constraint: Skip if too similar to any selected term
-                    if max_similarity > similarity_threshold:
-                        continue
-                else:
-                    max_similarity = 0.0
-
-                # MMR score = lambda * relevance - (1 - lambda) * diversity_penalty
-                mmr = lambda_param * relevance - (1 - lambda_param) * max_similarity
-
-                if mmr > best_mmr:
-                    best_mmr = mmr
-                    best_term = candidate
-
-            # Add best term to selected and remove from remaining
-            if best_term is not None:
-                selected.append(best_term)
-                remaining.remove(best_term)
-            else:
-                break
-
-        return selected
-
     def extract_and_rank_terms(
         self,
         original_params: dict[str, Any],
@@ -1070,32 +989,27 @@ class TermExtractor:
             remaining_terms=len(filtered_ngrams),
         )
 
-        # Load configuration for MMR and filtering
+        # Load configuration for filtering
         score_threshold = getattr(settings, "term_extraction_score_threshold", 0.6)
-        mmr_lambda = getattr(settings, "term_extraction_mmr_lambda", 0.4)
-        mmr_similarity_threshold = getattr(
-            settings, "term_extraction_mmr_similarity_threshold", 0.5
-        )
         overlap_threshold = getattr(settings, "term_extraction_overlap_threshold", 0.67)
 
-        # MMR Ranking: use pure scores (without bonuses/penalties)
-        ranked_by_mmr = self._calculate_mmr_ranking(
-            candidates=list(filtered_ngrams),
-            scores=combined_scores,
-            lambda_param=mmr_lambda,
-            top_k=len(filtered_ngrams),  # Return all, filter later by score
-            similarity_threshold=mmr_similarity_threshold,
+        # Rank by pure score (without bonuses/penalties) - substitui o ranking
+        # MMR (removido: O(N^3) num loop guloso, inviável pra centenas de
+        # candidatos). _apply_subsumption_filter já espera receber a lista
+        # ordenada por score e faz a mesma deduplicação por sobreposição de
+        # palavras num único passe (O(N x |selected|)), preservando o
+        # objetivo (evitar termos redundantes no resultado final) sem o custo.
+        ranked_by_score = sorted(
+            filtered_ngrams, key=lambda term: combined_scores.get(term, 0.0), reverse=True
         )
 
         logger.info(
-            "term_extraction_mmr_ranked",
-            mmr_lambda=mmr_lambda,
-            mmr_threshold=mmr_similarity_threshold,
-            candidates_ranked=len(ranked_by_mmr),
+            "term_extraction_ranked_by_score",
+            candidates_ranked=len(ranked_by_score),
         )
 
         # Apply overlap filter: remove terms with high word overlap (>threshold)
-        after_overlap = self._apply_subsumption_filter(ranked_by_mmr, overlap_threshold)
+        after_overlap = self._apply_subsumption_filter(ranked_by_score, overlap_threshold)
 
         logger.info(
             "term_extraction_overlap_filtered",
@@ -1128,10 +1042,20 @@ class TermExtractor:
         ]
         terms_filtered_by_score = len(after_overlap) - len(ranked_terms)
 
+        # Teto de termos devolvidos - score_threshold sozinho não limita
+        # quantidade (pode passar de 100+ termos numa amostra grande), o que
+        # vira uma checklist grande demais pro usuário revisar. ranked_terms
+        # já está ordenado por score decrescente, então isso mantém os N
+        # melhores.
+        MAX_RETURNED_TERMS = 60
+        terms_capped = len(ranked_terms) - min(len(ranked_terms), MAX_RETURNED_TERMS)
+        ranked_terms = ranked_terms[:MAX_RETURNED_TERMS]
+
         logger.info(
             "term_extraction_score_filtered",
             score_threshold=score_threshold,
             filtered_by_score=terms_filtered_by_score,
+            terms_capped=terms_capped,
             final_terms=len(ranked_terms),
         )
 
@@ -1197,3 +1121,21 @@ class TermExtractor:
         )
 
         return result_terms
+
+
+_term_extractor: Optional["TermExtractor"] = None
+
+
+def get_term_extractor() -> "TermExtractor":
+    """
+    Devolve uma instância compartilhada de TermExtractor, criada na primeira
+    chamada e reaproveitada daí em diante - carregar spaCy e o modelo do
+    KeyBERT é caro (leitura de disco + checagem de cache com o huggingface a
+    cada carga), e TermExtractor não guarda nenhum estado mutável específico
+    de uma extração entre chamadas, então é seguro compartilhar uma única
+    instância entre requisições concorrentes.
+    """
+    global _term_extractor
+    if _term_extractor is None:
+        _term_extractor = TermExtractor()
+    return _term_extractor

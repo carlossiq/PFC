@@ -10,12 +10,18 @@ interface OutrosStepsProps {
 export function OutrosSteps({ step, substep, onBack, onNext }: OutrosStepsProps) {
   // Step0 (Input Inicial) é todo tratado por Step1/Step2. Step1 (Exploração
   // Inicial) tem sua tela "principal" (escolha/edição da query) tratada pelo
-  // Step3 quando substep===null, e o substep "Resultados Iniciais" tratado
-  // pelo InitialResults. Passos além disso ainda não têm tela própria, então
-  // caem neste placeholder genérico.
+  // Step3 quando substep===null, o substep 0 "Resultados Iniciais" tratado
+  // pelo InitialResults, e o substep 1 "Amostragem de Termos" tratado pelo
+  // TermSampling. Step2 (Exploração Final) segue o mesmo padrão:
+  // FinalExploration (substep===null) e FinalResults (substep===0). Passos
+  // além disso ainda não têm tela própria, então caem neste placeholder
+  // genérico.
   if (step === STEPS.INPUT) return null
   if (step === STEPS.INITIAL_EXPLORATION && substep === null) return null
   if (step === STEPS.INITIAL_EXPLORATION && substep === 0) return null
+  if (step === STEPS.INITIAL_EXPLORATION && substep === 1) return null
+  if (step === STEPS.FINAL_EXPLORATION && substep === null) return null
+  if (step === STEPS.FINAL_EXPLORATION && substep === 0) return null
 
   return (
     <div>

@@ -27,7 +27,7 @@ export function SaveProgressButton({ disabled, onSave }: SaveProgressButtonProps
   }
 
   return (
-    <div className="absolute top-3 right-4 z-10 flex flex-col items-end gap-1 mr-7">
+    <div className="absolute top-2 right-4 flex flex-col items-end gap-1 mr-7 ">
       <button
         type="button"
         onClick={handleClick}

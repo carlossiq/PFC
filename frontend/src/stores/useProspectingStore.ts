@@ -26,20 +26,17 @@ export const useProspectingStore = create<ProspectingStore>((set) => ({
       const currentStepData = stepsData[state.step]
       const hasSubsteps = currentStepData.substeps.length > 0
 
-      // Se está em um step com substeps e ainda não entrou no substep, ir para o substep
+      // Se está em um step com substeps e ainda não entrou no substep, ir para o primeiro substep
       if (hasSubsteps && state.substep === null) {
         return { substep: 0 }
       }
 
-      // Se está em um substep, ir para o próximo step
-      if (state.substep !== null) {
-        return {
-          step: Math.min(state.step + 1, TOTAL_STEPS - 1),
-          substep: null,
-        }
+      // Se está num substep e ainda há um próximo substep no mesmo step, avança pra ele
+      if (hasSubsteps && state.substep !== null && state.substep + 1 < currentStepData.substeps.length) {
+        return { substep: state.substep + 1 }
       }
 
-      // Se é um step sem substeps, ir para o próximo step
+      // Último substep (ou step sem substeps): vai pro próximo step, do zero
       return {
         step: Math.min(state.step + 1, TOTAL_STEPS - 1),
         substep: null,
@@ -48,12 +45,17 @@ export const useProspectingStore = create<ProspectingStore>((set) => ({
 
   prevStep: () =>
     set((state) => {
-      // Se está em um substep, voltar para o step anterior (sem substep)
+      // Se está num substep além do primeiro, volta pro substep anterior no mesmo step
+      if (state.substep !== null && state.substep > 0) {
+        return { substep: state.substep - 1 }
+      }
+
+      // Primeiro substep: volta pra tela "principal" do step (substep null)
       if (state.substep !== null) {
         return { substep: null }
       }
 
-      // Se está em um step, voltar para o step anterior
+      // Se está num step sem substep ativo, volta pro step anterior
       return {
         step: Math.max(state.step - 1, 0),
         substep: null,

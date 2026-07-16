@@ -759,17 +759,21 @@ class ChatService:
             return ScopusQueryBuilder(api_name="scopus", search_mode=search_mode)
         raise ValueError(f"Rebuild não suportado para api='{api}'")
 
-    async def rebuild_probe_query(self, fields: dict[str, list[str]], api: str = "ops") -> dict[str, Any]:
+    async def _rebuild_query(
+        self, fields: dict[str, list[str]], api: str, search_mode: str
+    ) -> dict[str, Any]:
         """
         Reconstrói a query a partir de campos estruturados editados pelo
-        usuário, sem chamar a LLM (síncrono e determinístico).
+        usuário, sem chamar a LLM (síncrono e determinístico) - usado tanto
+        pela edição de query probe quanto final (search_mode muda só o
+        template usado pelo query builder).
         """
         try:
             year_from = getattr(self.settings, "search_year_from", 2015)
             year_to = getattr(self.settings, "search_year_to", 2026)
 
             llm_output = self._query_fields_to_llm_output(fields)
-            builder = self._get_raw_query_builder(api, "probe")
+            builder = self._get_raw_query_builder(api, search_mode)
             query = builder.build_query(
                 llm_output=llm_output,
                 year_from=year_from,
@@ -785,8 +789,14 @@ class ChatService:
                 "year_range": {"from": year_from, "to": year_to},
             }
         except Exception as exc:
-            logger.error("rebuild_probe_query_error", api=api, error=str(exc))
+            logger.error(f"rebuild_{search_mode}_query_error", api=api, error=str(exc))
             return {"success": False, "error": str(exc)}
+
+    async def rebuild_probe_query(self, fields: dict[str, list[str]], api: str = "ops") -> dict[str, Any]:
+        return await self._rebuild_query(fields, api, "probe")
+
+    async def rebuild_final_query(self, fields: dict[str, list[str]], api: str = "ops") -> dict[str, Any]:
+        return await self._rebuild_query(fields, api, "final")
 
     async def build_final_query(self, intake: Any, api: str) -> dict[str, Any]:
         try:
@@ -864,7 +874,7 @@ class ChatService:
 
         max_complexity = getattr(self.settings, "llm_max_query_complexity", 0.6)
         max_score = max_complexity * 100
-        max_attempts = 3
+        max_attempts = 2
         attempts_history: list[dict] = []
         complexity: Optional[dict] = None
         usages: list[LLMUsage] = []
@@ -1328,7 +1338,7 @@ class ChatService:
         original_params: Optional[dict[str, Any]] = None,
         top_k: int = 20,
     ) -> dict[str, Any]:
-        from services.nlp.term_extraction import TermExtractor
+        from services.nlp.term_extraction import get_term_extractor
 
         if not items:
             return {"success": False, "error": "No items provided"}
@@ -1352,14 +1362,30 @@ class ChatService:
             for idx, item in enumerate(valid)
         ]
 
+        start = time.perf_counter()
         try:
-            extractor = TermExtractor()
+            extractor = get_term_extractor()
             terms = extractor.extract_and_rank_terms(
                 original_params=original_params or {},
                 enriched_results=enriched,
                 top_k=top_k,
             )
-            return {"success": True, "terms": terms, "count": len(terms)}
+            duration_ms = (time.perf_counter() - start) * 1000
+            return {
+                "success": True,
+                "terms": terms,
+                "count": len(terms),
+                "ai_usage": {
+                    "step": "extract_terms",
+                    "provider": "internal",
+                    "model": self.settings.llm_keybert_model,
+                    "duration_ms": duration_ms,
+                    "input_tokens": None,
+                    "output_tokens": None,
+                    "total_tokens": None,
+                    "attempts": 1,
+                },
+            }
         except Exception as exc:
             logger.error("extract_terms_error", error=str(exc))
             return {"success": False, "error": str(exc)}

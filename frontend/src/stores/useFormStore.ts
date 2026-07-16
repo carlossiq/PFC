@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { ProbeSearchResult, QueryOptionResult } from '../services/probeQuery'
 import type { AiUsage } from '../services/aiUsage'
+import type { ExtractedTerm, FinalQueryVariant } from '../services/finalQuery'
 
 // Dados de entrada do formulário (durante edição ou persistidos)
 interface InputData {
@@ -81,13 +82,7 @@ interface FormStore {
   step2SelectedTheme: SelectedTheme | null
   setStep2SelectedTheme: (theme: SelectedTheme | null) => void
 
-  // Parâmetros gerados pela IA no Step2, persistidos entre montagens do
-  // componente (ex: ao navegar para outro step e voltar) para que não sejam
-  // recriados à toa. Só devem ser regenerados quando: (1) o usuário clica em
-  // "Generate Others Parameters", (2) o usuário volta ao Step1 e clica em
-  // "Refinar parâmetros" de novo, ou (4) uma nova sessão é iniciada (o store
-  // não é persistido, então reseta sozinho). O caso (3) - especializar um
-  // tema - atualiza só o card selecionado, sem tocar nos demais.
+  // Parâmetros gerados pela IA no Step2
   step2Candidates: SelectedTheme[]
   // `generatedForInput`, quando informado, é a assinatura (JSON) do input do
   // Step1 que gerou esses candidatos - usada por "Refinar parâmetros" pra
@@ -172,11 +167,63 @@ interface FormStore {
   step3ArticleResultsQuery: string | null
   setStep3ArticleResults: (result: ProbeSearchResult | null, querySignature: string | null) => void
 
-  // Log local de chamadas de IA medidas durante a sessão atual (duração +
-  // tokens de cada resposta de /chat/*), acumulado a cada geração/refinamento
-  // e reenviado como `ai_calls` no próximo save de progresso/finalização (ver
-  // sessionInput.ts) - limpo após um save bem-sucedido pra não reenviar as
-  // mesmas entradas duas vezes.
+  // Estado da "Exploração Final" (amostragem de termos + query final)
+  step4PatentTerms: ExtractedTerm[] | null
+  step4PatentTermsForQuery: string | null
+  step4PatentSelectedTerms: string[]
+  setStep4PatentTerms: (terms: ExtractedTerm[], forQuery: string | null) => void
+  toggleStep4PatentTerm: (term: string) => void
+
+  // Conta cliques em "Gerar novos" na amostragem de termos.
+  step4PatentIterations: number
+  incrementStep4PatentIterations: () => void
+  resetStep4PatentIterations: () => void
+
+  step4ArticleTerms: ExtractedTerm[] | null
+  step4ArticleTermsForQuery: string | null
+  step4ArticleSelectedTerms: string[]
+  setStep4ArticleTerms: (terms: ExtractedTerm[], forQuery: string | null) => void
+  toggleStep4ArticleTerm: (term: string) => void
+
+  step4ArticleIterations: number
+  incrementStep4ArticleIterations: () => void
+  resetStep4ArticleIterations: () => void
+
+  // 3 variantes (specific/balanced/generic) geradas a partir dos termos
+  // marcados, e qual delas o usuário escolheu pra rodar a busca final.
+  step4PatentQueries: Record<FinalQueryVariant, QueryOptionResult> | null
+  step4PatentSelectedVariant: FinalQueryVariant | null
+  setStep4PatentQueries: (queries: Record<FinalQueryVariant, QueryOptionResult> | null) => void
+  setStep4PatentSelectedVariant: (variant: FinalQueryVariant | null) => void
+  // Atualiza só UMA variante (ex: depois de editar/salvar campos estruturados
+  // em FinalExploration.tsx)
+  updateStep4PatentQueryVariant: (variant: FinalQueryVariant, patch: Partial<QueryOptionResult>) => void
+
+  // Conta cliques em "Gerar outras" na escolha da query final.
+  step4PatentQueryIterations: number
+  incrementStep4PatentQueryIterations: () => void
+  resetStep4PatentQueryIterations: () => void
+
+  step4ArticleQueries: Record<FinalQueryVariant, QueryOptionResult> | null
+  step4ArticleSelectedVariant: FinalQueryVariant | null
+  setStep4ArticleQueries: (queries: Record<FinalQueryVariant, QueryOptionResult> | null) => void
+  setStep4ArticleSelectedVariant: (variant: FinalQueryVariant | null) => void
+  updateStep4ArticleQueryVariant: (variant: FinalQueryVariant, patch: Partial<QueryOptionResult>) => void
+
+  step4ArticleQueryIterations: number
+  incrementStep4ArticleQueryIterations: () => void
+  resetStep4ArticleQueryIterations: () => void
+
+  // Resultado da busca final real, exibido em FinalResults.tsx - mesmo
+  // papel de step3PatentResults/step3ArticleResults pra probe search.
+  step4PatentResults: ProbeSearchResult | null
+  step4ArticleResults: ProbeSearchResult | null
+  setStep4PatentResults: (result: ProbeSearchResult | null) => void
+  setStep4ArticleResults: (result: ProbeSearchResult | null) => void
+
+  resetStep4: () => void
+
+  // Log local de chamadas de IA medidas durante a sessão atual
   aiCallLog: AiUsage[]
   addAiUsage: (usage: AiUsage | null | undefined) => void
   clearAiCallLog: () => void
@@ -242,6 +289,22 @@ export const useFormStore = create<FormStore>((set, get) => ({
   step3PatentResultsQuery: null,
   step3ArticleResults: null,
   step3ArticleResultsQuery: null,
+  step4PatentTerms: null,
+  step4PatentTermsForQuery: null,
+  step4PatentSelectedTerms: [],
+  step4PatentIterations: 0,
+  step4ArticleTerms: null,
+  step4ArticleTermsForQuery: null,
+  step4ArticleSelectedTerms: [],
+  step4ArticleIterations: 0,
+  step4PatentQueries: null,
+  step4PatentSelectedVariant: null,
+  step4PatentQueryIterations: 0,
+  step4ArticleQueries: null,
+  step4ArticleSelectedVariant: null,
+  step4ArticleQueryIterations: 0,
+  step4PatentResults: null,
+  step4ArticleResults: null,
   aiCallLog: [],
   aiCallsInFlight: 0,
 
@@ -363,6 +426,142 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step3ArticleResultsQuery: querySignature,
     }),
 
+  setStep4PatentTerms: (terms, forQuery) =>
+    set({
+      step4PatentTerms: terms,
+      step4PatentTermsForQuery: forQuery,
+      step4PatentSelectedTerms: [],
+    }),
+
+  toggleStep4PatentTerm: (term) =>
+    set((state) => ({
+      step4PatentSelectedTerms: state.step4PatentSelectedTerms.includes(term)
+        ? state.step4PatentSelectedTerms.filter((t) => t !== term)
+        : [...state.step4PatentSelectedTerms, term],
+    })),
+
+  incrementStep4PatentIterations: () =>
+    set((state) => ({
+      step4PatentIterations: state.step4PatentIterations + 1,
+    })),
+
+  resetStep4PatentIterations: () =>
+    set({
+      step4PatentIterations: 0,
+    }),
+
+  setStep4ArticleTerms: (terms, forQuery) =>
+    set({
+      step4ArticleTerms: terms,
+      step4ArticleTermsForQuery: forQuery,
+      step4ArticleSelectedTerms: [],
+    }),
+
+  toggleStep4ArticleTerm: (term) =>
+    set((state) => ({
+      step4ArticleSelectedTerms: state.step4ArticleSelectedTerms.includes(term)
+        ? state.step4ArticleSelectedTerms.filter((t) => t !== term)
+        : [...state.step4ArticleSelectedTerms, term],
+    })),
+
+  incrementStep4ArticleIterations: () =>
+    set((state) => ({
+      step4ArticleIterations: state.step4ArticleIterations + 1,
+    })),
+
+  resetStep4ArticleIterations: () =>
+    set({
+      step4ArticleIterations: 0,
+    }),
+
+  setStep4PatentQueries: (queries) =>
+    set({
+      step4PatentQueries: queries,
+      step4PatentSelectedVariant: null,
+    }),
+
+  setStep4PatentSelectedVariant: (variant) =>
+    set({
+      step4PatentSelectedVariant: variant,
+    }),
+
+  updateStep4PatentQueryVariant: (variant, patch) =>
+    set((state) => {
+      if (!state.step4PatentQueries) return {}
+      return {
+        step4PatentQueries: { ...state.step4PatentQueries, [variant]: { ...state.step4PatentQueries[variant], ...patch } },
+      }
+    }),
+
+  incrementStep4PatentQueryIterations: () =>
+    set((state) => ({
+      step4PatentQueryIterations: state.step4PatentQueryIterations + 1,
+    })),
+
+  resetStep4PatentQueryIterations: () =>
+    set({
+      step4PatentQueryIterations: 0,
+    }),
+
+  setStep4ArticleQueries: (queries) =>
+    set({
+      step4ArticleQueries: queries,
+      step4ArticleSelectedVariant: null,
+    }),
+
+  setStep4ArticleSelectedVariant: (variant) =>
+    set({
+      step4ArticleSelectedVariant: variant,
+    }),
+
+  updateStep4ArticleQueryVariant: (variant, patch) =>
+    set((state) => {
+      if (!state.step4ArticleQueries) return {}
+      return {
+        step4ArticleQueries: { ...state.step4ArticleQueries, [variant]: { ...state.step4ArticleQueries[variant], ...patch } },
+      }
+    }),
+
+  incrementStep4ArticleQueryIterations: () =>
+    set((state) => ({
+      step4ArticleQueryIterations: state.step4ArticleQueryIterations + 1,
+    })),
+
+  resetStep4ArticleQueryIterations: () =>
+    set({
+      step4ArticleQueryIterations: 0,
+    }),
+
+  setStep4PatentResults: (result) =>
+    set({
+      step4PatentResults: result,
+    }),
+
+  setStep4ArticleResults: (result) =>
+    set({
+      step4ArticleResults: result,
+    }),
+
+  resetStep4: () =>
+    set({
+      step4PatentTerms: null,
+      step4PatentTermsForQuery: null,
+      step4PatentSelectedTerms: [],
+      step4PatentIterations: 0,
+      step4ArticleTerms: null,
+      step4ArticleTermsForQuery: null,
+      step4ArticleSelectedTerms: [],
+      step4ArticleIterations: 0,
+      step4PatentQueries: null,
+      step4PatentSelectedVariant: null,
+      step4PatentQueryIterations: 0,
+      step4ArticleQueries: null,
+      step4ArticleSelectedVariant: null,
+      step4ArticleQueryIterations: 0,
+      step4PatentResults: null,
+      step4ArticleResults: null,
+    }),
+
   addAiUsage: (usage) => {
     if (!usage) return
     set((state) => ({
@@ -393,14 +592,17 @@ export const useFormStore = create<FormStore>((set, get) => ({
     }
   },
 
-  hydrateFromSession: (patch) =>
+  hydrateFromSession: (patch) => {
+    get().resetStep4()
     set({
       ...patch,
       shouldRegenerateStep2: false,
       aiCallLog: [],
-    }),
+    })
+  },
 
-  reset: () =>
+  reset: () => {
+    get().resetStep4()
     set({
       sessionId: null,
       sessionPublicId: null,
@@ -426,5 +628,6 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step3ArticleResultsQuery: null,
       aiCallLog: [],
       aiCallsInFlight: 0,
-    }),
+    })
+  },
 }))

@@ -57,9 +57,15 @@ class SessionInputGenerated(BaseModel):
 
 
 class SessionProbeQueryInput(BaseModel):
-    """Query do Step3 (patente ou artigo) selecionada pelo usuário."""
+    """
+    Query do Step3 (patente ou artigo) selecionada pelo usuário, ou a query
+    final escolhida na Amostragem de Termos/Escolha da Query Final -
+    diferenciadas por `tipo` (None = probe, "specific"|"balanced"|"generic"
+    = a variante final escolhida). Ver SessionProbeQuery.
+    """
 
     fonte: str = Field(..., pattern="^(ops|scopus)$")
+    tipo: Optional[str] = Field(default=None, pattern="^(specific|balanced|generic)$")
     query_text: str = Field(..., min_length=1)
     fields: Optional[dict[str, list[str]]] = None
     year_from: Optional[int] = None
@@ -122,7 +128,8 @@ class SessionInputSaveRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     root: SessionInputRoot
     generated: Optional[SessionInputGenerated] = None
-    probe_queries: list[SessionProbeQueryInput] = Field(default_factory=list, max_items=2)
+    # Até 4: 1 linha de probe + 1 de query final, por fonte (ops/scopus).
+    probe_queries: list[SessionProbeQueryInput] = Field(default_factory=list, max_items=4)
     ai_calls: list[SessionAiCallInput] = Field(default_factory=list)
     completed: bool = Field(default=False)
 

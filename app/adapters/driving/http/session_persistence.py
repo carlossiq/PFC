@@ -50,6 +50,7 @@ def apply_generated_fields(
 
 
 def apply_probe_query_fields(row: SessionProbeQuery, item: SessionProbeQueryInput) -> None:
+    row.tipo = item.tipo
     row.query_text = item.query_text
     row.fields = item.fields
     row.year_from = item.year_from
@@ -97,22 +98,35 @@ async def persist_session_input(
         await session.delete(generated_row)
         generated_row = None
 
-    existing_probe_by_fonte = {q.fonte: q for q in research_session.probe_queries}
+    existing_by_fonte_tipo = {(q.fonte, q.tipo): q for q in research_session.probe_queries}
     probe_query_rows = []
-    for item in payload.probe_queries:
-        row = existing_probe_by_fonte.get(item.fonte)
+    # Linhas de probe (tipo=None) primeiro, garantindo que a linha da query
+    # final (tipo=variante escolhida) já encontre o id da linha de probe da
+    # mesma fonte pra preencher parent_id (auto-relacionamento, mesma ideia
+    # de SessionInput.parent_id).
+    probe_row_by_fonte: dict[str, SessionProbeQuery] = {}
+    sorted_items = sorted(payload.probe_queries, key=lambda item: item.tipo is not None)
+    for item in sorted_items:
+        row = existing_by_fonte_tipo.get((item.fonte, item.tipo))
         if row is None:
-            row = SessionProbeQuery(session_id=research_session.id, fonte=item.fonte)
+            row = SessionProbeQuery(session_id=research_session.id, fonte=item.fonte, tipo=item.tipo)
             session.add(row)
         apply_probe_query_fields(row, item)
+        if item.tipo is not None:
+            parent = probe_row_by_fonte.get(item.fonte)
+            if parent is not None:
+                row.parent_id = parent.id
         probe_query_rows.append(row)
         await session.flush()  # garante row.id antes de sincronizar os links de documentos
+        if item.tipo is None:
+            probe_row_by_fonte[item.fonte] = row
         if item.fonte == "ops" and item.patents:
             await sync_probe_query_patents(session, row, item.patents)
         elif item.fonte == "scopus" and item.articles:
             await sync_probe_query_articles(session, row, item.articles)
-    # Fontes que existiam no banco mas não vieram no payload são preservadas -
-    # não há hoje um fluxo de "desselecionar" uma query já escolhida.
+    # Fontes/tipos que existiam no banco mas não vieram no payload são
+    # preservados - não há hoje um fluxo de "desselecionar" uma query já
+    # escolhida (nem de probe, nem de query final).
 
     # ai_calls é um log append-only (não upsert): o frontend só reenvia as
     # chamadas de IA medidas desde o último save, então cada item vira uma

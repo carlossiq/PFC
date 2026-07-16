@@ -90,16 +90,28 @@ class SessionProbeQuery(Base):
     pela IA (ou reconstruída manualmente pelo usuário), os campos estruturados
     que a compõem, e quantas iterações de IA foram necessárias até chegar
     nela - reiniciadas sempre que o input de origem muda.
+
+    Auto-relacionada como SessionInput: a linha de probe (tipo=None) é a
+    query da Exploração Inicial; a query final escolhida (Escolha da Query
+    Final) vira uma segunda linha, com parent_id apontando pra linha de
+    probe da mesma fonte e tipo = "specific"|"balanced"|"generic" (a
+    variante escolhida). `iterations` da linha de probe soma regeneração da
+    própria query probe + reextração de termos (Amostragem de Termos é um
+    substep da Exploração Inicial, sempre roda antes da query final
+    existir); `iterations` da linha final é só a regeneração daquela
+    variante - ver TermSampling.tsx/FinalExploration.tsx.
     """
 
     __tablename__ = "session_probe_query"
     __table_args__ = (
-        UniqueConstraint("session_id", "fonte", name="uq_session_probe_query_session_fonte"),
+        UniqueConstraint("session_id", "fonte", "tipo", name="uq_session_probe_query_session_fonte_tipo"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("research_session.id"), nullable=False, index=True)
     fonte: Mapped[str] = mapped_column(String(20), nullable=False)  # "ops" | "scopus"
+    tipo: Mapped[Optional[str]] = mapped_column(String(20))  # None=probe | "specific"|"balanced"|"generic"
+    parent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("session_probe_query.id"), nullable=True)
 
     query_text: Mapped[str] = mapped_column(Text, nullable=False)
     fields: Mapped[Optional[dict]] = mapped_column(JSON)
@@ -113,6 +125,7 @@ class SessionProbeQuery(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     session: Mapped["ResearchSession"] = relationship("ResearchSession", back_populates="probe_queries")
+    parent: Mapped[Optional["SessionProbeQuery"]] = relationship("SessionProbeQuery", remote_side=[id])
     patent_links: Mapped[list["ProbeQueryPatent"]] = relationship(
         "ProbeQueryPatent",
         back_populates="probe_query",

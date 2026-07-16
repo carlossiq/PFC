@@ -22,6 +22,7 @@ export const SUBSTEPS = {
 
   // Etapa de Exploração Inicial
   INITIAL_RESULTS: 'initial_results',
+  TERM_SAMPLING: 'term_sampling',
 
   // Etapa de Exploração Final
   RESULTS_ANALYSIS: 'results_analysis',
@@ -41,7 +42,10 @@ export const stepsData = [
   },
   {
     name: 'Exploração Inicial',
-    substeps: [{ id: SUBSTEPS.INITIAL_RESULTS, name: 'Resultados Iniciais' }],
+    substeps: [
+      { id: SUBSTEPS.INITIAL_RESULTS, name: 'Resultados Iniciais' },
+      { id: SUBSTEPS.TERM_SAMPLING, name: 'Amostragem de Termos' },
+    ],
   },
   {
     name: 'Exploração Final',
