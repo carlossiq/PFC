@@ -30,6 +30,10 @@ class ResearchSession(Base):
     )
     name: Mapped[Optional[str]] = mapped_column(String(255))
     completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Setado (uma vez) quando completed vira True - permite saber QUANDO a
+    # sessão foi de fato finalizada, separado de created_at (quando foi aberta)
+    # e de updated_at (que muda em todo save de progresso, não só na finalização).
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     patent_source: Mapped[Optional[str]] = mapped_column(String(50))
     scholarly_source: Mapped[Optional[str]] = mapped_column(String(50))
     relevance_threshold: Mapped[float] = mapped_column(

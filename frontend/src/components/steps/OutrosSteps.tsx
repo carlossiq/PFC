@@ -1,5 +1,6 @@
 import { STEPS } from '../../constants/steps'
 import { Button } from '../Button'
+import { SectionHeader } from '../SectionHeader'
 
 interface OutrosStepsProps {
   step: number
@@ -26,11 +27,15 @@ export function OutrosSteps({ step, substep, onBack, onNext }: OutrosStepsProps)
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-4">
-        Passo {step + 1}
-        {substep !== null && ` - Subnó ${substep + 1}`}
-      </h2>
-      <p className="mb-6">Conteúdo do passo em construção</p>
+      <SectionHeader
+        title={
+          <>
+            Passo {step + 1}
+            {substep !== null && ` - Subnó ${substep + 1}`}
+          </>
+        }
+        description="Conteúdo do passo em construção"
+      />
 
       <div className="flex gap-4">
         <Button fullWidth variant="secondary" onClick={onBack}>

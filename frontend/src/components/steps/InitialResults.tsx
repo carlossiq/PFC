@@ -3,6 +3,7 @@ import { useFormStore } from '../../stores/useFormStore'
 import { buildSaveSessionPayload, saveSession } from '../../services/sessionInput'
 import { ProbeResultsPanel } from '../ProbeResultsPanel'
 import { Button } from '../Button'
+import { SectionHeader } from '../SectionHeader'
 import { STEPS } from '../../constants/steps'
 
 interface InitialResultsProps {
@@ -52,11 +53,10 @@ export function InitialResults({ step, substep, onBack, onNext }: InitialResults
 
   return (
     <div className="w-full flex flex-col h-full overflow-y-auto">
-      <h3 className="text-lg font-semibold text-gray-900 mb-1">Resultados Iniciais</h3>
-      <p className="text-xs text-gray-500 mb-4">
-        Resultado da busca real com as queries escolhidas no passo anterior - patentes (OPS) à
-        esquerda, artigos (Scopus) à direita.
-      </p>
+      <SectionHeader
+        title="Resultados Iniciais"
+        description="Resultado da busca real com as queries escolhidas no passo anterior - patentes (OPS) à esquerda, artigos (Scopus) à direita."
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
         <ProbeResultsPanel

@@ -8,6 +8,8 @@ helper (not a repository/service abstraction) to match the direct-ORM style
 already used throughout this session-centric flow.
 """
 
+from datetime import datetime
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.driving.http.session_probe_documents import (
@@ -71,6 +73,14 @@ async def persist_session_input(
     existente); espera `.inputs`/`.probe_queries` já carregados (vazios numa
     sessão recém-criada)."""
     research_session.name = payload.name
+    # completed_at só é setado na transição pra completed (ou se a sessão já
+    # tiver sido finalizada antes e completed_at ainda não existir, ex: linha
+    # antiga anterior a essa coluna) - salvar progresso de novo numa sessão já
+    # completa não deve empurrar a data de conclusão pra frente.
+    if payload.completed and research_session.completed_at is None:
+        research_session.completed_at = datetime.utcnow()
+    elif not payload.completed:
+        research_session.completed_at = None
     research_session.completed = payload.completed
 
     root = next((i for i in research_session.inputs if i.parent_id is None), None)

@@ -20,6 +20,7 @@ class ResearchSessionSummary(BaseModel):
     name: Optional[str] = None
     completed: bool
     created_at: datetime
+    completed_at: Optional[datetime] = None
     inputs: list[SessionInputRow]
     probe_queries: list[SessionProbeQueryRow] = []
     ai_calls: list[SessionAiCallRow] = []

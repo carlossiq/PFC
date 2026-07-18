@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Modal } from '../components/Modal'
 import { SessionSearchFilter } from '../components/SessionSearchFilter'
 import { SessionCard } from '../components/SessionCard'
+import { SectionHeader } from '../components/SectionHeader'
 import { searchSessions, deleteSession, getSessionById, type ResearchSessionSummary } from '../services/researchSession'
 import { mapSessionToFormStorePatch } from '../services/sessionHydration'
 import { useFormStore } from '../stores/useFormStore'
@@ -92,11 +93,10 @@ export function SearchPage() {
 
   return (
     <div className="w-full">
-      <h2 className="text-2xl font-bold mb-1">Sessões de Prospecção</h2>
-      <p className="text-sm text-gray-500 mb-6">
-        Busque, pelo tema pesquisado, sessões de prospecção já iniciadas.Clique num card pra ver os detalhes, ou use o ícone de lixeira
-        pra apagar a sessão (e tudo o que ela guarda) permanentemente.
-      </p>
+      <SectionHeader
+        title="Sessões de Prospecção"
+        description="Busque, pelo tema pesquisado, sessões de prospecção já iniciadas. Clique num card pra ver os detalhes, ou use o ícone de lixeira pra apagar a sessão (e tudo o que ela guarda) permanentemente."
+      />
 
       <SessionSearchFilter
         value={query}

@@ -7,6 +7,7 @@ import { FieldCard } from '../FieldCard'
 import { FloatingLabelInput } from '../FloatingLabelInput'
 import { LoadingScreen } from '../LoadingScreen'
 import { Button } from '../Button'
+import { SectionHeader } from '../SectionHeader'
 import { PROBE_FIELDS_BY_API } from '../../constants/probeFields'
 import { FINAL_QUERY_VARIANT_LABELS } from '../../constants/finalQueryVariants'
 import { STEPS } from '../../constants/steps'
@@ -260,11 +261,10 @@ export function FinalExploration({ step, substep, onBack, onNext }: FinalExplora
 
   return (
     <div className="w-full flex flex-col h-full overflow-y-auto">
-      <h3 className="text-lg font-semibold text-gray-900 mb-1">Revisão da Query Final</h3>
-      <p className="text-xs text-gray-500 mb-4">
-        Query gerada a partir do tipo e dos termos escolhidos na Amostragem de Termos - revise, edite se
-        quiser, ou gere de novo antes de confirmar a busca.
-      </p>
+      <SectionHeader
+        title="Revisão da Query Final"
+        description="Query gerada a partir do tipo e dos termos escolhidos na Amostragem de Termos - revise, edite se quiser, ou gere de novo antes de confirmar a busca."
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
         {hasPatentQuery && (

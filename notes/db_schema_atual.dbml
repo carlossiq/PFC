@@ -1,0 +1,158 @@
+// Diagrama do Banco de Dados — Prospecção Tecnológica (PFC)
+// Grupo 1 (ativo): research_session e tabelas dependentes — db/research_session_models.py
+// Cole este arquivo em https://dbdiagram.io/home (New Diagram > cole no editor DBML)
+
+Table research_session {
+  id integer [pk]
+  public_id varchar [unique, not null]
+  name varchar
+  completed boolean [not null]
+  patent_source varchar
+  scholarly_source varchar
+  relevance_threshold float [not null]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+Table session_input {
+  id integer [pk]
+  session_id integer [not null]
+  parent_id integer [note: "self, optional — refino do input raiz"]
+  theme varchar [not null]
+  description text
+  area_of_study varchar
+  keywords json
+  year_from integer
+  year_to integer
+  iterations integer [not null]
+}
+
+Table session_probe_query {
+  id integer [pk]
+  session_id integer [not null]
+  fonte varchar [not null, note: "ops | scopus"]
+  tipo varchar [note: "null=probe | specific|balanced|generic"]
+  parent_id integer [note: "self, optional — query final refina a query probe"]
+  query_text text [not null]
+  fields json
+  year_from integer
+  year_to integer
+  complexity_score float
+  complexity_level varchar
+  result_count integer
+  iterations integer [not null]
+  created_at datetime [not null]
+
+  indexes {
+    (session_id, fonte, tipo) [unique]
+  }
+}
+
+Table session_ai_call {
+  id integer [pk]
+  session_id integer [not null]
+  step varchar [not null]
+  provider varchar [not null]
+  model varchar [not null]
+  duration_ms float [not null]
+  input_tokens integer
+  output_tokens integer
+  total_tokens integer
+  attempts integer [not null]
+  created_at datetime [not null]
+}
+
+Table patent {
+  id integer [pk]
+  dedup_key varchar [unique, not null]
+  source varchar [not null]
+  source_record_id varchar
+  title text [not null]
+  abstract text
+  publication_number varchar
+  application_number varchar
+  family_id varchar
+  applicants json
+  inventors json
+  ipc_codes json
+  cpc_codes json
+  filing_date varchar
+  publication_date varchar
+  grant_date varchar
+  year integer
+  legal_status varchar
+  country varchar
+  created_at datetime [not null]
+}
+
+Table article {
+  id integer [pk]
+  dedup_key varchar [unique, not null]
+  source varchar [not null]
+  source_record_id varchar
+  title text [not null]
+  abstract text
+  doi varchar
+  authors json
+  affiliations json
+  affiliation_countries json
+  journal_or_source varchar
+  volume varchar
+  issue varchar
+  pages varchar
+  publication_date varchar
+  year integer
+  keywords json
+  field_of_study json
+  citations integer
+  created_at datetime [not null]
+}
+
+Table probe_query_patent {
+  id integer [pk]
+  probe_query_id integer [not null]
+  patent_id integer [not null]
+  relevance_score float
+  created_at datetime [not null]
+
+  indexes {
+    (probe_query_id, patent_id) [unique]
+  }
+}
+
+Table probe_query_article {
+  id integer [pk]
+  probe_query_id integer [not null]
+  article_id integer [not null]
+  relevance_score float
+  created_at datetime [not null]
+
+  indexes {
+    (probe_query_id, article_id) [unique]
+  }
+}
+
+Table probe_query_term {
+  id integer [pk]
+  probe_query_id integer [not null]
+  term varchar [not null]
+  score float [not null]
+  frequency integer [not null]
+  selected boolean [not null]
+  created_at datetime [not null]
+
+  indexes {
+    (probe_query_id, term) [unique]
+  }
+}
+
+Ref: session_input.session_id > research_session.id
+Ref: session_input.parent_id > session_input.id
+Ref: session_probe_query.session_id > research_session.id
+Ref: session_probe_query.parent_id > session_probe_query.id
+Ref: session_ai_call.session_id > research_session.id
+Ref: probe_query_patent.probe_query_id > session_probe_query.id
+Ref: probe_query_patent.patent_id > patent.id
+Ref: probe_query_article.probe_query_id > session_probe_query.id
+Ref: probe_query_article.article_id > article.id
+Ref: probe_query_term.probe_query_id > session_probe_query.id

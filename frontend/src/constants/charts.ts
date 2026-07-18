@@ -21,8 +21,20 @@ export const CHART_AXIS_TICK_TEXT = '#9ca3af'
 export const CHART_AXIS_LABEL_TEXT = '#6b7280'
 export const CHART_VALUE_LABEL_TEXT = '#374151'
 
+// Laranja da linha "Sessões abertas" no gráfico de timeline. Não reaproveita
+// CHART_STATUS_PENDING (amber) porque esse amber já significa "Pendente" em
+// outros lugares da UI - usar a mesma cor aqui confundiria os dois significados.
+export const CHART_SESSIONS_OPENED = '#ea580c'
+export const CHART_SESSIONS_OPENED_HOVER = '#c2410c'
+
+// Opacidade do preenchimento sob a linha nos gráficos de área ("sombreado").
+export const CHART_AREA_FILL_OPACITY = 0.1
+
 // Altura fixa padrão de um gráfico de card (a largura acompanha o container).
 export const CHART_HEIGHT = 360
 
 // Máximo de barras de um histograma antes de agrupar valores em faixas.
 export const CHART_MAX_BUCKETS = 8
+
+// Janela do gráfico de timeline (últimos N dias, incluindo hoje).
+export const CHART_TIMESERIES_DAYS = 30

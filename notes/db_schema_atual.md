@@ -44,7 +44,9 @@ erDiagram
 	session_probe_query {
 		Int id PK ""  
 		Int session_id FK ""  
-		String fonte  "UK com session_id — ops|scopus"  
+		String fonte  "UK com session_id+tipo — ops|scopus"  
+		String tipo  "optional — null=probe, ou specific|balanced|generic"  
+		Int parent_id FK "self, optional — query final refina a query probe"  
 		Text query_text  ""  
 		JSON fields  "optional"  
 		Int year_from  "optional"  
@@ -132,19 +134,26 @@ erDiagram
 		DateTime created_at  ""  
 	}
 
-	Untitled-Entity {
-
+	probe_query_term {
+		Int id PK ""  
+		Int probe_query_id FK ""  
+		String term  "UK com probe_query_id"  
+		Float score  ""  
+		Int frequency  ""  
+		Boolean selected  ""  
+		DateTime created_at  ""  
 	}
 
 	research_session||--o{session_input:"define"
 	session_input||--o{session_input:"refina"
 	research_session||--o{session_probe_query:"executa"
+	session_probe_query||--o{session_probe_query:"refina"
 	research_session||--o{session_ai_call:"registra"
 	session_probe_query||--o{probe_query_patent:"encontra"
 	patent||--o{probe_query_patent:"aparece em"
 	session_probe_query||--o{probe_query_article:"encontra"
 	article||--o{probe_query_article:"aparece em"
-	patent}|--|{Untitled-Entity:"  "
+	session_probe_query||--o{probe_query_term:"extrai"
 ```
 
 ---
@@ -155,11 +164,13 @@ Este banco **não é um esquema único** — são três grupos de tabelas que co
 
 | # | Grupo | Arquivo | Situação |
 |---|-------|---------|----------|
-| 1 | **Sessão de prospecção** (`research_session` → `session_input`, `session_probe_query`, `session_ai_call`, `patent`, `article`) | `db/research_session_models.py` | **Ativo e em evolução** — gerenciado via Alembic, é o que está sendo construído agora. |
+| 1 | **Sessão de prospecção** (`research_session` → `session_input`, `session_probe_query`, `session_ai_call`, `patent`, `article`, `probe_query_term`) | `db/research_session_models.py` | **Ativo e em evolução** — gerenciado via Alembic, é o que está sendo construído agora. |
 | 2 | **Documentos genéricos** (`scholarly_documents`, `patent_documents`, `*_dedup_registry`) | `db/models.py` | Ainda em uso pelos adapters de persistência (`patent_repository_adapter.py`, `scholarly_repository_adapter.py`), mas independente de sessão — junção feita por convenção via `dedup_key`/`document_id`, sem FK real. |
 | 3 | **Research legado** (`research` → `research_patent_documents`, `research_scholarly_documents`, `research_metrics`, `research_phases`, `research_token_usage`) | `db/research_models.py` | Desenho anterior ao modelo session-centric. Ainda montado e usado por `research_router.py`, `report_router.py` e `metrics_aggregator.py` — é de onde vêm métricas e relatório hoje, já que o grupo 1 ainda não tem equivalente pra isso. |
 
 Pontos que valem atenção ao evoluir o schema ativo (grupo 1):
 - `session_metrics` e `session_asset` (que existiam num desenho anterior do grupo 1) **não foram implementados** — métricas e assets de sessão não têm tabela própria ainda.
 - `llm_candidate` e `search_run` do desenho anterior saíram do modelo: o refino de estratégia virou o auto-relacionamento `session_input.parent_id` (linha raiz = input do usuário, linha filha = versão refinada escolhida), e cada execução de busca por fonte virou uma linha em `session_probe_query` (uma por sessão+fonte, não uma por tentativa).
+- `session_probe_query` também ganhou auto-relacionamento (`tipo` + `parent_id`), no mesmo espírito de `session_input`: a linha de probe (`tipo=None`) é a query da Exploração Inicial, e a query final escolhida na Escolha da Query Final vira uma segunda linha (`tipo="specific"|"balanced"|"generic"`) com `parent_id` apontando pra probe da mesma fonte. Por isso a UK trocou de `session_id+fonte` para `session_id+fonte+tipo`.
+- `probe_query_term` é nova: guarda os termos extraídos pela IA interna (KeyBERT+TF-IDF) a partir dos documentos de uma probe query (Amostragem de Termos), com `selected` marcando os termos escolhidos pelo usuário pra montar a query final. Só populada em linhas de probe (`tipo=None`); sem tabela compartilhada + junção como `patent`/`article`, pois um termo só faz sentido no contexto da probe query que o gerou.
 - `patent`/`article` (grupo 1) são deduplicados globalmente — a mesma patente encontrada por duas probe queries diferentes gera **uma linha** em `patent` e **duas linhas** em `probe_query_patent`.

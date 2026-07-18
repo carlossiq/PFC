@@ -181,7 +181,7 @@ export function SessionCard({
                 <p className="text-sm font-medium text-gray-700 mt-1">{root.theme}</p>
               )}
               <p className="text-xs text-gray-500 mt-1">
-                Tokens utilizados na sessão: {totalTokens}
+                Consumo de tokens na sessão: {totalTokens}
               </p>
               <p className="text-xs text-gray-500">
                 {models.length > 1 ? 'Modelos Utilizados' : 'Modelo Utilizado'}: {models.length > 0 ? models.join(' + ') : '—'}

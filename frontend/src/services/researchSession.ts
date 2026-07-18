@@ -7,17 +7,22 @@ export interface ResearchSessionSummary {
   name: string | null
   completed: boolean
   created_at: string
+  completed_at: string | null
   inputs: SessionInputRow[]
   probe_queries: SessionProbeQueryRow[]
   ai_calls: SessionAiCallRow[]
 }
 
 // Busca sessões pelo tema de qualquer um de seus session_input (raiz ou gerado
-// por IA). Sem theme (ou string vazia), retorna as sessões mais recentes.
-export async function searchSessions(theme?: string): Promise<ResearchSessionSummary[]> {
-  const { data } = await apiClient.get('/research-session', {
-    params: theme && theme.trim() ? { theme: theme.trim() } : {},
-  })
+// por IA). Sem theme (ou string vazia), retorna as sessões mais recentes. O
+// backend limita a 50 resultados por padrão - `limit` deixa a página de
+// Estatísticas pedir mais sessões pra calcular médias/séries temporais sobre
+// um conjunto maior, sem afetar quem chama sem esse argumento (ex: SearchPage).
+export async function searchSessions(theme?: string, limit?: number): Promise<ResearchSessionSummary[]> {
+  const params: Record<string, string | number> = {}
+  if (theme && theme.trim()) params.theme = theme.trim()
+  if (limit) params.limit = limit
+  const { data } = await apiClient.get('/research-session', { params })
   return data.data
 }
 

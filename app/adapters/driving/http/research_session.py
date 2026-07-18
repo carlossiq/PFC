@@ -32,6 +32,7 @@ router = APIRouter(prefix="/research-session", tags=["research-session"])
 @router.get("", response_model=SuccessResponse[list[ResearchSessionSummary]])
 async def search_sessions(
     theme: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
     session: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[list[ResearchSessionSummary]]:
     """
@@ -52,12 +53,12 @@ async def search_sessions(
             .distinct()
         )
 
-    stmt = stmt.order_by(ResearchSession.created_at.desc()).limit(50)
+    stmt = stmt.order_by(ResearchSession.created_at.desc()).limit(limit)
 
     result = await session.execute(stmt)
     sessions = result.scalars().all()
 
-    logger.info("research_session_search", theme=theme, results_count=len(sessions))
+    logger.info("research_session_search", theme=theme, limit=limit, results_count=len(sessions))
 
     return SuccessResponse(
         data=[ResearchSessionSummary.model_validate(s) for s in sessions]

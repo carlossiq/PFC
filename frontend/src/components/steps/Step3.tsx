@@ -3,6 +3,7 @@ import { useFormStore } from '../../stores/useFormStore'
 import { useProbeQuerySection } from '../../hooks/useProbeQuerySection'
 import { ProbeQuerySectionView } from '../ProbeQuerySectionView'
 import { Button } from '../Button'
+import { SectionHeader } from '../SectionHeader'
 import { PROBE_FIELDS_BY_API } from '../../constants/probeFields'
 import { STEPS } from '../../constants/steps'
 import { runProbeSearch } from '../../services/probeQuery'
@@ -135,13 +136,10 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
 
   return (
     <div className="w-full flex flex-col h-full overflow-y-auto">
-      <h3 className="text-lg font-semibold text-gray-900 mb-1">
-        Escolha qual query utilizaremos para a Exploração Final
-      </h3>
-      <p className="text-xs text-gray-500 mb-4">
-        Tentativas independentes de uma busca focada (poucos resultados, alta relevância), tanto de patentes quanto de artigos,
-        geradas automaticamente a partir dos parâmetros enviados no passo anterior.
-      </p>
+      <SectionHeader
+        title="Escolha qual query utilizaremos para a Exploração Final"
+        description="Tentativas independentes de uma busca focada (poucos resultados, alta relevância), tanto de patentes quanto de artigos, geradas automaticamente a partir dos parâmetros enviados no passo anterior."
+      />
      
         <ProbeQuerySectionView
           title="Queries iniciais geradas por IA"

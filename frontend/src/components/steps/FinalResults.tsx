@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useFormStore } from '../../stores/useFormStore'
 import { ProbeResultsPanel } from '../ProbeResultsPanel'
 import { Button } from '../Button'
+import { SectionHeader } from '../SectionHeader'
 import { STEPS } from '../../constants/steps'
 
 interface FinalResultsProps {
@@ -24,11 +25,10 @@ export function FinalResults({ step, substep, onBack, onNext }: FinalResultsProp
 
   return (
     <div className="w-full flex flex-col h-full overflow-y-auto">
-      <h3 className="text-lg font-semibold text-gray-900 mb-1">Resultados da Busca Final</h3>
-      <p className="text-xs text-gray-500 mb-4">
-        Resultado da busca real com a query final escolhida no passo anterior - patentes (OPS) à
-        esquerda, artigos (Scopus) à direita.
-      </p>
+      <SectionHeader
+        title="Resultados da Busca Final"
+        description="Resultado da busca real com a query final escolhida no passo anterior - patentes (OPS) à esquerda, artigos (Scopus) à direita."
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
         <ProbeResultsPanel

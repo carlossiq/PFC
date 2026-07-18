@@ -8,6 +8,7 @@ import { selectableCardClass } from '../CandidatePicker'
 import { LoadingScreen } from '../LoadingScreen'
 import { Tooltip } from '../Tooltip'
 import { Button } from '../Button'
+import { SectionHeader } from '../SectionHeader'
 import { STEPS } from '../../constants/steps'
 import { useAutoDismiss } from '../../hooks/useAutoDismiss'
 import { friendlyErrorMessage } from '../../hooks/useProbeQuerySection'
@@ -276,12 +277,10 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
 
   return (
     <div className="w-full flex flex-col h-full overflow-y-auto">
-      <h3 className="text-lg font-semibold text-gray-900 mb-1">Amostragem de Termos</h3>
-      <p className="text-xs text-gray-500 mb-4">
-        Termos extraídos pela IA a partir dos títulos/abstracts das patentes e artigos encontrados na
-        Exploração Inicial, ordenados do maior pro menor score. Marque os termos que quer usar na
-        construção da query final.
-      </p>
+      <SectionHeader
+        title="Amostragem de Termos"
+        description="Termos extraídos pela IA a partir dos títulos/abstracts das patentes e artigos encontrados na Exploração Inicial, ordenados do maior pro menor score. Marque os termos que quer usar na construção da query final."
+      />
 
       <div className="flex items-center gap-1.5 mb-4">
         <span className="text-xs font-medium text-gray-600">Tipos de query final</span>

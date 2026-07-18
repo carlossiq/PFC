@@ -7,6 +7,7 @@ import { Tooltip } from '../Tooltip'
 import { CandidatePickerLayout, selectableCardClass, toCsv, parseCsv } from '../CandidatePicker'
 import { FieldCard } from '../FieldCard'
 import { Button } from '../Button'
+import { SectionHeader } from '../SectionHeader'
 import { useAutoDismiss } from '../../hooks/useAutoDismiss'
 
 interface Theme {
@@ -229,13 +230,10 @@ export function Step2({ formData, isSaving, onBack, onNext }: Step2Props) {
 
   return (
     <div className="w-full flex flex-col h-full">
-      <h3 className="text-lg font-semibold text-gray-900 mb-1">
-        Escolha qual parâmetro utilizaremos
-      </h3>
-      <p className="text-xs text-gray-500 mb-4">
-        Selecione o parâmetro inicial ou uma das variações geradas por IA - você pode editar ou
-        especificar ainda mais o tema escolhido antes de avançar.
-      </p>
+      <SectionHeader
+        title="Escolha qual parâmetro utilizaremos"
+        description="Selecione o parâmetro inicial ou uma das variações geradas por IA - você pode editar ou especificar ainda mais o tema escolhido antes de avançar."
+      />
 
       <CandidatePickerLayout
         hasSelection={!!selectedData}
