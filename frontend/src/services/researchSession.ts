@@ -46,14 +46,18 @@ export function getSessionTotalTokens(session: ResearchSessionSummary): number {
   return session.ai_calls.reduce((sum, call) => sum + (call.total_tokens ?? 0), 0)
 }
 
-// Modelos de IA usados na sessão, sem repetição, na ordem em que apareceram.
+// "distiluse-base-multilingual-cased-v2" 
+const INTERNAL_AI_LABEL = 'IA interna (extração de termos)'
+
+// Modelos de IA usados na sessão, sem repetição, na ordem em que apareceram
 export function getSessionModels(session: ResearchSessionSummary): string[] {
   const seen = new Set<string>()
   const models: string[] = []
   for (const call of session.ai_calls) {
-    if (!seen.has(call.model)) {
-      seen.add(call.model)
-      models.push(call.model)
+    const label = call.provider === 'internal' ? INTERNAL_AI_LABEL : call.model
+    if (!seen.has(label)) {
+      seen.add(label)
+      models.push(label)
     }
   }
   return models

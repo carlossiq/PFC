@@ -1,19 +1,29 @@
 import { useState } from 'react'
 import { useFormStore } from '../../stores/useFormStore'
 import { useTermSampling } from '../../hooks/useTermSampling'
-import { generateFinalQueriesMulti } from '../../services/finalQuery'
-import type { ExtractedTerm } from '../../services/finalQuery'
+import { generateFinalQuery } from '../../services/finalQuery'
+import type { ExtractedTerm, FinalQueryVariant } from '../../services/finalQuery'
+import { FINAL_QUERY_VARIANTS, FINAL_QUERY_VARIANT_LABELS } from '../../constants/finalQueryVariants'
 import { selectableCardClass } from '../CandidatePicker'
 import { LoadingScreen } from '../LoadingScreen'
 import { Tooltip } from '../Tooltip'
+import { Button } from '../Button'
 import { STEPS } from '../../constants/steps'
+import { useAutoDismiss } from '../../hooks/useAutoDismiss'
+import { friendlyErrorMessage } from '../../hooks/useProbeQuerySection'
 
 const SCORE_TOOLTIP =
   'Pontuação de relevância do termo (0 a 1), calculada pela IA combinando ' +
   'importância estatística (frequência do termo nos documentos) ' +
   'e semântica (o quanto o termo captura o assunto do título/abstract ' +
-  ') - quanto maior, mais relevante o termo é considerado ' +
-  'pro tema pesquisado.'
+  ')'
+
+const VARIANT_SELECT_TOOLTIP =
+  'Tipo da query final a gerar '+
+  'Específica busca mais restrita e ' +
+  'precisa; Balanceada  equilíbrio entre ' +
+  'precisão e cobertura; Ampla ' +
+  ' maior cobertura.'
 
 interface TermChecklistProps {
   title: string
@@ -24,6 +34,8 @@ interface TermChecklistProps {
   error: string | null
   onToggle: (term: string) => void
   onRegenerate: () => void
+  selectedVariant: FinalQueryVariant
+  onVariantChange: (variant: FinalQueryVariant) => void
 }
 
 // Uma coluna da amostragem de termos (patentes/OPS ou artigos/Scopus):
@@ -39,6 +51,8 @@ function TermChecklist({
   error,
   onToggle,
   onRegenerate,
+  selectedVariant,
+  onVariantChange,
 }: TermChecklistProps) {
   return (
     <div className="flex flex-col">
@@ -50,6 +64,27 @@ function TermChecklist({
           </Tooltip>
         </div>
 
+        {hasDocs && (
+          <div className="flex items-center gap-1.5 mb-3">
+            <label className="text-xs font-medium text-gray-600 shrink-0" htmlFor={`variant-${title}`}>
+              Tipo de query final:
+            </label>
+            <select
+              id={`variant-${title}`}
+              value={selectedVariant}
+              onChange={(e) => onVariantChange(e.target.value as FinalQueryVariant)}
+              disabled={isLoading}
+              className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1 text-gray-900 disabled:opacity-60"
+            >
+              {FINAL_QUERY_VARIANTS.map((variant) => (
+                <option key={variant} value={variant}>
+                  {FINAL_QUERY_VARIANT_LABELS[variant]}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {!hasDocs && <p className="text-sm text-gray-500">Sem documentos encontrados nesta fonte.</p>}
 
         {hasDocs && isLoading && <LoadingScreen message="Extraindo termos com IA..." />}
@@ -57,13 +92,9 @@ function TermChecklist({
         {hasDocs && !isLoading && error && (
           <div className="p-4 rounded-lg border-2 border-red-200 bg-red-50">
             <p className="text-sm text-red-700 mb-2">{error}</p>
-            <button
-              type="button"
-              onClick={onRegenerate}
-              className="text-sm font-semibold text-[#0f9448] hover:text-[#0d843f]"
-            >
+            <Button variant="link" onClick={onRegenerate}>
               Tentar novamente
-            </button>
+            </Button>
           </div>
         )}
 
@@ -90,14 +121,9 @@ function TermChecklist({
 
       {hasDocs && (
         <div className="mt-3 shrink-0">
-          <button
-            type="button"
-            onClick={onRegenerate}
-            disabled={isLoading}
-            className="bg-[#0f9448] hover:bg-[#0d843f] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-300 text-sm"
-          >
+          <Button size="sm" onClick={onRegenerate} disabled={isLoading}>
             {isLoading ? 'Gerando...' : 'Gerar novos'}
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -113,8 +139,9 @@ interface TermSamplingProps {
 
 // Substep "Amostragem de Termos" da Exploração Inicial: mostra os termos
 // extraídos dos documentos da probe (patentes + artigos) pro usuário marcar
-// manualmente quais quer levar pra construção da query final. "Gerar Query"
-// já dispara a geração das 3 variantes (specific/balanced/generic) com os
+// manualmente quais quer levar pra construção da query final, e escolher
+// (select) qual tipo de query final quer gerar pra cada fonte. "Gerar Query"
+// já dispara a geração só do tipo escolhido (não as 3 variantes) com os
 // termos marcados e avança pro substep seguinte (escolha da query, em
 // FinalExploration.tsx) - mesmo padrão de Step3.tsx, que roda a busca real
 // antes de avançar pra "Resultados Iniciais".
@@ -140,9 +167,13 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
     toggleStep4ArticleTerm,
     incrementStep4ArticleIterations,
     resetStep4ArticleIterations,
-    setStep4PatentQueries,
+    step4PatentSelectedVariant,
+    setStep4PatentSelectedVariant,
+    setStep4PatentQuery,
     resetStep4PatentQueryIterations,
-    setStep4ArticleQueries,
+    step4ArticleSelectedVariant,
+    setStep4ArticleSelectedVariant,
+    setStep4ArticleQuery,
     resetStep4ArticleQueryIterations,
     addAiUsage,
   } = useFormStore()
@@ -184,6 +215,8 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
   const [isBuildingQueries, setIsBuildingQueries] = useState(false)
   const [buildQueriesError, setBuildQueriesError] = useState<string | null>(null)
 
+  useAutoDismiss(buildQueriesError, () => setBuildQueriesError(null))
+
   if (step !== STEPS.INITIAL_EXPLORATION || substep !== 1) return null
 
   const patentTermsReady = !patentTerms.hasDocs || step4PatentSelectedTerms.length > 0
@@ -198,36 +231,41 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
     try {
       const [patentOutcome, articleOutcome] = await Promise.allSettled([
         patentTerms.hasDocs
-          ? generateFinalQueriesMulti(
+          ? generateFinalQuery(
               input,
               step2SelectedTheme,
               step4PatentTerms!.filter((t) => step4PatentSelectedTerms.includes(t.term)),
+              step4PatentSelectedVariant,
               'ops'
             )
           : Promise.resolve(null),
         articleTerms.hasDocs
-          ? generateFinalQueriesMulti(
+          ? generateFinalQuery(
               input,
               step2SelectedTheme,
               step4ArticleTerms!.filter((t) => step4ArticleSelectedTerms.includes(t.term)),
+              step4ArticleSelectedVariant,
               'scopus'
             )
           : Promise.resolve(null),
       ])
 
       if (patentOutcome.status === 'rejected' || articleOutcome.status === 'rejected') {
-        setBuildQueriesError('Falha ao gerar a query final com IA. Tente novamente.')
+        console.error('Falha ao gerar a query final:', patentOutcome, articleOutcome)
+        const reason = patentOutcome.status === 'rejected' ? patentOutcome.reason : articleOutcome.status === 'rejected' ? articleOutcome.reason : undefined
+        const message = reason instanceof Error ? reason.message : undefined
+        setBuildQueriesError(friendlyErrorMessage(message, 'Falha ao gerar a query final com IA. Tente novamente.'))
         return
       }
 
       if (patentOutcome.value) {
         addAiUsage(patentOutcome.value.aiUsage)
-        setStep4PatentQueries(patentOutcome.value.queries)
+        setStep4PatentQuery(patentOutcome.value.query)
         resetStep4PatentQueryIterations()
       }
       if (articleOutcome.value) {
         addAiUsage(articleOutcome.value.aiUsage)
-        setStep4ArticleQueries(articleOutcome.value.queries)
+        setStep4ArticleQuery(articleOutcome.value.query)
         resetStep4ArticleQueryIterations()
       }
       onNext()
@@ -245,6 +283,15 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
         construção da query final.
       </p>
 
+      <div className="flex items-center gap-1.5 mb-4">
+        <span className="text-xs font-medium text-gray-600">Tipos de query final</span>
+        <Tooltip position="right" label={VARIANT_SELECT_TOOLTIP}>
+          <span className="w-4 h-4 flex items-center justify-center rounded-full border border-gray-400 text-gray-500 text-[10px] font-bold leading-none cursor-help shrink-0">
+            ?
+          </span>
+        </Tooltip>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
         <TermChecklist
           title="Termos de patentes (OPS)"
@@ -255,6 +302,8 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
           error={patentTerms.error}
           onToggle={patentTerms.toggleTerm}
           onRegenerate={patentTerms.handleRegenerate}
+          selectedVariant={step4PatentSelectedVariant}
+          onVariantChange={setStep4PatentSelectedVariant}
         />
         <TermChecklist
           title="Termos de artigos (Scopus)"
@@ -265,28 +314,20 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
           error={articleTerms.error}
           onToggle={articleTerms.toggleTerm}
           onRegenerate={articleTerms.handleRegenerate}
+          selectedVariant={step4ArticleSelectedVariant}
+          onVariantChange={setStep4ArticleSelectedVariant}
         />
       </div>
 
       {buildQueriesError && <p className="mb-4 text-sm text-red-600 font-medium">{buildQueriesError}</p>}
 
       <div className="mt-2 pt-4 border-t border-gray-200 flex gap-4">
-        <button
-          type="button"
-          onClick={onBack}
-          disabled={isBuildingQueries}
-          className="flex-1 bg-gray-400 hover:bg-gray-500 disabled:opacity-60 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-        >
+        <Button fullWidth variant="secondary" onClick={onBack} disabled={isBuildingQueries}>
           Voltar
-        </button>
-        <button
-          type="button"
-          onClick={handleBuildQueries}
-          disabled={!canBuildQueries || isBuildingQueries}
-          className="flex-1 bg-[#0f9448] hover:bg-[#0d843f] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-        >
+        </Button>
+        <Button fullWidth onClick={handleBuildQueries} disabled={!canBuildQueries || isBuildingQueries}>
           {isBuildingQueries ? 'Gerando query...' : 'Gerar Query Final'}
-        </button>
+        </Button>
       </div>
     </div>
   )

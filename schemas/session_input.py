@@ -56,6 +56,20 @@ class SessionInputGenerated(BaseModel):
     iterations: int = Field(default=0, ge=0)
 
 
+class TermInput(BaseModel):
+    """
+    Termo extraído pela IA interna (Amostragem de Termos) a partir dos
+    documentos de uma probe query, com a flag `selected` indicando se o
+    usuário marcou esse termo pra usar na construção da query final. Ver
+    ProbeQueryTerm.
+    """
+
+    term: str = Field(..., min_length=1, max_length=255)
+    score: float
+    frequency: int = Field(default=0, ge=0)
+    selected: bool = Field(default=False)
+
+
 class SessionProbeQueryInput(BaseModel):
     """
     Query do Step3 (patente ou artigo) selecionada pelo usuário, ou a query
@@ -76,6 +90,9 @@ class SessionProbeQueryInput(BaseModel):
     result_count: Optional[int] = Field(default=None, ge=0)
     patents: list[dict[str, Any]] = Field(default_factory=list, max_items=200)
     articles: list[dict[str, Any]] = Field(default_factory=list, max_items=200)
+    # Termos da Amostragem de Termos (todos os extraídos, com `selected`
+    # marcando os escolhidos) - só preenchido em linhas de probe (tipo=None).
+    terms: list[TermInput] = Field(default_factory=list, max_items=100)
 
 
 class SessionAiCallInput(BaseModel):

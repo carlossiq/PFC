@@ -1,7 +1,7 @@
 import { apiClient } from './api'
 import type { QueryOptionResult } from './probeQuery'
 import type { AiUsage } from './aiUsage'
-import type { FinalQueryVariant } from './finalQuery'
+import type { ExtractedTerm, FinalQueryVariant } from './finalQuery'
 
 export interface SessionInputRootPayload {
   theme: string
@@ -43,6 +43,13 @@ export function mapInputToSessionInputRoot(input: FormInput): SessionInputRootPa
   }
 }
 
+export interface SessionProbeQueryTermPayload {
+  term: string
+  score: number
+  frequency: number
+  selected: boolean
+}
+
 export interface SessionProbeQueryPayload {
   fonte: 'ops' | 'scopus'
   // null = a query da probe (Exploração Inicial); specific/balanced/generic
@@ -63,6 +70,24 @@ export interface SessionProbeQueryPayload {
   // e persiste em patent/article (ver session_probe_documents.py).
   patents: Record<string, unknown>[]
   articles: Record<string, unknown>[]
+  // Termos da Amostragem de Termos (todos os extraídos, com `selected`
+  // marcando os escolhidos pelo usuário) - só preenchido em linhas de probe
+  // (tipo=null); a query final nunca tem termos próprios.
+  terms: SessionProbeQueryTermPayload[]
+}
+
+// Junta os termos extraídos com a seleção do usuário no formato esperado
+// pelo backend (ver ProbeQueryTerm) - usado só pra linhas de probe.
+function buildTermsPayload(
+  terms: ExtractedTerm[] | null,
+  selectedTerms: string[],
+): SessionProbeQueryTermPayload[] {
+  return (terms ?? []).map((t) => ({
+    term: t.term,
+    score: t.score,
+    frequency: t.frequency,
+    selected: selectedTerms.includes(t.term),
+  }))
 }
 
 // Monta o payload de uma linha de session_probe_query pronta pra enviar no
@@ -84,6 +109,8 @@ export function buildProbeQueryPayload(
   resultCount: number | null = null,
   rawItems: Record<string, unknown>[] = [],
   tipo: FinalQueryVariant | null = null,
+  terms: ExtractedTerm[] | null = null,
+  selectedTerms: string[] = [],
 ): SessionProbeQueryPayload | null {
   if (!selected?.success) return null
   return {
@@ -99,6 +126,7 @@ export function buildProbeQueryPayload(
     result_count: resultCount,
     patents: fonte === 'ops' && tipo === null ? rawItems : [],
     articles: fonte === 'scopus' && tipo === null ? rawItems : [],
+    terms: tipo === null ? buildTermsPayload(terms, selectedTerms) : [],
   }
 }
 
@@ -167,18 +195,24 @@ export interface SaveSessionFormState {
   step3ArticleSelectedIndex: number | null
   step3ArticleIterations: number
   step3ArticleResults: { resultsCount: number; rawItems: Record<string, unknown>[] } | null
+  // Amostragem de Termos (ver TermSampling.tsx) - todos os termos extraídos
+  // + os marcados pelo usuário, enviados junto da linha de probe (ver
+  // ProbeQueryTerm).
+  step4PatentTerms: ExtractedTerm[] | null
+  step4PatentSelectedTerms: string[]
+  step4ArticleTerms: ExtractedTerm[] | null
+  step4ArticleSelectedTerms: string[]
   // Escolha da Query Final (ver TermSampling.tsx/FinalExploration.tsx) -
   // usados só pra montar a linha de query final (tipo=variante escolhida)
-  // quando houver uma. Termos/seleção da Amostragem de Termos em si não são
-  // enviados - só a soma das iterações de ambas as etapas.
+  // quando houver uma query gerada.
   step4PatentIterations: number
-  step4PatentQueries: Record<FinalQueryVariant, QueryOptionResult> | null
-  step4PatentSelectedVariant: FinalQueryVariant | null
+  step4PatentSelectedVariant: FinalQueryVariant
+  step4PatentQuery: QueryOptionResult | null
   step4PatentQueryIterations: number
   step4PatentResults: { resultsCount: number } | null
   step4ArticleIterations: number
-  step4ArticleQueries: Record<FinalQueryVariant, QueryOptionResult> | null
-  step4ArticleSelectedVariant: FinalQueryVariant | null
+  step4ArticleSelectedVariant: FinalQueryVariant
+  step4ArticleQuery: QueryOptionResult | null
   step4ArticleQueryIterations: number
   step4ArticleResults: { resultsCount: number } | null
   aiCallLog: AiUsage[]
@@ -221,6 +255,9 @@ export function buildSaveSessionPayload(
     formState.step3Iterations + formState.step4PatentIterations,
     formState.step3PatentResults?.resultsCount ?? null,
     formState.step3PatentResults?.rawItems ?? [],
+    null,
+    formState.step4PatentTerms,
+    formState.step4PatentSelectedTerms,
   )
   const articleQuery = buildProbeQueryPayload(
     formState.step3ArticleSelectedIndex !== null
@@ -230,17 +267,19 @@ export function buildSaveSessionPayload(
     formState.step3ArticleIterations + formState.step4ArticleIterations,
     formState.step3ArticleResults?.resultsCount ?? null,
     formState.step3ArticleResults?.rawItems ?? [],
+    null,
+    formState.step4ArticleTerms,
+    formState.step4ArticleSelectedTerms,
   )
 
   // Linha da query final escolhida (Escolha da Query Final), auto-
   // relacionada à linha de probe da mesma fonte - null se o usuário ainda
-  // não chegou a escolher uma variante. `iterations` aqui é só a
-  // regeneração dessa variante ("Gerar outras" na Escolha da Query Final) -
-  // a reextração de termos já foi contabilizada na linha de probe acima.
+  // não gerou uma query final. `iterations` aqui é só a regeneração dessa
+  // query ("Gerar de novo" na Escolha da Query Final) - a reextração de
+  // termos já foi contabilizada na linha de probe acima. `tipo` é o mesmo
+  // tipo escolhido no select de TermSampling.tsx antes de gerar.
   const patentFinalQuery = buildProbeQueryPayload(
-    formState.step4PatentSelectedVariant !== null
-      ? formState.step4PatentQueries?.[formState.step4PatentSelectedVariant]
-      : undefined,
+    formState.step4PatentQuery ?? undefined,
     'ops',
     formState.step4PatentQueryIterations,
     formState.step4PatentResults?.resultsCount ?? null,
@@ -248,9 +287,7 @@ export function buildSaveSessionPayload(
     formState.step4PatentSelectedVariant,
   )
   const articleFinalQuery = buildProbeQueryPayload(
-    formState.step4ArticleSelectedVariant !== null
-      ? formState.step4ArticleQueries?.[formState.step4ArticleSelectedVariant]
-      : undefined,
+    formState.step4ArticleQuery ?? undefined,
     'scopus',
     formState.step4ArticleQueryIterations,
     formState.step4ArticleResults?.resultsCount ?? null,

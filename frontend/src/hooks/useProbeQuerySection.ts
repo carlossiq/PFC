@@ -10,6 +10,7 @@ import type { ProbeApi } from '../constants/probeFields'
 import { toCsv, parseCsv } from '../components/CandidatePicker'
 import { STEPS } from '../constants/steps'
 import { useFormStore } from '../stores/useFormStore'
+import { useAutoDismiss } from './useAutoDismiss'
 
 // A API da IA (Gemini/Anthropic) pode devolver mensagens de erro brutas e
 // longas (ex: 429 com detalhes de quota) — resume pros casos conhecidos em
@@ -91,6 +92,9 @@ export function useProbeQuerySection({
   const [error, setError] = useState<string | null>(null)
   const [isRebuilding, setIsRebuilding] = useState(false)
   const [rebuildError, setRebuildError] = useState<string | null>(null)
+
+  useAutoDismiss(error, () => setError(null))
+  useAutoDismiss(rebuildError, () => setRebuildError(null))
 
   const requestIdRef = useRef(0)
   // Trava síncrona contra o double-invoke do StrictMode em dev: como o Step3
@@ -180,7 +184,17 @@ export function useProbeQuerySection({
   function handleStartEdit() {
     const fields: StructuredQueryFields = selected?.fields ?? {}
     const next: Record<string, string> = {}
-    for (const f of fieldOrder) next[f] = toCsv(fields[f])
+    for (const f of fieldOrder) {
+      // Year geralmente vem vazio do LLM (nenhum dos prompts pede um ano
+      // específico) - a query já aplica o intervalo padrão de qualquer
+      // jeito (year_range), então pré-preenche o campo de edição com esse
+      // padrão em vez de deixar em branco, pra não parecer que "sumiu".
+      if (f === 'year' && (!fields.year || fields.year.length === 0) && selected?.year_range) {
+        next[f] = `${selected.year_range.from}, ${selected.year_range.to}`
+      } else {
+        next[f] = toCsv(fields[f])
+      }
+    }
     setEditFields(next)
     setIsEditing(true)
   }

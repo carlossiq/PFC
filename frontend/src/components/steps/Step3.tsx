@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useFormStore } from '../../stores/useFormStore'
 import { useProbeQuerySection } from '../../hooks/useProbeQuerySection'
 import { ProbeQuerySectionView } from '../ProbeQuerySectionView'
+import { Button } from '../Button'
 import { PROBE_FIELDS_BY_API } from '../../constants/probeFields'
 import { STEPS } from '../../constants/steps'
 import { runProbeSearch } from '../../services/probeQuery'
@@ -195,21 +196,13 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
       )}
 
       <div className="mt-2 pt-4 border-t border-gray-200 flex gap-4">
-        <button
-          onClick={onBack}
-          disabled={isBusy || isConfirming}
-          className="flex-1 bg-gray-400 hover:bg-gray-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-300"
-        >
+        <Button fullWidth variant="secondary" onClick={onBack} disabled={isBusy || isConfirming}>
           Voltar
-        </button>
+        </Button>
 
-        <button
-          onClick={handleConfirm}
-          disabled={isBusy || isConfirming || !canProceed}
-          className="flex-1 font-semibold py-2 px-4 rounded-lg text-white transition-colors duration-300 bg-[#0f9448] hover:bg-[#0d843f] disabled:opacity-60 disabled:cursor-not-allowed"
-        >
+        <Button fullWidth onClick={handleConfirm} disabled={isBusy || isConfirming || !canProceed}>
           {isConfirming ? 'Buscando resultados...' : 'Próximo'}
-        </button>
+        </Button>
       </div>
     </div>
   )

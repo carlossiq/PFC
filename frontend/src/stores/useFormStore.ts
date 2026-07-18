@@ -52,6 +52,12 @@ export type FormStorePatch = Partial<
     | 'step3PatentResultsQuery'
     | 'step3ArticleResults'
     | 'step3ArticleResultsQuery'
+    | 'step4PatentTerms'
+    | 'step4PatentTermsForQuery'
+    | 'step4PatentSelectedTerms'
+    | 'step4ArticleTerms'
+    | 'step4ArticleTermsForQuery'
+    | 'step4ArticleSelectedTerms'
   >
 >
 
@@ -189,26 +195,32 @@ interface FormStore {
   incrementStep4ArticleIterations: () => void
   resetStep4ArticleIterations: () => void
 
-  // 3 variantes (specific/balanced/generic) geradas a partir dos termos
-  // marcados, e qual delas o usuário escolheu pra rodar a busca final.
-  step4PatentQueries: Record<FinalQueryVariant, QueryOptionResult> | null
-  step4PatentSelectedVariant: FinalQueryVariant | null
-  setStep4PatentQueries: (queries: Record<FinalQueryVariant, QueryOptionResult> | null) => void
-  setStep4PatentSelectedVariant: (variant: FinalQueryVariant | null) => void
-  // Atualiza só UMA variante (ex: depois de editar/salvar campos estruturados
-  // em FinalExploration.tsx)
-  updateStep4PatentQueryVariant: (variant: FinalQueryVariant, patch: Partial<QueryOptionResult>) => void
+  // Tipo de query final escolhido pelo usuário ANTES de gerar (select no
+  // card de termos em TermSampling.tsx) - default 'balanced', sempre tem
+  // um valor (não é mais "qual das 3 já geradas o usuário escolheu depois",
+  // é "qual das 3 gerar" - só essa é de fato gerada, ver
+  // finalQuery.ts#generateFinalQuery).
+  step4PatentSelectedVariant: FinalQueryVariant
+  setStep4PatentSelectedVariant: (variant: FinalQueryVariant) => void
 
-  // Conta cliques em "Gerar outras" na escolha da query final.
+  // A única query final gerada pro tipo escolhido acima.
+  step4PatentQuery: QueryOptionResult | null
+  setStep4PatentQuery: (query: QueryOptionResult | null) => void
+  // Atualiza a query já gerada (ex: depois de editar/salvar campos
+  // estruturados em FinalExploration.tsx).
+  updateStep4PatentQuery: (patch: Partial<QueryOptionResult>) => void
+
+  // Conta cliques em "Gerar de novo" na Escolha da Query Final.
   step4PatentQueryIterations: number
   incrementStep4PatentQueryIterations: () => void
   resetStep4PatentQueryIterations: () => void
 
-  step4ArticleQueries: Record<FinalQueryVariant, QueryOptionResult> | null
-  step4ArticleSelectedVariant: FinalQueryVariant | null
-  setStep4ArticleQueries: (queries: Record<FinalQueryVariant, QueryOptionResult> | null) => void
-  setStep4ArticleSelectedVariant: (variant: FinalQueryVariant | null) => void
-  updateStep4ArticleQueryVariant: (variant: FinalQueryVariant, patch: Partial<QueryOptionResult>) => void
+  step4ArticleSelectedVariant: FinalQueryVariant
+  setStep4ArticleSelectedVariant: (variant: FinalQueryVariant) => void
+
+  step4ArticleQuery: QueryOptionResult | null
+  setStep4ArticleQuery: (query: QueryOptionResult | null) => void
+  updateStep4ArticleQuery: (patch: Partial<QueryOptionResult>) => void
 
   step4ArticleQueryIterations: number
   incrementStep4ArticleQueryIterations: () => void
@@ -297,11 +309,11 @@ export const useFormStore = create<FormStore>((set, get) => ({
   step4ArticleTermsForQuery: null,
   step4ArticleSelectedTerms: [],
   step4ArticleIterations: 0,
-  step4PatentQueries: null,
-  step4PatentSelectedVariant: null,
+  step4PatentSelectedVariant: 'balanced',
+  step4PatentQuery: null,
   step4PatentQueryIterations: 0,
-  step4ArticleQueries: null,
-  step4ArticleSelectedVariant: null,
+  step4ArticleSelectedVariant: 'balanced',
+  step4ArticleQuery: null,
   step4ArticleQueryIterations: 0,
   step4PatentResults: null,
   step4ArticleResults: null,
@@ -474,22 +486,21 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step4ArticleIterations: 0,
     }),
 
-  setStep4PatentQueries: (queries) =>
-    set({
-      step4PatentQueries: queries,
-      step4PatentSelectedVariant: null,
-    }),
-
   setStep4PatentSelectedVariant: (variant) =>
     set({
       step4PatentSelectedVariant: variant,
     }),
 
-  updateStep4PatentQueryVariant: (variant, patch) =>
+  setStep4PatentQuery: (query) =>
+    set({
+      step4PatentQuery: query,
+    }),
+
+  updateStep4PatentQuery: (patch) =>
     set((state) => {
-      if (!state.step4PatentQueries) return {}
+      if (!state.step4PatentQuery) return {}
       return {
-        step4PatentQueries: { ...state.step4PatentQueries, [variant]: { ...state.step4PatentQueries[variant], ...patch } },
+        step4PatentQuery: { ...state.step4PatentQuery, ...patch },
       }
     }),
 
@@ -503,22 +514,21 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step4PatentQueryIterations: 0,
     }),
 
-  setStep4ArticleQueries: (queries) =>
-    set({
-      step4ArticleQueries: queries,
-      step4ArticleSelectedVariant: null,
-    }),
-
   setStep4ArticleSelectedVariant: (variant) =>
     set({
       step4ArticleSelectedVariant: variant,
     }),
 
-  updateStep4ArticleQueryVariant: (variant, patch) =>
+  setStep4ArticleQuery: (query) =>
+    set({
+      step4ArticleQuery: query,
+    }),
+
+  updateStep4ArticleQuery: (patch) =>
     set((state) => {
-      if (!state.step4ArticleQueries) return {}
+      if (!state.step4ArticleQuery) return {}
       return {
-        step4ArticleQueries: { ...state.step4ArticleQueries, [variant]: { ...state.step4ArticleQueries[variant], ...patch } },
+        step4ArticleQuery: { ...state.step4ArticleQuery, ...patch },
       }
     }),
 
@@ -552,11 +562,11 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step4ArticleTermsForQuery: null,
       step4ArticleSelectedTerms: [],
       step4ArticleIterations: 0,
-      step4PatentQueries: null,
-      step4PatentSelectedVariant: null,
+      step4PatentSelectedVariant: 'balanced',
+      step4PatentQuery: null,
       step4PatentQueryIterations: 0,
-      step4ArticleQueries: null,
-      step4ArticleSelectedVariant: null,
+      step4ArticleSelectedVariant: 'balanced',
+      step4ArticleQuery: null,
       step4ArticleQueryIterations: 0,
       step4PatentResults: null,
       step4ArticleResults: null,

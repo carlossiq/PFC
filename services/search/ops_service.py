@@ -174,6 +174,12 @@ class OPSService:
     _MAX_RETRIES = 3
     _RETRY_DELAY_SECONDS = 2
     _TIMEOUT_SECONDS = 60
+    # Janela máxima de resultados por requisição (limite do header
+    # X-OPS-Range da própria API OPS) - pra buscar mais que isso,
+    # search_with_abstracts pagina em várias requisições sequenciais
+    # deslocando o range (1-100, 101-200, ...), mesmo padrão de
+    # ScopusService.search.
+    _OPS_PAGE_SIZE = 100
 
     def __init__(
         self,
@@ -262,7 +268,11 @@ class OPSService:
 
         Args:
             query: Query dict com 'query' (CQL string).
-            top_k: Número de resultados com abstracts a retornar (1-100).
+            top_k: Número TOTAL de resultados desejados - se maior que
+                _OPS_PAGE_SIZE (100, limite por requisição do header
+                X-OPS-Range), pagina automaticamente em várias requisições
+                sequenciais (1-100, 101-200, ...) até atingir esse total ou
+                esgotar os resultados disponíveis.
             run_id: ID único da requisição para logging.
 
         Returns:
@@ -285,8 +295,56 @@ class OPSService:
                     run_id=run_id,
                 )
 
-            # Executar busca com retry usando endpoint /search/biblio
-            return await self._search_abstract_with_retry(query, top_k, run_id, start_time)
+            all_results: list[dict[str, Any]] = []
+            total_count: Optional[int] = None
+            range_start = 1
+
+            while len(all_results) < top_k:
+                page_size = min(self._OPS_PAGE_SIZE, top_k - len(all_results))
+                page_result = await self._search_abstract_with_retry(
+                    query, range_start, page_size, run_id, start_time
+                )
+
+                if not page_result.success:
+                    if all_results:
+                        logger.warning(
+                            "ops_search_abstract_partial_success",
+                            results_count=len(all_results),
+                            error=page_result.error_message,
+                            run_id=run_id,
+                        )
+                        break
+                    return page_result
+
+                total_count = page_result.total_count
+                all_results.extend(page_result.results)
+
+                if len(page_result.results) < page_size:
+                    # Menos resultados que o pedido - não há mais páginas.
+                    break
+
+                range_start += page_size
+
+            duration = time.time() - start_time
+
+            logger.info(
+                "ops_search_abstract_complete",
+                results_count=len(all_results),
+                total_count=total_count,
+                duration=duration,
+                run_id=run_id,
+            )
+
+            return SearchResult(
+                api_name="ops",
+                success=True,
+                query=query.get("query", ""),
+                results=all_results,
+                total_count=total_count,
+                results_returned=len(all_results),
+                duration_seconds=duration,
+                run_id=run_id,
+            )
 
         except Exception as exc:
             duration = time.time() - start_time
@@ -886,19 +944,23 @@ class OPSService:
     async def _search_abstract_with_retry(
         self,
         query: dict[str, Any],
-        top_k: int,
+        start: int,
+        page_size: int,
         run_id: Optional[str],
         start_time: float,
     ) -> SearchResult:
         """
-        Executa busca no endpoint /search/biblio com retry logic.
+        Executa busca de UMA página no endpoint /search/biblio com retry logic.
 
         Este endpoint retorna resultados já com dados bibliográficos (abstracts, títulos, etc),
-        eliminando a necessidade de enriquecimento posterior. Usa header X-OPS-Range para controlar quantos.
+        eliminando a necessidade de enriquecimento posterior. Usa header X-OPS-Range para controlar
+        a janela de resultados - chamado em loop por search_with_abstracts pra paginar além do
+        limite de 100 por requisição.
 
         Args:
             query: Query dict com 'query' (CQL string).
-            top_k: Número de resultados a retornar (1-100).
+            start: Índice inicial da janela (1-indexed, ex: 1, 101, 201...).
+            page_size: Tamanho desta página (1-100, limite da API OPS).
             run_id: ID da requisição para logging.
             start_time: Timestamp de início.
 
@@ -912,7 +974,8 @@ class OPSService:
                 logger.info(
                     "ops_search_abstract_attempt",
                     attempt=attempt + 1,
-                    top_k=top_k,
+                    start=start,
+                    page_size=page_size,
                     run_id=run_id,
                 )
 
@@ -920,10 +983,10 @@ class OPSService:
                 url = f"{self._OPS_API_URL}/published-data/search/biblio"
                 cql_query = query.get("query", "")
 
-                # Header X-OPS-Range controla quantos resultados retornar
-                # Formato: "1-{top_k}"
+                # Header X-OPS-Range controla a janela de resultados retornada
+                # Formato: "{start}-{end}"
                 headers = self._get_headers()
-                headers["X-OPS-Range"] = f"1-{top_k}"
+                headers["X-OPS-Range"] = f"{start}-{start + page_size - 1}"
 
                 response = await self.async_client.get(
                     url,

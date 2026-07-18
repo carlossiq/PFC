@@ -136,6 +136,11 @@ class SessionProbeQuery(Base):
         back_populates="probe_query",
         cascade="all, delete-orphan",
     )
+    term_links: Mapped[list["ProbeQueryTerm"]] = relationship(
+        "ProbeQueryTerm",
+        back_populates="probe_query",
+        cascade="all, delete-orphan",
+    )
 
 
 class SessionAiCall(Base):
@@ -279,3 +284,32 @@ class ProbeQueryArticle(Base):
 
     probe_query: Mapped["SessionProbeQuery"] = relationship("SessionProbeQuery", back_populates="article_links")
     article: Mapped["Article"] = relationship("Article", back_populates="query_links")
+
+
+class ProbeQueryTerm(Base):
+    """
+    Termo extraído pela IA interna (KeyBERT+TF-IDF) a partir dos documentos de
+    uma probe query (Amostragem de Termos), com a flag `selected` indicando se
+    o usuário marcou esse termo pra usar na construção da query final. Só
+    populada em linhas de probe (tipo=None) - a amostragem de termos acontece
+    antes da query final existir, nunca depois. Diferente de Patent/Article,
+    não há uma entidade compartilhada + tabela de junção aqui: um termo só
+    tem sentido no contexto da probe query que o gerou, sem valor em dedup
+    global entre sessões.
+    """
+
+    __tablename__ = "probe_query_term"
+    __table_args__ = (
+        UniqueConstraint("probe_query_id", "term", name="uq_probe_query_term_probe_query_id_term"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    probe_query_id: Mapped[int] = mapped_column(ForeignKey("session_probe_query.id"), nullable=False, index=True)
+    term: Mapped[str] = mapped_column(String(255), nullable=False)
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    frequency: Mapped[int] = mapped_column(nullable=False, default=0)
+    selected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    probe_query: Mapped["SessionProbeQuery"] = relationship("SessionProbeQuery", back_populates="term_links")

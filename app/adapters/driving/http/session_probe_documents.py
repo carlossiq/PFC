@@ -15,7 +15,14 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.research_session_models import Article, Patent, ProbeQueryArticle, ProbeQueryPatent, SessionProbeQuery
+from db.research_session_models import (
+    Article,
+    Patent,
+    ProbeQueryArticle,
+    ProbeQueryPatent,
+    ProbeQueryTerm,
+    SessionProbeQuery,
+)
 from services.db.normalization_service import NormalizationService
 
 _normalizer = NormalizationService()
@@ -210,3 +217,56 @@ async def sync_probe_query_articles(
     for article in articles:
         if article.id not in existing_by_article_id:
             session.add(ProbeQueryArticle(probe_query_id=probe_query.id, article_id=article.id))
+
+
+async def sync_probe_query_terms(
+    session: AsyncSession,
+    probe_query: SessionProbeQuery,
+    terms: list[dict[str, Any]],
+) -> None:
+    """
+    Sincroniza os termos da Amostragem de Termos de uma probe query - upsert
+    de verdade por `term` (não delete-all/insert-all): termos que já existiam
+    têm score/frequency/selected atualizados na mesma linha (preserva id/
+    created_at), termos novos viram linha nova, e termos que saíram do
+    conjunto atual (ex: usuário clicou "Gerar novos" e a extração trouxe
+    termos diferentes) são removidos. Diferente de patent/article, não há
+    entidade compartilhada aqui - a chave de upsert é (probe_query_id, term)
+    direto na própria tabela.
+
+    Consulta ProbeQueryTerm diretamente (não via probe_query.term_links) pelo
+    mesmo motivo de sync_probe_query_patents: numa SessionProbeQuery recém
+    criada na mesma transação, a relationship ainda não foi carregada.
+    """
+    existing = (
+        (
+            await session.execute(
+                select(ProbeQueryTerm).where(ProbeQueryTerm.probe_query_id == probe_query.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    existing_by_term = {row.term: row for row in existing}
+    wanted_terms = {item["term"] for item in terms}
+
+    for term_text, row in existing_by_term.items():
+        if term_text not in wanted_terms:
+            await session.delete(row)
+
+    for item in terms:
+        row = existing_by_term.get(item["term"])
+        if row is None:
+            session.add(
+                ProbeQueryTerm(
+                    probe_query_id=probe_query.id,
+                    term=item["term"],
+                    score=item["score"],
+                    frequency=item.get("frequency", 0),
+                    selected=item.get("selected", False),
+                )
+            )
+        else:
+            row.score = item["score"]
+            row.frequency = item.get("frequency", 0)
+            row.selected = item.get("selected", False)

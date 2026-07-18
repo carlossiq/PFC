@@ -3,6 +3,7 @@ import { FloatingLabelInput } from './FloatingLabelInput'
 import { Tooltip } from './Tooltip'
 import { CandidatePickerLayout, selectableCardClass } from './CandidatePicker'
 import { FieldCard } from './FieldCard'
+import { Button } from './Button'
 import { friendlyErrorMessage, friendlyWarningMessage } from '../hooks/useProbeQuerySection'
 import type { QueryOptionResult } from '../services/probeQuery'
 
@@ -10,7 +11,6 @@ interface ProbeQuerySectionViewProps {
   title: string
   tooltip: string
   cardsSectionLabel: string
-  cardLabels?: string[]
   fieldOrder: readonly string[]
   fieldLabels: Record<string, string>
   queries: QueryOptionResult[] | null
@@ -38,7 +38,6 @@ export function ProbeQuerySectionView({
   title,
   tooltip,
   cardsSectionLabel,
-  cardLabels,
   fieldOrder,
   fieldLabels,
   queries,
@@ -74,13 +73,9 @@ export function ProbeQuerySectionView({
       {!isLoading && error && (
         <div className="p-4 rounded-lg border-2 border-red-200 bg-red-50">
           <p className="text-sm text-red-700 mb-2">{error}</p>
-          <button
-            type="button"
-            onClick={onRetry}
-            className="text-sm font-semibold text-[#0f9448] hover:text-[#0d843f]"
-          >
+          <Button variant="link" onClick={onRetry}>
             Tentar novamente
-          </button>
+          </Button>
         </div>
       )}
 
@@ -97,7 +92,7 @@ export function ProbeQuerySectionView({
                 disabled={!result.success}
                 className={`${selectableCardClass(selectedIndex === index, 'w-full')} ${!result.success ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                <h4 className="font-semibold text-sm text-gray-900 mb-1">{cardLabels?.[index] ?? `Opção ${index + 1}`}</h4>
+                <h4 className="font-semibold text-sm text-gray-900 mb-1">Opção {index + 1}</h4>
                 {!result.success && (
                   <p className="text-xs text-red-600">{friendlyErrorMessage(result.error)}</p>
                 )}
@@ -120,14 +115,9 @@ export function ProbeQuerySectionView({
       {selected && selected.success && !isEditing && (
         <>
           <div className="flex justify-end gap-4 mb-2 p-2">
-            <button
-              type="button"
-              onClick={onStartEdit}
-              disabled={isBusy}
-              className="text-xs p-4 font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
-            >
+            <Button size="xs" onClick={onStartEdit} disabled={isBusy}>
               Editar
-            </button>
+            </Button>
           </div>
 
           {rebuildError && (
@@ -193,22 +183,12 @@ export function ProbeQuerySectionView({
           ))}
 
           <div className="flex gap-3 pt-1">
-            <button
-              type="button"
-              onClick={onCancelEdit}
-              disabled={isRebuilding}
-              className="flex-1 bg-gray-400 hover:bg-gray-500 disabled:opacity-60 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors"
-            >
+            <Button fullWidth size="sm" variant="secondary" onClick={onCancelEdit} disabled={isRebuilding}>
               Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={onSaveEdit}
-              disabled={isRebuilding}
-              className="flex-1 bg-[#0f9448] hover:bg-[#0d843f] disabled:opacity-60 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors"
-            >
+            </Button>
+            <Button fullWidth size="sm" onClick={onSaveEdit} disabled={isRebuilding}>
               {isRebuilding ? 'Salvando...' : 'Salvar'}
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -219,14 +199,9 @@ export function ProbeQuerySectionView({
     <div className="mb-8 flex flex-col h-95">
       <CandidatePickerLayout hasSelection={selectedIndex !== null} left={leftPane} right={rightPane} />
       <div className="mt-3 shrink-0">
-        <button
-          type="button"
-          onClick={onRetry}
-          disabled={isBusy}
-          className="bg-[#0f9448] hover:bg-[#0d843f] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-300 text-sm"
-        >
+        <Button size="sm" onClick={onRetry} disabled={isBusy}>
           {isLoading ? 'Gerando...' : 'Gerar outras'}
-        </button>
+        </Button>
       </div>
     </div>
   )

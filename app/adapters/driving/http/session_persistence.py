@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.adapters.driving.http.session_probe_documents import (
     sync_probe_query_articles,
     sync_probe_query_patents,
+    sync_probe_query_terms,
 )
 from db.research_session_models import ResearchSession, SessionAiCall, SessionInput, SessionProbeQuery
 from schemas.session_input import (
@@ -124,6 +125,8 @@ async def persist_session_input(
             await sync_probe_query_patents(session, row, item.patents)
         elif item.fonte == "scopus" and item.articles:
             await sync_probe_query_articles(session, row, item.articles)
+        if item.tipo is None and item.terms:
+            await sync_probe_query_terms(session, row, [t.model_dump() for t in item.terms])
     # Fontes/tipos que existiam no banco mas não vieram no payload são
     # preservados - não há hoje um fluxo de "desselecionar" uma query já
     # escolhida (nem de probe, nem de query final).

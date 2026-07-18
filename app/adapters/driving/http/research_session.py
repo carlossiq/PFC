@@ -22,7 +22,7 @@ from db.research_session_models import (
 )
 from schemas.research_session import ResearchSessionSummary
 from schemas.response import SuccessResponse
-from schemas.session_input import SessionInputSaveRequest, SessionInputSaveResponse
+from schemas.session_input import SessionInputSaveRequest, SessionInputSaveResponse, TermInput
 
 logger = get_logger(__name__)
 
@@ -82,6 +82,7 @@ async def get_session(
             selectinload(ResearchSession.probe_queries)
             .selectinload(SessionProbeQuery.article_links)
             .selectinload(ProbeQueryArticle.article),
+            selectinload(ResearchSession.probe_queries).selectinload(SessionProbeQuery.term_links),
             selectinload(ResearchSession.ai_calls),
         )
     )
@@ -100,6 +101,10 @@ async def get_session(
             row.documents = [patent_to_raw_item(link.patent) for link in probe_query.patent_links]
         elif probe_query.fonte == "scopus":
             row.documents = [article_to_raw_item(link.article) for link in probe_query.article_links]
+        row.terms = [
+            TermInput(term=t.term, score=t.score, frequency=t.frequency, selected=t.selected)
+            for t in probe_query.term_links
+        ]
 
     return SuccessResponse(data=summary)
 

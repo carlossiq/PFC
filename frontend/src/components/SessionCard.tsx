@@ -3,6 +3,7 @@ import { Trash2, ChevronDown, Play } from 'lucide-react'
 import { selectableCardClass } from './CandidatePicker'
 import { FieldCard } from './FieldCard'
 import { PROBE_FIELDS_BY_API } from '../constants/probeFields'
+import { FINAL_QUERY_VARIANT_LABELS } from '../constants/finalQueryVariants'
 import {
   getSessionModels,
   getSessionTotalIterations,
@@ -117,7 +118,7 @@ function ProbeQueryFieldsBlock({ query, title }: { query: SessionProbeQueryRow; 
   )
 }
 
-type InputBlockType = 'root' | 'generated' | 'patentQuery' | 'articleQuery'
+type InputBlockType = 'root' | 'generated' | 'patentQuery' | 'articleQuery' | 'patentFinalQuery' | 'articleFinalQuery'
 
 interface SessionCardProps {
   session: ResearchSessionSummary
@@ -138,11 +139,10 @@ export function SessionCard({
 }: SessionCardProps) {
   const root = session.inputs.find((i) => i.parent_id === null)
   const generated = session.inputs.find((i) => i.parent_id !== null)
-  // tipo === null identifica a linha de probe (Exploração Inicial) - a
-  // sessão pode ter uma segunda linha por fonte pra query final (Escolha da
-  // Query Final), não exibida neste card ainda.
   const patentQuery = session.probe_queries.find((q) => q.fonte === 'ops' && q.tipo === null)
   const articleQuery = session.probe_queries.find((q) => q.fonte === 'scopus' && q.tipo === null)
+  const patentFinalQuery = session.probe_queries.find((q) => q.fonte === 'ops' && q.tipo !== null)
+  const articleFinalQuery = session.probe_queries.find((q) => q.fonte === 'scopus' && q.tipo !== null)
   const totalIterations = getSessionTotalIterations(session)
   const totalTokens = getSessionTotalTokens(session)
   const models = getSessionModels(session)
@@ -229,6 +229,7 @@ export function SessionCard({
             <Play size={18} />
           </button>
         )}
+
 
         <button
           type="button"
@@ -339,6 +340,65 @@ export function SessionCard({
                     )}
                     {expandedBlocks.has('articleQuery') && articleQuery && (
                       <ProbeQueryFieldsBlock query={articleQuery} title="Query de artigos (Scopus)" />
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(patentFinalQuery || articleFinalQuery) && (
+              <div className={(root || generated || patentQuery || articleQuery) ? 'mt-5 pt-5 border-t border-gray-100' : ''}>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                  Queries da Exploração Final
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {patentFinalQuery && (
+                    <button
+                      type="button"
+                      onClick={() => toggleBlock('patentFinalQuery')}
+                      className={`${selectableCardClass(expandedBlocks.has('patentFinalQuery'))} flex items-center justify-between`}
+                    >
+                      <h4 className="font-semibold text-sm text-gray-900">
+                        Query final de patente
+                        {patentFinalQuery.tipo && ` (${FINAL_QUERY_VARIANT_LABELS[patentFinalQuery.tipo]})`}
+                      </h4>
+                      <ChevronDown
+                        size={16}
+                        className={`shrink-0 text-gray-400 transition-transform duration-300 ${expandedBlocks.has('patentFinalQuery') ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                  )}
+                  {articleFinalQuery && (
+                    <button
+                      type="button"
+                      onClick={() => toggleBlock('articleFinalQuery')}
+                      className={`${selectableCardClass(expandedBlocks.has('articleFinalQuery'))} flex items-center justify-between`}
+                    >
+                      <h4 className="font-semibold text-sm text-gray-900">
+                        Query final de artigos
+                        {articleFinalQuery.tipo && ` (${FINAL_QUERY_VARIANT_LABELS[articleFinalQuery.tipo]})`}
+                      </h4>
+                      <ChevronDown
+                        size={16}
+                        className={`shrink-0 text-gray-400 transition-transform duration-300 ${expandedBlocks.has('articleFinalQuery') ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                  )}
+                </div>
+
+                {(expandedBlocks.has('patentFinalQuery') || expandedBlocks.has('articleFinalQuery')) && (
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {expandedBlocks.has('patentFinalQuery') && patentFinalQuery && (
+                      <ProbeQueryFieldsBlock
+                        query={patentFinalQuery}
+                        title={`Query final de patente (OPS)${patentFinalQuery.tipo ? ` - ${FINAL_QUERY_VARIANT_LABELS[patentFinalQuery.tipo]}` : ''}`}
+                      />
+                    )}
+                    {expandedBlocks.has('articleFinalQuery') && articleFinalQuery && (
+                      <ProbeQueryFieldsBlock
+                        query={articleFinalQuery}
+                        title={`Query final de artigos (Scopus)${articleFinalQuery.tipo ? ` - ${FINAL_QUERY_VARIANT_LABELS[articleFinalQuery.tipo]}` : ''}`}
+                      />
                     )}
                   </div>
                 )}

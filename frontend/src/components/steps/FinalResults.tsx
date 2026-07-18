@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useFormStore } from '../../stores/useFormStore'
 import { ProbeResultsPanel } from '../ProbeResultsPanel'
+import { Button } from '../Button'
 import { STEPS } from '../../constants/steps'
 
 interface FinalResultsProps {
@@ -47,20 +48,12 @@ export function FinalResults({ step, substep, onBack, onNext }: FinalResultsProp
       </div>
 
       <div className="mt-2 pt-4 border-t border-gray-200 flex gap-4">
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex-1 bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-        >
+        <Button fullWidth variant="secondary" onClick={onBack}>
           Voltar
-        </button>
-        <button
-          type="button"
-          onClick={onNext}
-          className="flex-1 bg-[#0f9448] hover:bg-[#0d843f] text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-        >
+        </Button>
+        <Button fullWidth onClick={onNext}>
           Próximo
-        </button>
+        </Button>
       </div>
     </div>
   )

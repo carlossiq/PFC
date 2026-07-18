@@ -5,6 +5,7 @@ import type { ProbeSearchResult } from '../services/probeQuery'
 import type { ProbeApi } from '../constants/probeFields'
 import { STEPS } from '../constants/steps'
 import { useFormStore } from '../stores/useFormStore'
+import { useAutoDismiss } from './useAutoDismiss'
 
 // Cada seção de amostragem de termos (patentes/OPS, artigos/Scopus) guarda
 // seu próprio estado num slice separado do useFormStore - mesmo desenho de
@@ -48,6 +49,8 @@ export function useTermSampling({
 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useAutoDismiss(error, () => setError(null))
 
   const requestIdRef = useRef(0)
   const isGeneratingRef = useRef(false)

@@ -1,4 +1,5 @@
 import { FloatingLabelInput } from '../FloatingLabelInput'
+import { Button } from '../Button'
 import { Step2 } from './Step2'
 
 interface Step1Props {
@@ -108,30 +109,15 @@ export function Step1({
         </div>
 
         <div className="flex gap-4 pt-0">
-          <button
-            type="button"
-            onClick={onRefinirParametros}
-            disabled={isSaving}
-            className="flex-1 bg-[#0f9448] hover:bg-[#0d843f] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-          >
+          <Button fullWidth onClick={onRefinirParametros} disabled={isSaving}>
             Refinar parâmetros
-          </button>
-          <button
-            type="button"
-            onClick={onGerar}
-            disabled={isSaving}
-            className="flex-1 bg-[#0f9448] hover:bg-[#0d843f] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-          >
+          </Button>
+          <Button fullWidth onClick={onGerar} disabled={isSaving}>
             {isSaving ? 'Gerando...' : 'Gerar Query'}
-          </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={isSaving}
-            className="flex-1 bg-gray-400 hover:bg-gray-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-          >
+          </Button>
+          <Button fullWidth variant="secondary" onClick={onCancel} disabled={isSaving}>
             Cancelar
-          </button>
+          </Button>
         </div>
       </form>
     </div>

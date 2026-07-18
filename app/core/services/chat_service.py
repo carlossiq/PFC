@@ -231,6 +231,11 @@ class ChatService:
             return seen
 
         return {
+            # llm_response aqui é o LLMResponse de domínio (app/core/domain/
+            # types.py), não o schemas.llm.LLMOutput cru - o adapter
+            # (_converters.py:output_to_response) já desembrulha os campos
+            # simples de SimpleFieldQuery pra list[str] simples antes de
+            # chegar aqui, então list(getattr(...)) já é o valor certo.
             name: (flat(getattr(llm_response, name)) if name in ChatService._TEXTUAL_LLM_FIELDS
                    else list(getattr(llm_response, name)))
             for name in fields
@@ -879,9 +884,14 @@ class ChatService:
         complexity: Optional[dict] = None
         usages: list[LLMUsage] = []
 
+        year_from = getattr(self.settings, "search_year_from", 2015)
+        year_to = getattr(self.settings, "search_year_to", 2026)
+        year_range = {"from": year_from, "to": year_to}
+
         llm_request = self._intake_to_request(intake)
         qb = _get_qb_adapter(api, search_mode="final")
         context_suffix = self._terms_context_suffix(extracted_terms, variant, api)
+        probe_fields = self._PROBE_FIELDS_BY_API.get(api, self._DEFAULT_PROBE_FIELDS)
 
         for attempt in range(1, max_attempts + 1):
             base_prompt = PromptLoader.load_prompt("final_system_prompt.md")
@@ -894,16 +904,19 @@ class ChatService:
 
             query = qb.build_query(
                 strategy=llm_response,
-                year_from=getattr(self.settings, "search_year_from", 2015),
-                year_to=getattr(self.settings, "search_year_to", 2026),
+                year_from=year_from,
+                year_to=year_to,
                 search_mode="final",
             )
 
             cql_query = query.get("query", "")
             complexity = self._complexity_from_query(cql_query)
             passed = complexity["score"] <= max_score
+            fields = self._flatten_llm_response_fields(llm_response, probe_fields)
 
-            attempts_history.append({"attempt": attempt, "query": query, "complexity": complexity})
+            attempts_history.append(
+                {"attempt": attempt, "query": query, "complexity": complexity, "fields": fields}
+            )
 
             logger.info(
                 "final_variant_complexity_check",
@@ -921,6 +934,8 @@ class ChatService:
                     "query": query,
                     "complexity": complexity,
                     "attempt": attempt,
+                    "fields": fields,
+                    "year_range": year_range,
                     "ai_usage": self._aggregate_usage(usages, step),
                 }
 
@@ -937,6 +952,8 @@ class ChatService:
             "query": best["query"],
             "complexity": best["complexity"],
             "attempt": best["attempt"],
+            "fields": best["fields"],
+            "year_range": year_range,
             "ai_usage": self._aggregate_usage(usages, step),
             "warning": (
                 f"Query complexity ({best['complexity']['score']:.1f}/100) exceeds limit "
@@ -945,50 +962,24 @@ class ChatService:
             ),
         }
 
-    async def build_final_queries_multi(
+    async def build_final_query_variant(
         self,
         intake: Any,
         extracted_terms: list[dict[str, Any]],
+        variant: str,
         api: str,
     ) -> dict[str, Any]:
-        thresholds = {"specific": 0.4, "balanced": 0.3, "generic": 0.2}
-        results: dict[str, Any] = {
-            "success": True,
-            "api": api,
-            "user_input": intake.model_dump(),
-            "extracted_terms_summary": {
-                "total": len(extracted_terms),
-                "high_score": len([t for t in extracted_terms if t.get("score", 0) > thresholds["specific"]]),
-                "mid_score": len([t for t in extracted_terms if t.get("score", 0) > thresholds["balanced"]]),
-                "all_score": len([t for t in extracted_terms if t.get("score", 0) > thresholds["generic"]]),
-            },
-            "queries": {},
-        }
-
-        start = time.perf_counter()
-        for variant in ("specific", "balanced", "generic"):
-            try:
-                results["queries"][variant] = await self._build_final_variant_query(
-                    intake=intake,
-                    api=api,
-                    extracted_terms=extracted_terms,
-                    variant=variant,
-                    step="final_query",
-                )
-            except Exception as exc:
-                logger.error(
-                    "build_final_queries_multi_variant_error",
-                    variant=variant,
-                    api=api,
-                    error=str(exc),
-                )
-                results["queries"][variant] = {"success": False, "error": str(exc)}
-        duration_ms = (time.perf_counter() - start) * 1000
-
-        results["ai_usage"] = self._aggregate_multi_usage(
-            list(results["queries"].values()), step="final_queries_multi", duration_ms=duration_ms
-        )
-        return results
+        try:
+            return await self._build_final_variant_query(
+                intake=intake,
+                api=api,
+                extracted_terms=extracted_terms,
+                variant=variant,
+                step="final_query",
+            )
+        except Exception as exc:
+            logger.error("build_final_query_variant_error", variant=variant, api=api, error=str(exc))
+            return {"success": False, "error": str(exc)}
 
     # ------------------------------------------------------------------
     # Search
@@ -1005,8 +996,7 @@ class ChatService:
         notes/pendencias.md). Busca o abstract complementar no OpenAlex via
         DOI (prism:doi, público e sem key) e descarta os itens sem abstract
         disponível em nenhuma das duas fontes, ou com abstract em idioma
-        diferente do inglês (evita que a IA "traduza errado" termos técnicos
-        na hora de montar a busca final - ver services/nlp/language_filter.py),
+        diferente do inglês,
         priorizando qualidade sobre quantidade. Janela de candidatos com
         margem (3x top_k) porque nem todo DOI está indexado no OpenAlex ou
         tem abstract liberado pela editora (~70% de cobertura observada em
@@ -1119,6 +1109,7 @@ class ChatService:
         adapter: Any,
         query: dict[str, Any],
         top_k: int,
+        fetch_cap: int = 100,
     ) -> tuple[list[dict[str, Any]], Optional[int]]:
         """
         O OPS não tem nenhum critério de relevância/ordenação na busca (ver
@@ -1129,6 +1120,13 @@ class ChatService:
         cada faixa, em vez de pegar sempre os N mais recentes de cada uma.
         Descarta itens com abstract em idioma diferente do inglês antes de
         sortear a amostra de cada faixa (ver services/nlp/language_filter.py).
+
+        fetch_cap: teto de itens buscados por faixa (antes do filtro de
+            idioma) - o padrão (100) preserva o comportamento de sempre pra
+            probe (run_probe_search, top_k baixo, nunca bate nesse teto).
+            run_final_search passa um valor maior, já que busca faixas bem
+            maiores (até 250) e o OPS agora pagina internamente além de 100
+            por requisição (ver OPSService.search_with_abstracts).
         """
         from services.nlp.language_filter import filter_english_abstracts
 
@@ -1144,7 +1142,7 @@ class ChatService:
 
         for (b_from, b_to, _weight), quota in zip(buckets, quotas):
             bucket_query = {**query, "query": self._ops_replace_date_clause(cql_query, b_from, b_to)}
-            fetch_n = min(max(quota * 3, quota), 100)
+            fetch_n = min(max(quota * 3, quota), fetch_cap)
             try:
                 result = await adapter.search_with_biblio(bucket_query, top_k=fetch_n)
             except Exception as exc:
@@ -1177,6 +1175,7 @@ class ChatService:
         adapter: Any,
         query: dict[str, Any],
         top_k: int,
+        fetch_cap: int = 100,
     ) -> tuple[list[dict[str, Any]], Optional[int]]:
         """
         Mesma ideia de _run_ops_year_diversified_search, mas pro Scopus: a
@@ -1188,6 +1187,13 @@ class ChatService:
         pra combinar todas as faixas antes de enriquecer, porque o corte por
         top_k do enriquecimento poderia descartar as faixas mais antigas só
         por ordem de chegada na lista combinada.
+
+        fetch_cap: teto de itens buscados por faixa (antes do enriquecimento/
+            filtro) - o padrão (100) preserva o comportamento de sempre pra
+            probe (run_probe_search). run_final_search passa um valor maior,
+            já que o enriquecimento via OpenAlex descarta boa parte dos itens
+            (sem abstract disponível ou não-inglês) e precisa de mais margem
+            bruta por faixa pra sobrar perto da cota pedida.
         """
         scopus_query = query.get("query", "")
         year_from = getattr(self.settings, "search_year_from", 2015)
@@ -1201,7 +1207,7 @@ class ChatService:
 
         for (b_from, b_to, _weight), quota in zip(buckets, quotas):
             bucket_query = {**query, "query": self._scopus_replace_date_clause(scopus_query, b_from, b_to)}
-            fetch_n = min(max(quota * 3, quota), 100)
+            fetch_n = min(max(quota * 3, quota), fetch_cap)
             try:
                 result = await adapter.search(bucket_query, max_results=fetch_n)
             except Exception as exc:
@@ -1296,31 +1302,52 @@ class ChatService:
         api: str,
         max_results: int = 500,
     ) -> dict[str, Any]:
-        from services.nlp.language_filter import filter_english_abstracts
-
+        """
+        Mesma ideia de diversidade por faixa de ano do run_probe_search (nem
+        OPS nem Scopus ordenam por relevância - ver notes/pendencias.md -
+        então uma busca "crua" tende a vir toda concentrada nos itens mais
+        recentes) aplicada à busca final, com um alvo bem maior (até 250 por
+        fonte, contra ~10-20 da probe) e um fetch_cap maior por faixa: o
+        enriquecimento (Scopus, via OpenAlex) e o filtro de idioma (ambas as
+        fontes) descartam boa parte dos itens brutos - sem essa margem
+        maior, "até 250" na tela final vinha bem menos que 250 na prática
+        (observado: 250 brutos -> 55 finais pro Scopus sem margem).
+        """
         adapter = self._find_search_adapter(api)
         if adapter is None:
             return {"success": False, "api": api, "error": f"API '{api}' not enabled or not found"}
 
+        # fetch_cap por faixa: com top_k até 250 e 4 faixas, a faixa mais
+        # cotada pode pedir até ~100 itens de cota - 300 dá margem de 3x
+        # sem esbarrar no teto antes da hora. Ambas as APIs paginam
+        # internamente além do limite por requisição (OPSService.
+        # search_with_abstracts, ScopusService.search), então pedir 300
+        # numa faixa só é mais lento, não um erro.
+        target_top_k = min(max_results, 250)
+        fetch_cap = 300
         try:
             if api == "ops" and hasattr(adapter, "search_with_biblio"):
-                result = await adapter.search_with_biblio(query, top_k=min(max_results, 100))
+                items, total_available = await self._run_ops_year_diversified_search(
+                    adapter, query, top_k=target_top_k, fetch_cap=fetch_cap
+                )
+            elif api == "scopus":
+                items, total_available = await self._run_scopus_year_diversified_search(
+                    adapter, query, top_k=target_top_k, fetch_cap=fetch_cap
+                )
             else:
+                from services.nlp.language_filter import filter_english_abstracts
+
                 result = await adapter.search(query)
-
-            if not result.success:
-                return {"success": False, "api": api, "error": result.error_message}
-
-            if api == "scopus":
-                items = await self._enrich_scopus_abstracts(result.results, top_k=max_results)
-            else:
-                items = filter_english_abstracts(result.results)[:max_results]
+                if not result.success:
+                    return {"success": False, "api": api, "error": result.error_message}
+                items = filter_english_abstracts(result.results)[:target_top_k]
+                total_available = result.total_count
 
             return {
                 "success": True,
                 "api": api,
                 "results_count": len(items),
-                "total_available": result.total_count,
+                "total_available": total_available,
                 "results": items,
                 "error": None,
             }

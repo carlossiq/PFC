@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useFormStore } from '../../stores/useFormStore'
 import { buildSaveSessionPayload, saveSession } from '../../services/sessionInput'
 import { ProbeResultsPanel } from '../ProbeResultsPanel'
+import { Button } from '../Button'
 import { STEPS } from '../../constants/steps'
 
 interface InitialResultsProps {
@@ -82,28 +83,15 @@ export function InitialResults({ step, substep, onBack, onNext }: InitialResults
       )}
 
       <div className="mt-2 pt-4 border-t border-gray-200 flex gap-4">
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex-1 bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-        >
+        <Button fullWidth variant="secondary" onClick={onBack}>
           Voltar
-        </button>
-        <button
-          type="button"
-          onClick={onNext}
-          className="flex-1 bg-[#0f9448] hover:bg-[#0d843f] text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-        >
+        </Button>
+        <Button fullWidth onClick={onNext}>
           Próximo
-        </button>
-        <button
-          type="button"
-          onClick={handleFinalize}
-          disabled={isFinalizing || aiCallsInFlight > 0}
-          className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-        >
+        </Button>
+        <Button fullWidth variant="accent" onClick={handleFinalize} disabled={isFinalizing || aiCallsInFlight > 0}>
           {isFinalizing ? 'Finalizando...' : 'Finalizar Sessão'}
-        </button>
+        </Button>
       </div>
     </div>
   )

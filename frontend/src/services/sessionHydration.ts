@@ -3,6 +3,7 @@ import type { ResearchSessionSummary } from './researchSession'
 import type { SessionProbeQueryRow } from './sessionInput'
 import { buildProbeSearchResult } from './probeQuery'
 import type { QueryOptionResult } from './probeQuery'
+import type { ExtractedTerm } from './finalQuery'
 import type { FormStorePatch } from '../stores/useFormStore'
 
 // Mapeia uma sessão salva pra um patch de useFormStore, usado ao retomar uma
@@ -58,6 +59,19 @@ export function mapSessionToFormStorePatch(session: ResearchSessionSummary): For
     ]
   }
 
+  // Reconstrói os termos da Amostragem de Termos (todos os extraídos, com
+  // `selected` marcando os escolhidos) - null se a linha não tem termos
+  // salvos (sessão sem docs na fonte, ou salva antes dessa feature existir).
+  function toTerms(row: SessionProbeQueryRow | undefined): ExtractedTerm[] | null {
+    if (!row || row.terms.length === 0) return null
+    return row.terms.map((t) => ({ term: t.term, score: t.score, frequency: t.frequency }))
+  }
+
+  function toSelectedTerms(row: SessionProbeQueryRow | undefined): string[] {
+    if (!row) return []
+    return row.terms.filter((t) => t.selected).map((t) => t.term)
+  }
+
   // Reconstrói o resultado da busca a partir dos documentos persistidos
   // (patent/article), pra "Próximo" no Step3 não refazer a busca à toa ao
   // retomar uma sessão. A assinatura precisa bater exatamente com o que
@@ -95,5 +109,14 @@ export function mapSessionToFormStorePatch(session: ResearchSessionSummary): For
     step3PatentResultsQuery: patentResults.querySignature,
     step3ArticleResults: articleResults.result,
     step3ArticleResultsQuery: articleResults.querySignature,
+    // termsForQuery usa a MESMA assinatura de step3PatentResultsQuery - é
+    // essa igualdade que faz useTermSampling.ts:needsExtraction reconhecer
+    // que os termos já estão atualizados e não reextrair à toa ao reabrir.
+    step4PatentTerms: toTerms(patentQuery),
+    step4PatentTermsForQuery: toTerms(patentQuery) ? patentResults.querySignature : null,
+    step4PatentSelectedTerms: toSelectedTerms(patentQuery),
+    step4ArticleTerms: toTerms(articleQuery),
+    step4ArticleTermsForQuery: toTerms(articleQuery) ? articleResults.querySignature : null,
+    step4ArticleSelectedTerms: toSelectedTerms(articleQuery),
   }
 }

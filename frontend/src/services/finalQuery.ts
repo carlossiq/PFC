@@ -5,6 +5,11 @@ import type { ProbeApi } from '../constants/probeFields'
 import type { AiUsage } from './aiUsage'
 import { extractResultTitle, extractResultYear, buildProbeSearchResult } from './probeQuery'
 import type { QueryOptionResult, ProbeSearchResult, StructuredQueryFields } from './probeQuery'
+import { FINAL_QUERY_VARIANTS } from '../constants/finalQueryVariants'
+import type { FinalQueryVariant } from '../constants/finalQueryVariants'
+
+export type { FinalQueryVariant }
+export { FINAL_QUERY_VARIANTS }
 
 // OPS: abstract vem solto na chave "abstract". Scopus: "dc:description"
 // (só preenchido depois do enriquecimento via OpenAlex no backend - ver
@@ -108,9 +113,7 @@ export interface ExtractTermsResult {
 }
 
 // Roda a extração de termos (KeyBERT + TF-IDF, IA interna - sem tokens de
-// LLM) sobre os títulos/abstracts de um conjunto de documentos da probe.
-// Termos já vêm ordenados por score decrescente (ver
-// TermExtractor.extract_and_rank_terms no backend).
+// LLM)
 export async function extractTerms(
   items: { title: string; abstract: string }[],
   originalParams: Record<string, unknown> = {},
@@ -132,49 +135,37 @@ export async function extractTerms(
   }
 }
 
-export type FinalQueryVariant = 'specific' | 'balanced' | 'generic'
-
-export const FINAL_QUERY_VARIANTS: FinalQueryVariant[] = ['specific', 'balanced', 'generic']
-
-export interface FinalQueriesMultiResult {
-  // Diferente da probe (N tentativas independentes e intercambiáveis),
-  // aqui cada variante tem um significado próprio (precisão x cobertura) -
-  // por isso mantemos as chaves specific/balanced/generic em vez de
-  // achatar num array, pra UI poder rotular cada opção.
-  queries: Record<FinalQueryVariant, QueryOptionResult>
+export interface FinalQueryResult {
+  query: QueryOptionResult
   aiUsage: AiUsage | null
 }
 
-// Gera as 3 variantes (specific/balanced/generic) da query final via IA,
-// usando só os termos que o usuário marcou na amostragem de termos.
-export async function generateFinalQueriesMulti(
+// Gera só a variante escolhida (specific/balanced/generic) da query final
+export async function generateFinalQuery(
   input: FormInput,
   step2SelectedTheme: (ThemeInput & { id: string }) | null,
   extractedTerms: ExtractedTerm[],
+  variant: FinalQueryVariant,
   api: ProbeApi
-): Promise<FinalQueriesMultiResult> {
+): Promise<FinalQueryResult> {
   const intake = resolveIntakePayload(input, step2SelectedTheme)
   const { data } = await apiClient.post(
-    '/chat/final/queries-multi',
+    '/chat/final/query-variant',
     { intake, extracted_terms: extractedTerms },
-    { params: { api } }
+    { params: { variant, api } }
   )
 
   if (!data.success) {
-    throw new Error(data.message || 'Falha ao gerar queries finais com IA')
+    throw new Error(data.message || 'Falha ao gerar a query final com IA')
   }
 
   return {
-    queries: data.data?.queries ?? {},
+    query: data.data,
     aiUsage: data.data?.ai_usage ?? null,
   }
 }
 
 // Reconstrói a CQL de UMA variante final a partir de campos estruturados
-// editados pelo usuário, sem chamar a IA (síncrono e determinístico) - usado
-// ao salvar uma edição em FinalExploration.tsx. Mesma ideia de
-// rebuildProbeQuery (probeQuery.ts), só que contra /chat/final/rebuild-query
-// (o backend monta a query em modo "final", não "probe").
 export async function rebuildFinalQuery(
   fields: StructuredQueryFields,
   api: ProbeApi = 'ops'

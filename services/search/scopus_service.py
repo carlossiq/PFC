@@ -28,7 +28,11 @@ class ScopusService:
     _RETRY_DELAY_SECONDS = 2
     _TIMEOUT_SECONDS = 30
     _DEFAULT_RESULTS_PER_PAGE = 25
-    _MAX_PAGES = 10
+    # Teto de segurança pra paginação (nunca mais que isso, independente do
+    # max_results pedido pelo chamador) - 40 páginas de 25 = 1000 resultados,
+    # margem suficiente pro fetch com 3x de folga do final search (ver
+    # ChatService.run_final_search) sem risco de loop indefinido.
+    _MAX_PAGES = 40
 
     def __init__(self, api_key: Optional[str] = None) -> None:
         """
@@ -81,6 +85,7 @@ class ScopusService:
                 page_result = await self._search_page(
                     query_params=query_params,
                     start=current_start,
+                    count=min(self._DEFAULT_RESULTS_PER_PAGE, max_results - len(all_results)),
                     run_id=run_id,
                 )
 
@@ -212,6 +217,7 @@ class ScopusService:
         self,
         query_params: dict[str, Any],
         start: int,
+        count: int,
         run_id: Optional[str] = None,
     ) -> SearchResult:
         """
@@ -220,6 +226,12 @@ class ScopusService:
         Args:
             query_params: Parâmetros de query.
             start: Index inicial dos resultados.
+            count: Tamanho desta página - sempre capado a
+                _DEFAULT_RESULTS_PER_PAGE, nunca o `count` bruto vindo do
+                query builder (esse reflete o TOTAL desejado, ex:
+                final_top_k=100, que excede o limite por requisição do
+                service level da chave de API e devolve 400 "Exceeds the
+                maximum number allowed for the service level").
             run_id: ID da requisição.
 
         Returns:
@@ -232,7 +244,7 @@ class ScopusService:
                 # Preparar parâmetros
                 params = query_params.copy()
                 params["start"] = start
-                # Não sobrescrever count - usar o que vem do query builder (probe_top_k ou final_top_k)
+                params["count"] = count
 
                 logger.info(
                     "scopus_page_attempt",

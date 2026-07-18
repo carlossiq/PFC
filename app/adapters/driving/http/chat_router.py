@@ -280,24 +280,25 @@ async def rebuild_final_query(
         return SuccessResponse(success=False, data={"error": str(exc)}, run_id=run_id)
 
 
-@router.post("/final/queries-multi", response_model=SuccessResponse[dict[str, Any]])
-async def build_final_queries_multi(
+@router.post("/final/query-variant", response_model=SuccessResponse[dict[str, Any]])
+async def build_final_query_variant(
     request: Request,
     intake: InputIntake = Body(...),
     extracted_terms: list[dict[str, Any]] = Body(default=[]),
+    variant: str = "balanced",
     api: str = "ops",
 ) -> SuccessResponse[dict[str, Any]]:
     run_id = _run_id(request)
     try:
-        result = await _svc(request).build_final_queries_multi(intake, extracted_terms, api)
+        result = await _svc(request).build_final_query_variant(intake, extracted_terms, variant, api)
         return SuccessResponse(
             success=result["success"],
             data=result,
-            message="Final queries built (specific/balanced/generic)" if result["success"] else result.get("error", ""),
+            message=f"Final query ({variant}) built" if result["success"] else result.get("error", ""),
             run_id=run_id,
         )
     except Exception as exc:
-        logger.error("final_queries_multi_error", error=str(exc), run_id=run_id)
+        logger.error("final_query_variant_error", variant=variant, error=str(exc), run_id=run_id)
         return SuccessResponse(success=False, data={"error": str(exc)}, run_id=run_id)
 
 

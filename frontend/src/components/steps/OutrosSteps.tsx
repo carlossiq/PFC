@@ -1,4 +1,5 @@
 import { STEPS } from '../../constants/steps'
+import { Button } from '../Button'
 
 interface OutrosStepsProps {
   step: number
@@ -32,20 +33,12 @@ export function OutrosSteps({ step, substep, onBack, onNext }: OutrosStepsProps)
       <p className="mb-6">Conteúdo do passo em construção</p>
 
       <div className="flex gap-4">
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex-1 bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-        >
+        <Button fullWidth variant="secondary" onClick={onBack}>
           Voltar
-        </button>
-        <button
-          type="button"
-          onClick={onNext}
-          className="flex-1 bg-[#0f9448] hover:bg-[#0d843f] text-white font-semibold py-2 px-4 rounded-lg transition-colors"
-        >
+        </Button>
+        <Button fullWidth onClick={onNext}>
           Próximo
-        </button>
+        </Button>
       </div>
     </div>
   )
