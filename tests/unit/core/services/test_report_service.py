@@ -1,79 +1,91 @@
-from app.core.services.report_service import ReportService
+from pathlib import Path
 
 import pytest
 
-
-@pytest.fixture
-def svc():
-    return ReportService()
+from app.core.services.report_service import ReportService
 
 
 @pytest.fixture
-def minimal_research():
-    return {
-        "research_id": "r1",
-        "theme": "Quantum Computing",
-        "description": "Test research",
-        "status": "done",
-        "created_at": "2024-01-01",
-        "updated_at": "2024-01-02",
-        "patent_results_count": 0,
-        "scholarly_results_count": 0,
-        "total_results_count": 0,
+def svc(tmp_path):
+    return ReportService(output_dir=tmp_path)
+
+
+def _patents(n_years=6):
+    return [
+        {
+            "year": 2018 + (i % n_years),
+            "applicants": ["Acme"] if i % 2 == 0 else ["Globex", "Acme"],
+            "inventors": ["Silva"],
+            "cpc_codes": ["G06F16/00"],
+            "ipc_codes": ["G06F"],
+            "country": "US" if i % 2 == 0 else "BR",
+        }
+        for i in range(12)
+    ]
+
+
+def _articles(n_years=6):
+    return [
+        {
+            "year": 2018 + (i % n_years),
+            "authors": ["Doe, J."],
+            "journal_or_source": "Nature",
+            "field_of_study": ["AI"],
+            "affiliation_countries": ["US", "DE"],
+        }
+        for i in range(12)
+    ]
+
+
+def test_generate_session_report_creates_expected_charts(svc, tmp_path):
+    result = svc.generate_session_report(1, _patents(), _articles())
+
+    assert result["patents_used"] == 12
+    assert result["articles_used"] == 12
+    assert result["skipped"] == []
+
+    chart_keys = {(c["document_type"], c["chart"]) for c in result["charts"]}
+    assert chart_keys == {
+        ("patent", "s_curve"),
+        ("article", "s_curve"),
+        ("patent", "top_applicants"),
+        ("patent", "top_inventors"),
+        ("article", "top_authors"),
+        ("article", "top_journals"),
+        ("patent", "cpc_distribution"),
+        ("patent", "ipc_distribution"),
+        ("article", "field_of_study_distribution"),
+        ("patent", "geographic_distribution"),
+        ("article", "geographic_distribution"),
     }
 
-
-# ---- map_research_data ----
-
-def test_map_research_data_returns_expected_keys(svc, minimal_research):
-    result = svc.map_research_data(minimal_research, [], [])
-    for key in ("theme", "patent_data", "scientific_data", "metrics", "s_curve_data"):
-        assert key in result
+    for chart in result["charts"]:
+        path = Path(chart["path"])
+        assert path.exists()
+        assert path.stat().st_size > 0
+        assert path.parent == tmp_path / "session_1"
 
 
-def test_map_research_data_patent_count(svc, minimal_research):
-    patents = [
-        {"publication_number": "EP1", "year": 2022},
-        {"publication_number": "EP2", "year": 2023},
-    ]
-    result = svc.map_research_data(minimal_research, patents, [])
-    assert result["patent_data"]["patent_count"] == 2
+def test_generate_session_report_skips_charts_without_data(svc):
+    result = svc.generate_session_report(2, patents=[], articles=[])
+
+    assert result["patents_used"] == 0
+    assert result["articles_used"] == 0
+    assert result["charts"] == []
+    assert len(result["skipped"]) == 11
 
 
-# ---- generate_latex ----
+def test_generate_session_report_partial_data_skips_only_missing_side(svc):
+    result = svc.generate_session_report(3, patents=_patents(), articles=[])
 
-def test_generate_latex_contains_documentclass(svc, minimal_research):
-    latex = svc.generate_latex(minimal_research)
-    assert r"\documentclass" in latex
-
-
-def test_generate_latex_contains_end_document(svc, minimal_research):
-    latex = svc.generate_latex(minimal_research)
-    assert r"\end{document}" in latex
+    document_types = {c["document_type"] for c in result["charts"]}
+    assert document_types == {"patent"}
+    assert all(s.startswith("article:") for s in result["skipped"])
 
 
-def test_generate_latex_contains_theme(svc, minimal_research):
-    latex = svc.generate_latex(minimal_research)
-    assert "Quantum Computing" in latex
+def test_s_curve_requires_at_least_two_distinct_years(svc):
+    single_year_patents = [{"year": 2020, "applicants": ["Acme"]} for _ in range(5)]
+    result = svc.generate_session_report(4, patents=single_year_patents, articles=[])
 
-
-# ---- convert_to_rag_documents ----
-
-def test_convert_to_rag_documents_respects_max_patents(svc):
-    patents = [{"title": f"P{i}", "publication_number": f"EP{i}"} for i in range(5)]
-    docs = svc.convert_to_rag_documents(patents, [], max_patents=2)
-    patent_docs = [d for d in docs if d["type"] == "patent"]
-    assert len(patent_docs) == 2
-
-
-def test_convert_to_rag_documents_respects_max_articles(svc):
-    articles = [{"title": f"A{i}", "doi": f"10.1/{i}"} for i in range(5)]
-    docs = svc.convert_to_rag_documents([], articles, max_articles=3)
-    article_docs = [d for d in docs if d["type"] == "article"]
-    assert len(article_docs) == 3
-
-
-def test_convert_to_rag_documents_text_contains_title(svc):
-    patents = [{"title": "NanoTech Patent", "publication_number": "EP42"}]
-    docs = svc.convert_to_rag_documents(patents, [])
-    assert "NanoTech Patent" in docs[0]["text"]
+    assert "patent:s_curve" in result["skipped"]
+    assert any(c["chart"] == "top_applicants" for c in result["charts"])

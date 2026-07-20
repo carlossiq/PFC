@@ -1,160 +1,108 @@
-from __future__ import annotations
+"""
+Endpoint for generating the technology-prospecting report charts (S-curve,
+top entities, classification/geographic distributions) from a research
+session's final-search documents.
+
+"Final search" documents = Patent/Article rows linked (via
+ProbeQueryPatent/ProbeQueryArticle) to a SessionProbeQuery of this session
+with tipo IS NOT NULL - tipo=None is the probe/Resultados Iniciais query,
+tipo=specific|balanced|generic is the chosen final query variant (see
+session_persistence.py/session_probe_documents.py for how these get
+persisted when a session is saved/finalized).
+"""
 
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.adapters.driving.http.dependencies import get_db_session
+from app.core.services.report_service import ReportService
 from core.logging import get_logger
-from db.research_models import Research
+from db.research_session_models import (
+    Article,
+    Patent,
+    ProbeQueryArticle,
+    ProbeQueryPatent,
+    ResearchSession,
+    SessionProbeQuery,
+)
+from schemas.report import ReportGraphicsResponse
 from schemas.response import SuccessResponse
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/reports", tags=["reports-v2"])
+router = APIRouter(prefix="/report", tags=["report"])
 
 
-class GenerateLatexRequest(BaseModel):
-    research_id: int
-
-
-def _report_svc(request: Request):
+def _svc(request: Request) -> ReportService:
     return request.app.state.container["services"]["report"]
 
 
-@router.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok", "service": "report", "version": "v2"}
+def _patent_to_dict(patent: Patent) -> dict[str, Any]:
+    return {
+        "year": patent.year,
+        "applicants": patent.applicants,
+        "inventors": patent.inventors,
+        "cpc_codes": patent.cpc_codes,
+        "ipc_codes": patent.ipc_codes,
+        "country": patent.country,
+    }
 
 
-@router.post("/generate-latex", response_model=SuccessResponse[dict[str, Any]])
-async def generate_latex(
+def _article_to_dict(article: Article) -> dict[str, Any]:
+    return {
+        "year": article.year,
+        "authors": article.authors,
+        "journal_or_source": article.journal_or_source,
+        "field_of_study": article.field_of_study,
+        "affiliation_countries": article.affiliation_countries,
+    }
+
+
+@router.post("/{session_id}/graphics", response_model=SuccessResponse[ReportGraphicsResponse])
+async def generate_session_graphics(
+    session_id: int,
     request: Request,
-    body: GenerateLatexRequest,
     session: AsyncSession = Depends(get_db_session),
-) -> SuccessResponse[dict[str, Any]]:
-    """
-    Gera LaTeX para uma pesquisa existente usando ReportService do hexágono.
+) -> SuccessResponse[ReportGraphicsResponse]:
+    """Gera os gráficos de report a partir dos documentos já persistidos da
+    busca final (tipo != None) da sessão - não dispara nenhuma busca nova."""
+    exists = await session.execute(select(ResearchSession.id).where(ResearchSession.id == session_id))
+    if exists.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Session not found")
 
-    Alternativa ao endpoint legado /api/v1/research/{id}/generate-report:
-    usa o core service puro (sem Ollama, sem dependências externas).
-    """
-    run_id = getattr(request.state, "run_id", None)
-    research_id = body.research_id
+    patent_stmt = (
+        select(Patent)
+        .join(ProbeQueryPatent, ProbeQueryPatent.patent_id == Patent.id)
+        .join(SessionProbeQuery, SessionProbeQuery.id == ProbeQueryPatent.probe_query_id)
+        .where(SessionProbeQuery.session_id == session_id, SessionProbeQuery.tipo.isnot(None))
+        .distinct()
+    )
+    article_stmt = (
+        select(Article)
+        .join(ProbeQueryArticle, ProbeQueryArticle.article_id == Article.id)
+        .join(SessionProbeQuery, SessionProbeQuery.id == ProbeQueryArticle.probe_query_id)
+        .where(SessionProbeQuery.session_id == session_id, SessionProbeQuery.tipo.isnot(None))
+        .distinct()
+    )
+    patents = (await session.execute(patent_stmt)).scalars().all()
+    articles = (await session.execute(article_stmt)).scalars().all()
 
-    try:
-        stmt = (
-            select(Research)
-            .where(Research.id == research_id)
-            .options(
-                selectinload(Research.patent_documents),
-                selectinload(Research.scholarly_documents),
-                selectinload(Research.metrics),
-            )
-        )
-        result = await session.execute(stmt)
-        research = result.scalar_one_or_none()
-
-        if not research:
-            return SuccessResponse(
-                success=False,
-                data={},
-                message=f"Research {research_id} not found",
-                run_id=run_id,
-            )
-
-        report_svc = _report_svc(request)
-
-        patents = [
-            {
-                "title": p.title,
-                "abstract": p.abstract,
-                "applicants": p.applicants or [],
-                "inventors": p.inventors or [],
-                "cpc_codes": p.cpc_codes or [],
-                "ipc_codes": p.ipc_codes or [],
-                "year": p.year,
-                "legal_status": p.legal_status,
-                "publication_number": p.publication_number,
-            }
-            for p in research.patent_documents
-        ]
-        articles = [
-            {
-                "title": a.title,
-                "abstract": a.abstract,
-                "authors": a.authors or [],
-                "affiliations": getattr(a, "affiliations", []) or [],
-                "journal_or_source": a.journal_or_source,
-                "field_of_study": a.field_of_study or [],
-                "keywords": a.keywords or [],
-                "year": a.year,
-                "citations": a.citations or 0,
-                "doi": a.doi,
-            }
-            for a in research.scholarly_documents
-        ]
-
-        research_dict = {
-            "research_id": research.research_id,
-            "theme": research.title,
-            "description": research.description,
-            "status": research.status,
-            "created_at": research.created_at.isoformat(),
-            "updated_at": research.updated_at.isoformat(),
-            "patent_results_count": research.patent_results_count or 0,
-            "scholarly_results_count": research.scholarly_results_count or 0,
-            "total_results_count": research.total_results_count or 0,
-            "user_input": research.user_input or {},
-            "timing": research.timing or {},
-            "metrics": {},
-        }
-
-        report_data = report_svc.map_research_data(research_dict, patents, articles)
-        latex_content = report_svc.generate_latex(report_data)
-
-        logger.info(
-            "v2_latex_generated research_id=%s size=%d",
-            research_id,
-            len(latex_content),
-        )
-
-        return SuccessResponse(
-            success=True,
-            data={
-                "latex_content": latex_content,
-                "size_bytes": len(latex_content),
-                "research_id": research_id,
-                "preview": latex_content[:500] + "..." if len(latex_content) > 500 else latex_content,
-            },
-            message="LaTeX report generated successfully",
-            run_id=run_id,
-        )
-    except Exception as exc:
-        logger.error("v2_generate_latex_error", error=str(exc), research_id=research_id, run_id=run_id)
-        return SuccessResponse(
-            success=False,
-            data={"error": str(exc)},
-            message=f"Error generating LaTeX: {str(exc)}",
-            run_id=run_id,
-        )
-
-
-@router.post("/rag/index")
-async def rag_index() -> None:
-    raise HTTPException(
-        status_code=501,
-        detail="RAG indexing not available in v2 yet (VectorStorePort adapter pending).",
+    result = _svc(request).generate_session_report(
+        session_id=session_id,
+        patents=[_patent_to_dict(p) for p in patents],
+        articles=[_article_to_dict(a) for a in articles],
     )
 
-
-@router.get("/rag/stats")
-async def rag_stats() -> None:
-    raise HTTPException(
-        status_code=501,
-        detail="RAG stats not available in v2 yet (VectorStorePort adapter pending).",
+    logger.info(
+        "report_graphics_requested",
+        session_id=session_id,
+        patents_used=result["patents_used"],
+        articles_used=result["articles_used"],
+        charts_count=len(result["charts"]),
+        skipped_count=len(result["skipped"]),
     )
+
+    return SuccessResponse(data=ReportGraphicsResponse(**result))

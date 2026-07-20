@@ -132,54 +132,6 @@ async def analyze_query(
     return SuccessResponse(success=result["success"], data=result, run_id=_run_id(request))
 
 
-@router.post("/probe/query", response_model=SuccessResponse[dict[str, Any]])
-async def build_probe_query(
-    request: Request,
-    intake: InputIntake = Body(
-        ...,
-        example={
-            "theme": "e-commerce and digital payments",
-            "description": "Online shopping platforms with secure payment processing",
-            "area_of_study": "Information Technology",
-            "keywords": ["blockchain", "payment gateway"],
-        },
-    ),
-    api: str = "ops",
-) -> SuccessResponse[dict[str, Any]]:
-    run_id = _run_id(request)
-    try:
-        result = await _svc(request).build_probe_query(intake, api)
-        return SuccessResponse(
-            success=result["success"],
-            data=result,
-            message=result.get("warning", "Probe query built successfully") if result["success"] else result.get("error", ""),
-            run_id=run_id,
-        )
-    except Exception as exc:
-        logger.error("probe_query_error", error=str(exc), run_id=run_id)
-        return SuccessResponse(success=False, data={"error": str(exc)}, run_id=run_id)
-
-
-@router.post("/final/query", response_model=SuccessResponse[dict[str, Any]])
-async def build_final_query(
-    request: Request,
-    intake: InputIntake = Body(...),
-    api: str = "ops",
-) -> SuccessResponse[dict[str, Any]]:
-    run_id = _run_id(request)
-    try:
-        result = await _svc(request).build_final_query(intake, api)
-        return SuccessResponse(
-            success=result["success"],
-            data=result,
-            message=result.get("warning", "Final query built successfully") if result["success"] else result.get("error", ""),
-            run_id=run_id,
-        )
-    except Exception as exc:
-        logger.error("final_query_error", error=str(exc), run_id=run_id)
-        return SuccessResponse(success=False, data={"error": str(exc)}, run_id=run_id)
-
-
 @router.post("/probe/queries-multi", response_model=SuccessResponse[dict[str, Any]])
 async def build_probe_queries_multi(
     request: Request,

@@ -681,19 +681,6 @@ class ChatService:
     # Query building
     # ------------------------------------------------------------------
 
-    async def build_probe_query(self, intake: Any, api: str) -> dict[str, Any]:
-        try:
-            return await self._build_query_with_retry(
-                intake=intake,
-                api=api,
-                search_mode="probe",
-                prompt_loader_method="load_probe_system_prompt",
-                step="probe_query",
-            )
-        except Exception as exc:
-            logger.error("build_probe_query_error", error=str(exc))
-            return {"success": False, "error": str(exc)}
-
     async def build_probe_queries_multi(self, intake: Any, api: str, count: int = 2) -> dict[str, Any]:
         """
         Gera N tentativas independentes de query em modo probe, direto do
@@ -802,19 +789,6 @@ class ChatService:
 
     async def rebuild_final_query(self, fields: dict[str, list[str]], api: str = "ops") -> dict[str, Any]:
         return await self._rebuild_query(fields, api, "final")
-
-    async def build_final_query(self, intake: Any, api: str) -> dict[str, Any]:
-        try:
-            return await self._build_query_with_retry(
-                intake=intake,
-                api=api,
-                search_mode="final",
-                prompt_loader_method="load_probe_system_prompt",
-                step="final_query",
-            )
-        except Exception as exc:
-            logger.error("build_final_query_error", error=str(exc))
-            return {"success": False, "error": str(exc)}
 
     _VARIANT_INSTRUCTIONS: dict[str, str] = {
         "specific": (

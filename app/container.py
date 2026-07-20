@@ -3,8 +3,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from core.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -101,9 +99,9 @@ def build_container(settings: Settings) -> dict[str, Any]:
     # ------------------------------------------------------------------
     # Pure core services (sem dependências externas)
     # ------------------------------------------------------------------
-    from app.core.services.report_service import ReportService
     from app.core.services.dedup_service import DedupService
     from app.core.services.chat_service import ChatService
+    from app.core.services.report_service import ReportService
 
     chat_service = ChatService(
         llm=llm,
@@ -112,6 +110,7 @@ def build_container(settings: Settings) -> dict[str, Any]:
         settings=settings,
         openalex=openalex_service,
     )
+    report_service = ReportService(output_dir=settings.report_output_dir)
 
     return {
         "llm": llm,
@@ -119,49 +118,13 @@ def build_container(settings: Settings) -> dict[str, Any]:
         "patent_pairs": patent_pairs,
         "scholarly_pairs": scholarly_pairs,
         "services": {
-            "report": ReportService(),
             "dedup": DedupService(),
             "chat": chat_service,
+            "report": report_service,
         },
         "_settings": settings,
         "_services_to_close": _services_to_close,
     }
-
-
-def build_research_service(container: dict[str, Any], session: AsyncSession):
-    """
-    Fábrica session-scoped: cria ResearchService com repositórios frescos.
-
-    Chamado por request, nunca guardado como singleton.
-    """
-    from services.db.repositories import (
-        PatentDocumentRepository,
-        ScholarlyDocumentRepository,
-        DedupRegistry,
-    )
-    from app.adapters.driven.persistence.patent_repository_adapter import PatentRepositoryAdapter
-    from app.adapters.driven.persistence.scholarly_repository_adapter import ScholarlyRepositoryAdapter
-    from app.adapters.driven.persistence.dedup_registry_adapter import DedupRegistryAdapter
-    from app.core.services.research_service import ResearchService
-
-    settings: Settings = container["_settings"]
-
-    patent_repo = PatentRepositoryAdapter(PatentDocumentRepository(session))
-    scholarly_repo = ScholarlyRepositoryAdapter(ScholarlyDocumentRepository(session))
-    dedup_registry = DedupRegistryAdapter(DedupRegistry(session))
-
-    return ResearchService(
-        llm=container["llm"],
-        embedding=container["embedding"],
-        patent_pairs=container["patent_pairs"],
-        scholarly_pairs=container["scholarly_pairs"],
-        patent_repo=patent_repo,
-        scholarly_repo=scholarly_repo,
-        dedup_registry=dedup_registry,
-        year_from=settings.search_year_from,
-        year_to=settings.search_year_to,
-        relevance_threshold=settings.relevance_threshold,
-    )
 
 
 async def shutdown_container(container: dict[str, Any]) -> None:

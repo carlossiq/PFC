@@ -11,10 +11,8 @@ from app.adapters.driving.http import (
     chat_router,
     health_router,
     report_router,
-    research_router,
     research_session,
     session_input,
-    test_router,
 )
 from app.container import build_container, shutdown_container
 from core.config import settings
@@ -90,15 +88,13 @@ def create_app() -> FastAPI:
     # Rotas v2 (hexágono)
     _container = build_container(settings)
     app.state.container = _container
-    app.include_router(research_router.router, prefix=settings.api_prefix)
-    app.include_router(report_router.router, prefix=settings.api_prefix)
     app.include_router(chat_router.router, prefix=settings.api_prefix)
     app.include_router(session_input.router, prefix=settings.api_prefix)
     app.include_router(research_session.router, prefix=settings.api_prefix)
+    app.include_router(report_router.router, prefix=settings.api_prefix)
 
     # Infraestrutura
     app.include_router(health_router.router, prefix=settings.api_prefix)
-    app.include_router(test_router.router, prefix=settings.api_prefix)
 
     return app
 

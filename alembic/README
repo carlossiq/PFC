@@ -1,1 +1,25 @@
 Generic single-database configuration.
+
+Comandos (rodar a partir da raiz do projeto, onde fica o alembic.ini):
+
+  alembic upgrade head
+      Aplica todas as migrations pendentes ate a mais recente.
+
+  alembic current
+      Mostra em qual revisao o banco esta atualmente.
+
+  alembic history
+      Lista o historico de migrations.
+
+  alembic downgrade -1
+      Desfaz a ultima migration aplicada.
+
+  alembic revision --autogenerate -m "descricao"
+      Gera uma nova migration a partir das mudancas feitas nos models
+      (db/models.py, db/research_models.py, db/research_session_models.py).
+
+Requisitos:
+  - Variavel DATABASE_URL configurada no .env (usada via core.config.settings).
+  - psycopg2-binary e alembic instalados (ja estao no requirements.txt).
+  - O env.py converte automaticamente a URL asyncpg do .env para o driver
+    sincrono psycopg2, entao nao e preciso alterar a DATABASE_URL manualmente.

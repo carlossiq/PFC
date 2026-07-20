@@ -128,6 +128,9 @@ class Settings(BaseSettings):
         -0.8
     )  # Penalidade para 3-grams com padrão ruim
 
+    # Report Configuration
+    report_output_dir: str = "gerados"
+
     # Feature flags - APIs habilitadas (busca final)
     lens_patent_enabled: bool = True
     lens_scholarly_enabled: bool = True
