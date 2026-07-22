@@ -112,8 +112,8 @@ export interface ExtractTermsResult {
   aiUsage: AiUsage | null
 }
 
-// Roda a extração de termos (KeyBERT + TF-IDF, IA interna - sem tokens de
-// LLM)
+// Roda a extração de termos (spaCy + KeyBERT + TF-IDF, processamento NLP
+// local - não é uma chamada de IA, sem tokens de LLM)
 export async function extractTerms(
   items: { title: string; abstract: string }[],
   originalParams: Record<string, unknown> = {},

@@ -51,15 +51,18 @@ export function getSessionTotalTokens(session: ResearchSessionSummary): number {
   return session.ai_calls.reduce((sum, call) => sum + (call.total_tokens ?? 0), 0)
 }
 
-// "distiluse-base-multilingual-cased-v2" 
-const INTERNAL_AI_LABEL = 'IA interna (extração de termos)'
+// A extração de termos não é uma chamada de IA - é processamento NLP local
+// (spaCy + KeyBERT + TF-IDF, ver services/nlp/term_extraction.py), registrado
+// na mesma tabela ai_calls (provider='internal') só pra reaproveitar o
+// tracking de duração já existente pras chamadas de IA de verdade.
+const TERM_EXTRACTION_LABEL = 'Extração de termos (NLP local)'
 
-// Modelos de IA usados na sessão, sem repetição, na ordem em que apareceram
+// Modelos/ferramentas usados na sessão, sem repetição, na ordem em que apareceram
 export function getSessionModels(session: ResearchSessionSummary): string[] {
   const seen = new Set<string>()
   const models: string[] = []
   for (const call of session.ai_calls) {
-    const label = call.provider === 'internal' ? INTERNAL_AI_LABEL : call.model
+    const label = call.provider === 'internal' ? TERM_EXTRACTION_LABEL : call.model
     if (!seen.has(label)) {
       seen.add(label)
       models.push(label)

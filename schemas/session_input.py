@@ -58,7 +58,7 @@ class SessionInputGenerated(BaseModel):
 
 class TermInput(BaseModel):
     """
-    Termo extraído pela IA interna (Amostragem de Termos) a partir dos
+    Termo extraído por NLP local (spaCy + KeyBERT + TF-IDF, não é IA) na Amostragem de Termos, a partir dos
     documentos de uma probe query, com a flag `selected` indicando se o
     usuário marcou esse termo pra usar na construção da query final. Ver
     ProbeQueryTerm.

@@ -14,7 +14,7 @@ import { useAutoDismiss } from '../../hooks/useAutoDismiss'
 import { friendlyErrorMessage } from '../../hooks/useProbeQuerySection'
 
 const SCORE_TOOLTIP =
-  'Pontuação de relevância do termo (0 a 1), calculada pela IA combinando ' +
+  'Pontuação de relevância do termo (0 a 1), combinando ' +
   'importância estatística (frequência do termo nos documentos) ' +
   'e semântica (o quanto o termo captura o assunto do título/abstract ' +
   ')'
@@ -34,15 +34,16 @@ interface TermChecklistProps {
   isLoading: boolean
   error: string | null
   onToggle: (term: string) => void
-  onRegenerate: () => void
+  onRetry: () => void
   selectedVariant: FinalQueryVariant
   onVariantChange: (variant: FinalQueryVariant) => void
 }
 
 // Uma coluna da amostragem de termos (patentes/OPS ou artigos/Scopus):
 // checklist ordenado por score (já vem ordenado do backend), nada marcado
-// por padrão, e um botão pra reextrair (conta como iteração) abaixo do card
-// - mesmo padrão visual do "Gerar outras" em ProbeQuerySectionView.tsx.
+// por padrão. Sem botão de regenerar - a extração é NLP determinístico
+// (mesmos documentos sempre produzem os mesmos termos), então só existe
+// "Tentar novamente" pra quando a extração falha por erro de rede/API.
 function TermChecklist({
   title,
   hasDocs,
@@ -51,7 +52,7 @@ function TermChecklist({
   isLoading,
   error,
   onToggle,
-  onRegenerate,
+  onRetry,
   selectedVariant,
   onVariantChange,
 }: TermChecklistProps) {
@@ -88,12 +89,12 @@ function TermChecklist({
 
         {!hasDocs && <p className="text-sm text-gray-500">Sem documentos encontrados nesta fonte.</p>}
 
-        {hasDocs && isLoading && <LoadingScreen message="Extraindo termos com IA..." />}
+        {hasDocs && isLoading && <LoadingScreen message="Extraindo termos..." />}
 
         {hasDocs && !isLoading && error && (
           <div className="p-4 rounded-lg border-2 border-red-200 bg-red-50">
             <p className="text-sm text-red-700 mb-2">{error}</p>
-            <Button variant="link" onClick={onRegenerate}>
+            <Button variant="link" onClick={onRetry}>
               Tentar novamente
             </Button>
           </div>
@@ -119,14 +120,6 @@ function TermChecklist({
           </ul>
         )}
       </div>
-
-      {hasDocs && (
-        <div className="mt-3 shrink-0">
-          <Button size="sm" onClick={onRegenerate} disabled={isLoading}>
-            {isLoading ? 'Gerando...' : 'Gerar novos'}
-          </Button>
-        </div>
-      )}
     </div>
   )
 }
@@ -159,15 +152,11 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
     step4PatentSelectedTerms,
     setStep4PatentTerms,
     toggleStep4PatentTerm,
-    incrementStep4PatentIterations,
-    resetStep4PatentIterations,
     step4ArticleTerms,
     step4ArticleTermsForQuery,
     step4ArticleSelectedTerms,
     setStep4ArticleTerms,
     toggleStep4ArticleTerm,
-    incrementStep4ArticleIterations,
-    resetStep4ArticleIterations,
     step4PatentSelectedVariant,
     setStep4PatentSelectedVariant,
     setStep4PatentQuery,
@@ -191,8 +180,6 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
       selectedTerms: step4PatentSelectedTerms,
       setTerms: setStep4PatentTerms,
       toggleTerm: toggleStep4PatentTerm,
-      incrementIterations: incrementStep4PatentIterations,
-      resetIterations: resetStep4PatentIterations,
     },
   })
 
@@ -208,8 +195,6 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
       selectedTerms: step4ArticleSelectedTerms,
       setTerms: setStep4ArticleTerms,
       toggleTerm: toggleStep4ArticleTerm,
-      incrementIterations: incrementStep4ArticleIterations,
-      resetIterations: resetStep4ArticleIterations,
     },
   })
 
@@ -279,7 +264,7 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
     <div className="w-full flex flex-col h-full overflow-y-auto">
       <SectionHeader
         title="Amostragem de Termos"
-        description="Termos extraídos pela IA a partir dos títulos/abstracts das patentes e artigos encontrados na Exploração Inicial, ordenados do maior pro menor score. Marque os termos que quer usar na construção da query final."
+        description="Termos extraídos dos títulos/abstracts das patentes e artigos encontrados na Exploração Inicial, ordenados do maior pro menor score. Marque os termos que quer usar na construção da query final."
       />
 
       <div className="flex items-center gap-1.5 mb-4">
@@ -300,7 +285,7 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
           isLoading={patentTerms.isLoading}
           error={patentTerms.error}
           onToggle={patentTerms.toggleTerm}
-          onRegenerate={patentTerms.handleRegenerate}
+          onRetry={patentTerms.retryExtraction}
           selectedVariant={step4PatentSelectedVariant}
           onVariantChange={setStep4PatentSelectedVariant}
         />
@@ -312,7 +297,7 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
           isLoading={articleTerms.isLoading}
           error={articleTerms.error}
           onToggle={articleTerms.toggleTerm}
-          onRegenerate={articleTerms.handleRegenerate}
+          onRetry={articleTerms.retryExtraction}
           selectedVariant={step4ArticleSelectedVariant}
           onVariantChange={setStep4ArticleSelectedVariant}
         />

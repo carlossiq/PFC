@@ -180,20 +180,11 @@ interface FormStore {
   setStep4PatentTerms: (terms: ExtractedTerm[], forQuery: string | null) => void
   toggleStep4PatentTerm: (term: string) => void
 
-  // Conta cliques em "Gerar novos" na amostragem de termos.
-  step4PatentIterations: number
-  incrementStep4PatentIterations: () => void
-  resetStep4PatentIterations: () => void
-
   step4ArticleTerms: ExtractedTerm[] | null
   step4ArticleTermsForQuery: string | null
   step4ArticleSelectedTerms: string[]
   setStep4ArticleTerms: (terms: ExtractedTerm[], forQuery: string | null) => void
   toggleStep4ArticleTerm: (term: string) => void
-
-  step4ArticleIterations: number
-  incrementStep4ArticleIterations: () => void
-  resetStep4ArticleIterations: () => void
 
   // Tipo de query final escolhido pelo usuário ANTES de gerar (select no
   // card de termos em TermSampling.tsx) - default 'balanced', sempre tem
@@ -304,11 +295,9 @@ export const useFormStore = create<FormStore>((set, get) => ({
   step4PatentTerms: null,
   step4PatentTermsForQuery: null,
   step4PatentSelectedTerms: [],
-  step4PatentIterations: 0,
   step4ArticleTerms: null,
   step4ArticleTermsForQuery: null,
   step4ArticleSelectedTerms: [],
-  step4ArticleIterations: 0,
   step4PatentSelectedVariant: 'balanced',
   step4PatentQuery: null,
   step4PatentQueryIterations: 0,
@@ -452,16 +441,6 @@ export const useFormStore = create<FormStore>((set, get) => ({
         : [...state.step4PatentSelectedTerms, term],
     })),
 
-  incrementStep4PatentIterations: () =>
-    set((state) => ({
-      step4PatentIterations: state.step4PatentIterations + 1,
-    })),
-
-  resetStep4PatentIterations: () =>
-    set({
-      step4PatentIterations: 0,
-    }),
-
   setStep4ArticleTerms: (terms, forQuery) =>
     set({
       step4ArticleTerms: terms,
@@ -475,16 +454,6 @@ export const useFormStore = create<FormStore>((set, get) => ({
         ? state.step4ArticleSelectedTerms.filter((t) => t !== term)
         : [...state.step4ArticleSelectedTerms, term],
     })),
-
-  incrementStep4ArticleIterations: () =>
-    set((state) => ({
-      step4ArticleIterations: state.step4ArticleIterations + 1,
-    })),
-
-  resetStep4ArticleIterations: () =>
-    set({
-      step4ArticleIterations: 0,
-    }),
 
   setStep4PatentSelectedVariant: (variant) =>
     set({
@@ -557,11 +526,9 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step4PatentTerms: null,
       step4PatentTermsForQuery: null,
       step4PatentSelectedTerms: [],
-      step4PatentIterations: 0,
       step4ArticleTerms: null,
       step4ArticleTermsForQuery: null,
       step4ArticleSelectedTerms: [],
-      step4ArticleIterations: 0,
       step4PatentSelectedVariant: 'balanced',
       step4PatentQuery: null,
       step4PatentQueryIterations: 0,

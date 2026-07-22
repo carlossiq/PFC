@@ -95,13 +95,15 @@ function buildTermsPayload(
 // pra linha de query final (tipo=variante escolhida, Escolha da Query
 // Final), a partir da opção selecionada numa seção. `iterations` é o
 // contador interno da store (0-based: 0 = gerada uma vez, sem retry) - aqui
-// vira o valor de negócio "nº de vezes que a query foi gerada" (1+); pra
-// query final, o chamador já soma iterações de amostragem de termos +
-// regeneração da query final antes de passar aqui. `resultCount` vem da
-// busca real já rodada (Step3 ou Escolha da Query Final), null se ainda não
-// rodou. Retorna null se não há uma seleção válida (nada gerado, ou a
-// tentativa selecionada falhou) - mesma condição usada no `canProceed` do
-// Step3/FinalExploration.
+// vira o valor de negócio "nº de vezes que a query foi gerada" (1+). Conta só
+// regeneração de QUERY (Step3 "Gerar outras" / Escolha da Query Final "Gerar
+// de novo") - a extração de termos não entra aqui, porque não é uma chamada
+// de IA nem algo que o usuário "gera de novo" (é NLP determinístico: mesmos
+// documentos sempre produzem os mesmos termos, ver term_extraction.py).
+// `resultCount` vem da busca real já rodada (Step3 ou Escolha da Query
+// Final), null se ainda não rodou. Retorna null se não há uma seleção válida
+// (nada gerado, ou a tentativa selecionada falhou) - mesma condição usada no
+// `canProceed` do Step3/FinalExploration.
 export function buildProbeQueryPayload(
   selected: QueryOptionResult | undefined,
   fonte: 'ops' | 'scopus',
@@ -205,12 +207,10 @@ export interface SaveSessionFormState {
   // Escolha da Query Final (ver TermSampling.tsx/FinalExploration.tsx) -
   // usados só pra montar a linha de query final (tipo=variante escolhida)
   // quando houver uma query gerada.
-  step4PatentIterations: number
   step4PatentSelectedVariant: FinalQueryVariant
   step4PatentQuery: QueryOptionResult | null
   step4PatentQueryIterations: number
   step4PatentResults: { resultsCount: number } | null
-  step4ArticleIterations: number
   step4ArticleSelectedVariant: FinalQueryVariant
   step4ArticleQuery: QueryOptionResult | null
   step4ArticleQueryIterations: number
@@ -244,15 +244,14 @@ export function buildSaveSessionPayload(
       }
     : null
 
-  // `iterations` da linha de probe soma as duas etapas que ainda acontecem
-  // dentro da Exploração Inicial: regeneração da própria query probe
-  // (Step3, "Gerar outras") + reextração de termos (Amostragem de Termos,
-  // "Gerar novos" - substep dessa mesma etapa, sempre roda antes da query
-  // final existir).
+  // `iterations` da linha de probe é só a regeneração da própria query probe
+  // (Step3, "Gerar outras") - a extração de termos (Amostragem de Termos)
+  // não conta, porque não é regenerada pelo usuário (é NLP determinístico,
+  // não uma chamada de IA - ver comentário de buildProbeQueryPayload acima).
   const patentQuery = buildProbeQueryPayload(
     formState.step3SelectedIndex !== null ? formState.step3Queries?.[formState.step3SelectedIndex] : undefined,
     'ops',
-    formState.step3Iterations + formState.step4PatentIterations,
+    formState.step3Iterations,
     formState.step3PatentResults?.resultsCount ?? null,
     formState.step3PatentResults?.rawItems ?? [],
     null,
@@ -264,7 +263,7 @@ export function buildSaveSessionPayload(
       ? formState.step3ArticleQueries?.[formState.step3ArticleSelectedIndex]
       : undefined,
     'scopus',
-    formState.step3ArticleIterations + formState.step4ArticleIterations,
+    formState.step3ArticleIterations,
     formState.step3ArticleResults?.resultsCount ?? null,
     formState.step3ArticleResults?.rawItems ?? [],
     null,
@@ -275,8 +274,7 @@ export function buildSaveSessionPayload(
   // Linha da query final escolhida (Escolha da Query Final), auto-
   // relacionada à linha de probe da mesma fonte - null se o usuário ainda
   // não gerou uma query final. `iterations` aqui é só a regeneração dessa
-  // query ("Gerar de novo" na Escolha da Query Final) - a reextração de
-  // termos já foi contabilizada na linha de probe acima. `tipo` é o mesmo
+  // query ("Gerar de novo" na Escolha da Query Final). `tipo` é o mesmo
   // tipo escolhido no select de TermSampling.tsx antes de gerar.
   const patentFinalQuery = buildProbeQueryPayload(
     formState.step4PatentQuery ?? undefined,

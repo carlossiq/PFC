@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import type { ResearchSessionSummary } from '../../services/researchSession'
 import {
-  CHART_AREA_FILL_OPACITY, CHART_AXIS_LABEL_TEXT, CHART_AXIS_TICK_TEXT, CHART_BASELINE,
-  CHART_GRID_LINE, CHART_HEIGHT, CHART_SESSIONS_OPENED, CHART_SESSIONS_OPENED_HOVER,
-  CHART_STATUS_COMPLETED, CHART_TIMESERIES_DAYS,
+  CHART_AREA_FILL_OPACITY, CHART_AXIS_LABEL_TEXT, CHART_BASELINE, CHART_HEIGHT, CHART_MARGIN,
+  CHART_SESSIONS_OPENED, CHART_SESSIONS_OPENED_HOVER, CHART_STATUS_COMPLETED, CHART_TIMESERIES_DAYS,
 } from '../../constants/charts'
+import { ChartAxisGrid } from './ChartAxisGrid'
+import { ChartCard } from './ChartCard'
+import { buildNiceTicks } from './chartGeometry'
+import { ChartTooltip } from './ChartTooltip'
+import { useChartWidth } from '../../hooks/useChartWidth'
 
 interface DayBucket {
   key: string
@@ -16,15 +20,6 @@ interface DayBucket {
 interface Point {
   x: number
   y: number
-}
-
-// Passo "redondo" pro eixo Y - mesma lógica de IterationsBarChart.tsx.
-function niceStep(maxValue: number, targetTicks = 4): number {
-  const rawStep = Math.max(maxValue, 1) / targetTicks
-  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)))
-  const residual = rawStep / magnitude
-  const niceResidual = residual <= 1 ? 1 : residual <= 2 ? 2 : residual <= 5 ? 5 : 10
-  return Math.max(1, niceResidual * magnitude)
 }
 
 function startOfLocalDay(date: Date): Date {
@@ -134,54 +129,50 @@ interface SessionsTimelineAreaChartProps {
   sessions: ResearchSessionSummary[]
 }
 
+type SeriesKey = 'pending' | 'completed'
+
+const SERIES: { key: SeriesKey; label: string; color: string }[] = [
+  { key: 'pending', label: 'Em andamento', color: CHART_SESSIONS_OPENED },
+  { key: 'completed', label: 'Concluídas', color: CHART_STATUS_COMPLETED },
+]
+
 // Sessões em andamento x concluídas por dia, últimos 30 dias - gráfico de
 // linha sombreado (área), duas séries independentes (cada uma na sua própria
 // data - ver buildDayBuckets) numa única escala (as duas são "contagem de
 // sessões"). Único gráfico de linha/área do app até agora - segue a mesma
-// anatomia dos gráficos de barra (ResizeObserver, margin fixo, grid manual,
-// tooltip via div absoluto), mas com hover de crosshair único (compartilhado
-// pelas duas séries) em vez de hover por barra.
+// anatomia dos gráficos de barra (ChartCard, ChartAxisGrid, ChartTooltip),
+// mas com hover de crosshair único (compartilhado pelas duas séries) em vez
+// de hover por barra. A legenda funciona como filtro clicável (mesmo padrão
+// da "Rosca — filtrar por clique" da galeria de referência): clicar
+// esconde/mostra a série, ambas visíveis por padrão - o eixo Y é
+// recalculado a partir de `visibleSeries` a cada render, nunca fixo.
 export function SessionsTimelineAreaChart({ sessions }: SessionsTimelineAreaChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
-  const chartWrapperRef = useRef<HTMLDivElement>(null)
-  const [measuredWidth, setMeasuredWidth] = useState(800)
-
-  useEffect(() => {
-    const el = chartWrapperRef.current
-    if (!el) return
-    const observer = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width
-      if (w) setMeasuredWidth(Math.round(w))
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
+  const [visibleSeries, setVisibleSeries] = useState<Record<SeriesKey, boolean>>({ pending: true, completed: true })
+  const { ref: chartWrapperRef, width: measuredWidth } = useChartWidth(800)
 
   if (sessions.length === 0) {
-    return (
-      <div className="rounded-xl border-2 border-gray-200 bg-white shadow-sm p-6 w-full">
-        <h3 className="font-bold text-base text-gray-900 mb-1">Sessões em andamento x concluídas (últimos 30 dias)</h3>
-        <p className="text-sm text-gray-500">
-          Nenhuma sessão encontrada ainda - inicie uma prospecção pra ver estatísticas aqui.
-        </p>
-      </div>
-    )
+    return <ChartCard title="Sessões em andamento x concluídas (últimos 30 dias)" isEmpty />
+  }
+
+  function toggleSeries(key: SeriesKey) {
+    setVisibleSeries((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
   const days = buildDayBuckets(sessions)
 
   const width = measuredWidth
   const height = CHART_HEIGHT
-  const margin = { top: 28, right: 16, bottom: 44, left: 34 }
+  const margin = CHART_MARGIN
   const plotWidth = width - margin.left - margin.right
   const plotHeight = height - margin.top - margin.bottom
   const baselineY = margin.top + plotHeight
 
-  const rawMax = Math.max(...days.map((d) => Math.max(d.pending, d.completed)), 0)
-  const step = niceStep(rawMax)
-  const axisMax = Math.max(step, Math.ceil(rawMax / step) * step)
-  const ticks: number[] = []
-  for (let t = 0; t <= axisMax + 1e-9; t += step) ticks.push(Math.round(t))
+  const rawMax = Math.max(
+    ...days.map((d) => Math.max(visibleSeries.pending ? d.pending : 0, visibleSeries.completed ? d.completed : 0)),
+    0,
+  )
+  const { axisMax, ticks } = buildNiceTicks(rawMax)
 
   const band = plotWidth / CHART_TIMESERIES_DAYS
 
@@ -201,29 +192,37 @@ export function SessionsTimelineAreaChart({ sessions }: SessionsTimelineAreaChar
 
   const hoveredDay = hoveredIndex !== null ? days[hoveredIndex] : null
   const hoveredX = hoveredIndex !== null ? xFor(hoveredIndex) : 0
+  const visibleHoveredValues = hoveredDay
+    ? SERIES.filter((s) => visibleSeries[s.key]).map((s) => ({ ...s, value: hoveredDay[s.key] }))
+    : []
+
+  const legend = (
+    <>
+      {SERIES.map((s) => {
+        const active = visibleSeries[s.key]
+        return (
+          <button
+            key={s.key}
+            type="button"
+            role="checkbox"
+            aria-checked={active}
+            onClick={() => toggleSeries(s.key)}
+            className={`flex items-center gap-1.5 rounded px-1 py-0.5 -mx-1 cursor-pointer transition-colors hover:bg-gray-100 ${active ? '' : 'opacity-40'}`}
+          >
+            <span className="w-3 h-0.5 rounded-full" style={{ backgroundColor: s.color }} />
+            {s.label}
+          </button>
+        )
+      })}
+    </>
+  )
 
   return (
-    <div className="rounded-xl border-2 border-gray-200 bg-white shadow-sm p-6 w-full">
-      <div className="mb-2">
-        <h3 className="font-bold text-base text-gray-900">Sessões em andamento x concluídas (últimos 30 dias)</h3>
-        <p className="text-xs text-gray-500 mt-1">
-          Em andamento: sessões abertas naquele dia que ainda não foram concluídas. Concluídas: sessões
-          finalizadas naquele dia (data real de conclusão) - sessões concluídas antes dessa métrica existir
-          não aparecem aqui.
-        </p>
-      </div>
-
-      <div className="flex items-center gap-4 text-xs text-gray-600 mb-2">
-        <span className="flex items-center gap-1.5">
-          <span className="w-3 h-0.5 rounded-full" style={{ backgroundColor: CHART_SESSIONS_OPENED }} />
-          Em andamento
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-3 h-0.5 rounded-full" style={{ backgroundColor: CHART_STATUS_COMPLETED }} />
-          Concluídas
-        </span>
-      </div>
-
+    <ChartCard
+      title="Sessões em andamento x concluídas (últimos 30 dias)"
+      description="Em andamento: sessões abertas naquele dia que ainda não foram concluídas. Concluídas: sessões finalizadas naquele dia (data real de conclusão) - sessões concluídas antes dessa métrica existir não aparecem aqui."
+      legend={legend}
+    >
       <div ref={chartWrapperRef} className="relative w-full" style={{ height: CHART_HEIGHT }}>
         <svg
           viewBox={`0 0 ${width} ${height}`}
@@ -232,26 +231,26 @@ export function SessionsTimelineAreaChart({ sessions }: SessionsTimelineAreaChar
           role="img"
           aria-label="Gráfico de área: sessões em andamento e concluídas por dia, últimos 30 dias"
         >
-          {ticks.map((t) => {
-            const y = yFor(t)
-            return (
-              <g key={t}>
-                <line x1={margin.left} x2={width - margin.right} y1={y} y2={y} stroke={CHART_GRID_LINE} strokeWidth={1} />
-                <text x={margin.left - 8} y={y} textAnchor="end" dominantBaseline="middle" fill={CHART_AXIS_TICK_TEXT} fontSize={11}>
-                  {t}
-                </text>
-              </g>
-            )
-          })}
+          <ChartAxisGrid margin={margin} width={width} baselineY={baselineY} ticks={ticks} yFor={yFor} />
 
           {/* Duas séries independentes - concluídas (verde) desenhada por
               cima da em andamento (laranja) só pra o traço "positivo" ficar
-              visível nos pontos onde as duas se cruzam. */}
-          <path d={areaPath(pendingPoints, baselineY)} fill={CHART_SESSIONS_OPENED} fillOpacity={CHART_AREA_FILL_OPACITY} stroke="none" />
-          <path d={smoothPath(pendingPoints)} fill="none" stroke={CHART_SESSIONS_OPENED} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+              visível nos pontos onde as duas se cruzam. Série oculta pela
+              legenda simplesmente não entra no SVG (nunca só "apagada" via
+              opacidade - o eixo Y já foi recalculado sem ela). */}
+          {visibleSeries.pending && (
+            <>
+              <path d={areaPath(pendingPoints, baselineY)} fill={CHART_SESSIONS_OPENED} fillOpacity={CHART_AREA_FILL_OPACITY} stroke="none" />
+              <path d={smoothPath(pendingPoints)} fill="none" stroke={CHART_SESSIONS_OPENED} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+            </>
+          )}
 
-          <path d={areaPath(completedPoints, baselineY)} fill={CHART_STATUS_COMPLETED} fillOpacity={CHART_AREA_FILL_OPACITY} stroke="none" />
-          <path d={smoothPath(completedPoints)} fill="none" stroke={CHART_STATUS_COMPLETED} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          {visibleSeries.completed && (
+            <>
+              <path d={areaPath(completedPoints, baselineY)} fill={CHART_STATUS_COMPLETED} fillOpacity={CHART_AREA_FILL_OPACITY} stroke="none" />
+              <path d={smoothPath(completedPoints)} fill="none" stroke={CHART_STATUS_COMPLETED} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+            </>
+          )}
 
           {labelIndices.map((i) => (
             <text
@@ -265,8 +264,6 @@ export function SessionsTimelineAreaChart({ sessions }: SessionsTimelineAreaChar
               {days[i].date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
             </text>
           ))}
-
-          <line x1={margin.left} x2={width - margin.right} y1={baselineY} y2={baselineY} stroke={CHART_BASELINE} strokeWidth={1} />
 
           {/* Hit targets - uma banda invisível por dia, mesmo idioma dos
               gráficos de barra, controla o crosshair único das duas séries. */}
@@ -289,30 +286,33 @@ export function SessionsTimelineAreaChart({ sessions }: SessionsTimelineAreaChar
             />
           ))}
 
-          {hoveredDay && (
+          {hoveredDay && visibleHoveredValues.length > 0 && (
             <>
               <line x1={hoveredX} x2={hoveredX} y1={margin.top} y2={baselineY} stroke={CHART_BASELINE} strokeWidth={1} strokeDasharray="3,3" />
-              <circle cx={hoveredX} cy={yFor(hoveredDay.pending)} r={4} fill={CHART_SESSIONS_OPENED_HOVER} stroke="white" strokeWidth={2} />
-              <circle cx={hoveredX} cy={yFor(hoveredDay.completed)} r={4} fill={CHART_STATUS_COMPLETED} stroke="white" strokeWidth={2} />
+              {visibleSeries.pending && (
+                <circle cx={hoveredX} cy={yFor(hoveredDay.pending)} r={4} fill={CHART_SESSIONS_OPENED_HOVER} stroke="white" strokeWidth={2} />
+              )}
+              {visibleSeries.completed && (
+                <circle cx={hoveredX} cy={yFor(hoveredDay.completed)} r={4} fill={CHART_STATUS_COMPLETED} stroke="white" strokeWidth={2} />
+              )}
             </>
           )}
         </svg>
 
-        {hoveredDay && (
-          <div
-            className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg bg-gray-900 text-white text-xs px-3 py-2 shadow-lg whitespace-nowrap"
-            style={{
-              left: `${(hoveredX / width) * 100}%`,
-              top: `${(Math.min(yFor(hoveredDay.pending), yFor(hoveredDay.completed)) / height) * 100}%`,
-              marginTop: '-8px',
-            }}
+        {hoveredDay && visibleHoveredValues.length > 0 && (
+          <ChartTooltip
+            leftPct={(hoveredX / width) * 100}
+            topPct={(Math.min(...visibleHoveredValues.map((s) => yFor(s.value))) / height) * 100}
           >
             <p className="font-semibold">{hoveredDay.date.toLocaleDateString('pt-BR')}</p>
-            <p className="text-gray-300">Em andamento: {hoveredDay.pending}</p>
-            <p className="text-gray-300">Concluídas: {hoveredDay.completed}</p>
-          </div>
+            {visibleHoveredValues.map((s) => (
+              <p key={s.key} className="text-gray-300">
+                {s.label}: {s.value}
+              </p>
+            ))}
+          </ChartTooltip>
         )}
       </div>
-    </div>
+    </ChartCard>
   )
 }
