@@ -33,6 +33,10 @@ export const CHART_AREA_FILL_OPACITY = 0.1
 // Altura fixa padrão de um gráfico de card (a largura acompanha o container).
 export const CHART_HEIGHT = 360
 
+// Margem padrão de todo gráfico de card (grid + eixos + rótulos) - mesma em
+// todo gráfico SVG da página de estatísticas.
+export const CHART_MARGIN = { top: 28, right: 16, bottom: 44, left: 34 }
+
 // Máximo de barras de um histograma antes de agrupar valores em faixas.
 export const CHART_MAX_BUCKETS = 8
 

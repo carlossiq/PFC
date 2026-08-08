@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { getSessionTotalIterations, type ResearchSessionSummary } from '../../services/researchSession'
-import {
-  CHART_AXIS_LABEL_TEXT, CHART_AXIS_TICK_TEXT, CHART_BASELINE, CHART_BRAND_GREEN,
-  CHART_BRAND_GREEN_HOVER, CHART_GRID_LINE, CHART_HEIGHT, CHART_MAX_BUCKETS, CHART_VALUE_LABEL_TEXT,
-} from '../../constants/charts'
+import { CHART_AXIS_LABEL_TEXT, CHART_AXIS_TICK_TEXT, CHART_BRAND_GREEN, CHART_BRAND_GREEN_HOVER, CHART_HEIGHT, CHART_MARGIN, CHART_MAX_BUCKETS, CHART_VALUE_LABEL_TEXT } from '../../constants/charts'
+import { ChartAxisGrid } from './ChartAxisGrid'
+import { ChartCard } from './ChartCard'
+import { buildNiceTicks, roundedTopBarPath } from './chartGeometry'
+import { ChartTooltip } from './ChartTooltip'
+import { useChartWidth } from '../../hooks/useChartWidth'
 
 interface Bucket {
   key: string
@@ -11,15 +13,6 @@ interface Bucket {
   from: number
   to: number
   count: number
-}
-
-// Passo "redondo" pro eixo Y 
-function niceStep(maxValue: number, targetTicks = 4): number {
-  const rawStep = Math.max(maxValue, 1) / targetTicks
-  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)))
-  const residual = rawStep / magnitude
-  const niceResidual = residual <= 1 ? 1 : residual <= 2 ? 2 : residual <= 5 ? 5 : 10
-  return Math.max(1, niceResidual * magnitude)
 }
 
 // Agrupa as sessões pelo total de iterações: um bucket por valor exato
@@ -49,15 +42,6 @@ function buildBuckets(values: number[]): Bucket[] {
   return buckets
 }
 
-// Coluna com topo arredondado (4px) e base quadrada, nascendo da baseline -
-// spec de "Bar / column" do design system (mark cresce de uma única baseline).
-function roundedTopBarPath(x: number, y: number, w: number, h: number, r: number): string {
-  if (h <= 0) return ''
-  const radius = Math.min(r, w / 2, h)
-  if (radius <= 0) return `M${x},${y + h} L${x},${y} L${x + w},${y} L${x + w},${y + h} Z`
-  return `M${x},${y + h} L${x},${y + radius} Q${x},${y} ${x + radius},${y} L${x + w - radius},${y} Q${x + w},${y} ${x + w},${y + radius} L${x + w},${y + h} Z`
-}
-
 interface IterationsBarChartProps {
   sessions: ResearchSessionSummary[]
 }
@@ -66,48 +50,24 @@ interface IterationsBarChartProps {
 export function IterationsBarChart({ sessions }: IterationsBarChartProps) {
   const [hoveredKey, setHoveredKey] = useState<string | null>(null)
   const [showTable, setShowTable] = useState(false)
-  const chartWrapperRef = useRef<HTMLDivElement>(null)
-  const [measuredWidth, setMeasuredWidth] = useState(400)
-
-  // Largura do gráfico segue o container (metade da página, via CSS) 
-  useEffect(() => {
-    if (showTable) return
-    const el = chartWrapperRef.current
-    if (!el) return
-    const observer = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width
-      if (w) setMeasuredWidth(Math.round(w))
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [showTable])
+  const { ref: chartWrapperRef, width: measuredWidth } = useChartWidth(400, !showTable)
 
   const completedSessions = sessions.filter((s) => s.completed)
   const values = completedSessions.map(getSessionTotalIterations)
   const data = buildBuckets(values).filter((d) => d.count > 0)
 
   if (data.length === 0) {
-    return (
-      <div className="rounded-xl border-2 border-gray-200 bg-white shadow-sm p-6 w-1/2">
-        <h3 className="font-bold text-base text-gray-900 mb-1">Sessões por total de iterações</h3>
-        <p className="text-sm text-gray-500">
-          Nenhuma sessão encontrada ainda - inicie uma prospecção pra ver estatísticas aqui.
-        </p>
-      </div>
-    )
+    return <ChartCard title="Sessões por total de iterações" isEmpty width="half" />
   }
 
   const width = measuredWidth
   const height = CHART_HEIGHT
-  const margin = { top: 28, right: 16, bottom: 44, left: 34 }
+  const margin = CHART_MARGIN
   const plotWidth = width - margin.left - margin.right
   const plotHeight = height - margin.top - margin.bottom
 
   const rawMax = Math.max(...data.map((d) => d.count), 0)
-  const step = niceStep(rawMax)
-  const axisMax = Math.max(step, Math.ceil(rawMax / step) * step)
-  const ticks: number[] = []
-  for (let t = 0; t <= axisMax + 1e-9; t += step) ticks.push(Math.round(t))
+  const { axisMax, ticks } = buildNiceTicks(rawMax)
 
   const band = plotWidth / data.length
   const barWidth = Math.min(28, band * 0.55)
@@ -120,39 +80,36 @@ export function IterationsBarChart({ sessions }: IterationsBarChartProps) {
   const hoveredIndex = data.findIndex((d) => d.key === hoveredKey)
   const hovered = hoveredIndex >= 0 ? data[hoveredIndex] : null
 
-  return (
-    <div className="rounded-xl border-2 border-gray-200 bg-white shadow-sm p-6 w-1/2">
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <div>
-          <h3 className="font-bold text-base text-gray-900">Prospecções por total de iterações</h3>
-          <p className="text-xs text-gray-500 mt-1">
-            Quanta sessões consumiram um certo valor de iterações
-            com a IA para gerar os resultados das propecções.
-            Considera apenas sessões completas.
-          </p>
-        </div>
-        <div className="flex gap-1 shrink-0 bg-gray-100 rounded-lg p-1">
-          <button
-            type="button"
-            onClick={() => setShowTable(false)}
-            className={`text-xs font-semibold px-2.5 py-1 rounded-md transition-colors ${
-              !showTable ? 'bg-[#0f9448] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Gráfico
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowTable(true)}
-            className={`text-xs font-semibold px-2.5 py-1 rounded-md transition-colors ${
-              showTable ? 'bg-[#0f9448] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Tabela
-          </button>
-        </div>
-      </div>
+  const viewToggle = (
+    <div className="flex gap-1 shrink-0 bg-gray-100 rounded-lg p-1">
+      <button
+        type="button"
+        onClick={() => setShowTable(false)}
+        className={`text-xs font-semibold px-2.5 py-1 rounded-md transition-colors ${
+          !showTable ? 'bg-[#0f9448] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
+        }`}
+      >
+        Gráfico
+      </button>
+      <button
+        type="button"
+        onClick={() => setShowTable(true)}
+        className={`text-xs font-semibold px-2.5 py-1 rounded-md transition-colors ${
+          showTable ? 'bg-[#0f9448] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
+        }`}
+      >
+        Tabela
+      </button>
+    </div>
+  )
 
+  return (
+    <ChartCard
+      title="Prospecções por total de iterações"
+      description="Quanta sessões consumiram um certo valor de iterações com a IA para gerar os resultados das propecções. Considera apenas sessões completas."
+      width="half"
+      headerExtra={viewToggle}
+    >
       {showTable ? (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -181,17 +138,7 @@ export function IterationsBarChart({ sessions }: IterationsBarChartProps) {
             role="img"
             aria-label="Histograma: número de sessões por total de iterações"
           >
-            {ticks.map((t) => {
-              const y = yFor(t)
-              return (
-                <g key={t}>
-                  <line x1={margin.left} x2={width - margin.right} y1={y} y2={y} stroke={CHART_GRID_LINE} strokeWidth={1} />
-                  <text x={margin.left - 8} y={y} textAnchor="end" dominantBaseline="middle" fill={CHART_AXIS_TICK_TEXT} fontSize={11}>
-                    {t}
-                  </text>
-                </g>
-              )
-            })}
+            <ChartAxisGrid margin={margin} width={width} baselineY={margin.top + plotHeight} ticks={ticks} yFor={yFor} />
 
             {data.map((d, i) => {
               const x = margin.left + i * band + (band - barWidth) / 2
@@ -238,43 +185,21 @@ export function IterationsBarChart({ sessions }: IterationsBarChartProps) {
               )
             })}
 
-            <text
-              x={margin.left + plotWidth / 2}
-              y={height - 4}
-              textAnchor="middle"
-              fill={CHART_AXIS_TICK_TEXT}
-              fontSize={10}
-            >
+            <text x={margin.left + plotWidth / 2} y={height - 4} textAnchor="middle" fill={CHART_AXIS_TICK_TEXT} fontSize={10}>
               Total de iterações
             </text>
-
-            <line
-              x1={margin.left}
-              x2={width - margin.right}
-              y1={margin.top + plotHeight}
-              y2={margin.top + plotHeight}
-              stroke={CHART_BASELINE}
-              strokeWidth={1}
-            />
           </svg>
 
           {hovered && (
-            <div
-              className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg bg-gray-900 text-white text-xs px-3 py-2 shadow-lg whitespace-nowrap"
-              style={{
-                left: `${((margin.left + hoveredIndex * band + band / 2) / width) * 100}%`,
-                top: `${(yFor(hovered.count) / height) * 100}%`,
-                marginTop: '-8px',
-              }}
-            >
+            <ChartTooltip leftPct={((margin.left + hoveredIndex * band + band / 2) / width) * 100} topPct={(yFor(hovered.count) / height) * 100}>
               <p className="font-semibold">
                 {hovered.count} {hovered.count === 1 ? 'sessão' : 'sessões'}
               </p>
               <p className="text-gray-300">{hovered.label} iterações</p>
-            </div>
+            </ChartTooltip>
           )}
         </div>
       )}
-    </div>
+    </ChartCard>
   )
 }

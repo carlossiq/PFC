@@ -292,7 +292,7 @@ class ProbeQueryArticle(Base):
 
 class ProbeQueryTerm(Base):
     """
-    Termo extraído pela IA interna (KeyBERT+TF-IDF) a partir dos documentos de
+    Termo extraído por NLP local (spaCy + KeyBERT + TF-IDF, não é IA) a partir dos documentos de
     uma probe query (Amostragem de Termos), com a flag `selected` indicando se
     o usuário marcou esse termo pra usar na construção da query final. Só
     populada em linhas de probe (tipo=None) - a amostragem de termos acontece
