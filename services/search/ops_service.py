@@ -4,6 +4,7 @@ Search service for European Patent Office (OPS) API with OAuth2.
 
 import asyncio
 import json
+import re
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
@@ -132,6 +133,169 @@ def _extract_party_names_xml(party_elems: list[ET.Element], name_wrapper_tag: st
         if name_elem is not None and name_elem.text:
             names.append(name_elem.text)
     return names
+
+
+def _json_text(value: Any) -> Optional[str]:
+    """Extrai o texto de um campo JSON-do-XML da OPS, que vem como {"$": "..."} ou string direta."""
+    if isinstance(value, dict):
+        return value.get("$")
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def _build_cpc_code(
+    section: Optional[str],
+    class_: Optional[str],
+    subclass: Optional[str],
+    main_group: Optional[str],
+    subgroup: Optional[str],
+) -> Optional[str]:
+    """
+    Monta o código CPC no formato "H10F 77/211" a partir dos componentes
+    separados que a OPS devolve em <patent-classifications>/<patent-classification>
+    (section/class/subclass/main-group/subgroup) - diferente do bloco
+    <classifications-ipcr>, que já vem com um único campo <text> pronto.
+    """
+    if not all([section, class_, subclass, main_group, subgroup]):
+        return None
+    return f"{section}{class_}{subclass} {main_group}/{subgroup}"
+
+
+def _extract_cpc_codes(biblio_data: dict) -> list[str]:
+    """Extrai códigos CPC (formato JSON) de bibliographic-data.patent-classifications."""
+    codes: list[str] = []
+    container = biblio_data.get("patent-classifications", {})
+    if not container:
+        return codes
+    entries = container.get("patent-classification", [])
+    if not isinstance(entries, list):
+        entries = [entries] if entries else []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        code = _build_cpc_code(
+            _json_text(entry.get("section")),
+            _json_text(entry.get("class")),
+            _json_text(entry.get("subclass")),
+            _json_text(entry.get("main-group")),
+            _json_text(entry.get("subgroup")),
+        )
+        if code:
+            codes.append(code)
+    return codes
+
+
+def _extract_cpc_codes_xml(exchange_doc_elem: ET.Element) -> list[str]:
+    """
+    Extrai códigos CPC (formato XML) de <patent-classifications>/<patent-classification>.
+
+    Busca <patent-classification> em qualquer profundidade (via
+    _find_all_by_local_name) em vez de localizar o container
+    <patent-classifications> como filho direto primeiro - ele está aninhado
+    dentro de <bibliographic-data>, não é filho direto de exchange-document.
+    """
+    codes: list[str] = []
+    for entry in _find_all_by_local_name(exchange_doc_elem, "patent-classification"):
+        section_elem = _find_first_by_local_name(entry, "section")
+        class_elem = _find_first_by_local_name(entry, "class")
+        subclass_elem = _find_first_by_local_name(entry, "subclass")
+        main_group_elem = _find_first_by_local_name(entry, "main-group")
+        subgroup_elem = _find_first_by_local_name(entry, "subgroup")
+        code = _build_cpc_code(
+            section_elem.text if section_elem is not None else None,
+            class_elem.text if class_elem is not None else None,
+            subclass_elem.text if subclass_elem is not None else None,
+            main_group_elem.text if main_group_elem is not None else None,
+            subgroup_elem.text if subgroup_elem is not None else None,
+        )
+        if code:
+            codes.append(code)
+    return codes
+
+
+def _extract_final_fields(exchange_doc: dict) -> dict[str, Any]:
+    """
+    Extração enxuta (formato JSON) usada SÓ pela busca final (ver
+    OPSService.search_biblio_page) - dedicada, não a mesma usada pela probe
+    (OPSService._extract_biblio_fields), pra não arriscar mudar o
+    comportamento da probe ao corrigir a extração de CPC.
+
+    Returns:
+        Dict com title, applicants, cpc (lista de códigos "SEC-CLASS-SUB MG/SG") e year.
+    """
+    result: dict[str, Any] = {"title": None, "applicants": [], "cpc": [], "year": None}
+    try:
+        biblio_data = exchange_doc.get("bibliographic-data", {})
+
+        invention_titles = biblio_data.get("invention-title", [])
+        if not isinstance(invention_titles, list):
+            invention_titles = [invention_titles] if invention_titles else []
+        for title_item in invention_titles:
+            if isinstance(title_item, dict):
+                lang = title_item.get("@lang", "")
+                title_text = title_item.get("$", "")
+                if lang == "en":
+                    result["title"] = title_text
+                    break
+                elif result["title"] is None:
+                    result["title"] = title_text
+
+        pub_ref = biblio_data.get("publication-reference", {})
+        doc_ids = pub_ref.get("document-id", [])
+        if not isinstance(doc_ids, list):
+            doc_ids = [doc_ids] if doc_ids else []
+        for doc_id in doc_ids:
+            if doc_id.get("@document-id-type") == "docdb":
+                date_str = _json_text(doc_id.get("date"))
+                if date_str and len(date_str) >= 4:
+                    result["year"] = int(date_str[:4])
+                break
+
+        parties = biblio_data.get("parties", {})
+        result["applicants"] = OPSService._extract_party_names(
+            parties.get("applicants", {}).get("applicant", []), "applicant-name"
+        )
+
+        result["cpc"] = _extract_cpc_codes(biblio_data)
+    except Exception:
+        pass
+    return result
+
+
+def _extract_final_fields_xml(exchange_doc_elem: ET.Element) -> dict[str, Any]:
+    """Versão XML (fallback) de _extract_final_fields - ver docstring lá."""
+    result: dict[str, Any] = {"title": None, "applicants": [], "cpc": [], "year": None}
+    try:
+        invention_titles = _find_all_by_local_name(exchange_doc_elem, "invention-title")
+        for title_elem in invention_titles:
+            lang = title_elem.attrib.get("lang", "")
+            title_text = title_elem.text or ""
+            if lang == "en":
+                result["title"] = title_text
+                break
+            elif result["title"] is None:
+                result["title"] = title_text
+
+        all_doc_ids = _find_all_by_local_name(exchange_doc_elem, "document-id")
+        for doc_id_elem in all_doc_ids:
+            if doc_id_elem.get("document-id-type") == "docdb":
+                date_elem = _find_first_by_local_name(doc_id_elem, "date")
+                date_str = date_elem.text if date_elem is not None else None
+                if date_str and len(date_str) >= 4:
+                    result["year"] = int(date_str[:4])
+                break
+
+        # Busca <applicant> em qualquer profundidade (mesmo motivo do CPC
+        # acima): <applicants> está aninhado dentro de <parties>, não é
+        # filho direto de exchange-document.
+        applicant_elems = _find_all_by_local_name(exchange_doc_elem, "applicant")
+        result["applicants"] = _extract_party_names_xml(applicant_elems, "applicant-name")
+
+        result["cpc"] = _extract_cpc_codes_xml(exchange_doc_elem)
+    except Exception:
+        pass
+    return result
 
 
 def _find_all_by_local_name(element: ET.Element, local_name: str) -> list[ET.Element]:
@@ -365,6 +529,82 @@ class OPSService:
                 duration_seconds=duration,
                 run_id=run_id,
             )
+
+    @staticmethod
+    def _apply_year_range(cql_query: str, year_from: int, year_to: int) -> str:
+        """
+        Substitui (ou adiciona) a cláusula `(pd within "...")` da CQL pelo
+        intervalo de ano informado - mesma lógica usada por
+        ChatService._ops_replace_date_clause (que segue existindo pra
+        busca por faixas ponderadas da probe), só que hospedada aqui porque
+        agora é o próprio OPSService quem monta a query por ano em
+        search_biblio_page.
+        """
+        new_clause = f'(pd within "{year_from}0101 {year_to}1231")'
+        pattern = r'\(pd within "\d{8} \d{8}"\)'
+        if re.search(pattern, cql_query):
+            return re.sub(pattern, new_clause, cql_query)
+        return f"{cql_query} AND {new_clause}" if cql_query else new_clause
+
+    async def search_biblio_page(
+        self,
+        query: dict[str, Any],
+        start: int = 1,
+        page_size: int = 100,
+        year_range: Optional[tuple[int, int]] = None,
+        run_id: Optional[str] = None,
+    ) -> SearchResult:
+        """
+        Busca UMA página no endpoint /search/biblio, opcionalmente restrita
+        a um intervalo de ano - função de fetch reutilizável por qualquer
+        estratégia de paginação (por range ou por ano) e por outros
+        serviços no futuro, sem acoplar a lógica de decisão de estratégia
+        (ver ChatService._run_ops_final_search).
+
+        Args:
+            query: Query dict com 'query' (CQL string).
+            start: Índice inicial da janela (1-indexed).
+            page_size: Tamanho da página (1-100, limite da API OPS).
+            year_range: Se informado, (year_from, year_to) substitui a
+                cláusula de data da query antes de buscar. Se None, usa a
+                query como veio (já deve conter o intervalo completo
+                configurado, embutido pelo query builder).
+            run_id: ID único da requisição para logging.
+
+        Returns:
+            SearchResult com dados de sucesso ou erro (incluindo abstracts).
+        """
+        start_time = time.time()
+
+        await self._ensure_valid_token(run_id)
+
+        if not self.token:
+            return SearchResult(
+                api_name="ops",
+                success=False,
+                query=query.get("query", ""),
+                error_code="NO_TOKEN",
+                error_message="Failed to obtain OPS authentication token",
+                duration_seconds=time.time() - start_time,
+                run_id=run_id,
+            )
+
+        if year_range is not None:
+            y_from, y_to = year_range
+            query = {**query, "query": self._apply_year_range(query.get("query", ""), y_from, y_to)}
+
+        # Extração enxuta dedicada à busca final (title/applicants/cpc/year) -
+        # não a mesma usada pela probe (search_with_abstracts), pra não
+        # arriscar mudar o comportamento dela (ver _extract_final_fields).
+        return await self._search_abstract_with_retry(
+            query,
+            start,
+            page_size,
+            run_id,
+            start_time,
+            extract_json_fn=_extract_final_fields,
+            extract_xml_fn=_extract_final_fields_xml,
+        )
 
     async def _ensure_valid_token(self, run_id: Optional[str] = None) -> None:
         """
@@ -948,6 +1188,8 @@ class OPSService:
         page_size: int,
         run_id: Optional[str],
         start_time: float,
+        extract_json_fn: Optional[Any] = None,
+        extract_xml_fn: Optional[Any] = None,
     ) -> SearchResult:
         """
         Executa busca de UMA página no endpoint /search/biblio com retry logic.
@@ -963,10 +1205,18 @@ class OPSService:
             page_size: Tamanho desta página (1-100, limite da API OPS).
             run_id: ID da requisição para logging.
             start_time: Timestamp de início.
+            extract_json_fn: Função de extração por documento (formato JSON) -
+                default self._extract_biblio_fields (usada pela probe via
+                search_with_abstracts). search_biblio_page (busca final)
+                injeta uma extração enxuta própria (_extract_final_fields),
+                pra não arriscar mudar o que a probe recebe.
+            extract_xml_fn: Idem, formato XML (fallback).
 
         Returns:
             SearchResult com dados ou erro.
         """
+        json_fn = extract_json_fn or self._extract_biblio_fields
+        xml_fn = extract_xml_fn or self._extract_biblio_fields_xml
         retry_count = 0
 
         for attempt in range(self._MAX_RETRIES):
@@ -1033,7 +1283,7 @@ class OPSService:
                             continue
 
                         # Extrair campos estruturados usando helper
-                        result = self._extract_biblio_fields(exchange_doc)
+                        result = json_fn(exchange_doc)
                         results.append(result)
 
                 except (json.JSONDecodeError, ValueError) as json_error:
@@ -1086,7 +1336,7 @@ class OPSService:
 
                         for idx, exchange_doc in enumerate(exchange_documents):
                             # Extrair campos estruturados usando helper XML
-                            result = self._extract_biblio_fields_xml(exchange_doc)
+                            result = xml_fn(exchange_doc)
                             results.append(result)
 
                         logger.info(

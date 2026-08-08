@@ -282,17 +282,24 @@ async def run_probe_search(
 @router.post("/final/search", response_model=SuccessResponse[dict[str, Any]])
 async def run_final_search(
     request: Request,
+    year_from: int,
+    year_to: int,
     query: dict[str, Any] = Body(..., description="Query dict returned by /final/query"),
     api: str = "ops",
     max_results: int = 500,
 ) -> SuccessResponse[dict[str, Any]]:
     run_id = _run_id(request)
     try:
-        result = await _svc(request).run_final_search(query, api, max_results)
+        result = await _svc(request).run_final_search(query, api, year_from, year_to, max_results)
+        message = (
+            f"Final search returned {result.get('results_count', len(result.get('title', [])))} results"
+            if result["success"]
+            else result.get("error", "")
+        )
         return SuccessResponse(
             success=result["success"],
             data=result,
-            message=f"Final search returned {result.get('results_count', 0)} results" if result["success"] else result.get("error", ""),
+            message=message,
             run_id=run_id,
         )
     except Exception as exc:

@@ -34,3 +34,16 @@ class OPSAdapter:
     ) -> SearchResult:
         result = await self._service.search_with_abstracts(query, top_k=top_k, run_id=run_id)
         return to_domain(result)
+
+    async def fetch_biblio_page(
+        self,
+        query: dict[str, Any],
+        start: int = 1,
+        page_size: int = 100,
+        year_range: Optional[tuple[int, int]] = None,
+        run_id: Optional[str] = None,
+    ) -> SearchResult:
+        result = await self._service.search_biblio_page(
+            query, start=start, page_size=page_size, year_range=year_range, run_id=run_id
+        )
+        return to_domain(result)

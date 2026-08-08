@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { ProbeSearchResult, QueryOptionResult } from '../services/probeQuery'
 import type { AiUsage } from '../services/aiUsage'
-import type { ExtractedTerm, FinalQueryVariant } from '../services/finalQuery'
+import type { ExtractedTerm, FinalQueryVariant, OpsFinalAggregateResult } from '../services/finalQuery'
 
 // Dados de entrada do formulário (durante edição ou persistidos)
 interface InputData {
@@ -228,9 +228,12 @@ interface FormStore {
 
   // Resultado da busca final real, exibido em FinalResults.tsx - mesmo
   // papel de step3PatentResults/step3ArticleResults pra probe search.
-  step4PatentResults: ProbeSearchResult | null
+  // step4PatentResults (OPS) é o compilado agregado (depositants/cpc/title/
+  // patentsByYear), não mais uma lista de documentos - ver
+  // OpsFinalAggregateResult em finalQuery.ts.
+  step4PatentResults: OpsFinalAggregateResult | null
   step4ArticleResults: ProbeSearchResult | null
-  setStep4PatentResults: (result: ProbeSearchResult | null) => void
+  setStep4PatentResults: (result: OpsFinalAggregateResult | null) => void
   setStep4ArticleResults: (result: ProbeSearchResult | null) => void
 
   resetStep4: () => void

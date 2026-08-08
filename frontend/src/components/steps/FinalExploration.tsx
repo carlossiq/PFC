@@ -235,11 +235,21 @@ export function FinalExploration({ step, substep, onBack, onNext }: FinalExplora
     setConfirmError(null)
     try {
       const [patentOutcome, articleOutcome] = await Promise.allSettled([
-        hasPatentQuery && patentSection.query?.success
-          ? runFinalSearch(patentSection.query.query!, 'ops')
+        hasPatentQuery && patentSection.query?.success && patentSection.query.year_range
+          ? runFinalSearch(
+              patentSection.query.query!,
+              'ops',
+              patentSection.query.year_range.from,
+              patentSection.query.year_range.to
+            )
           : Promise.resolve(null),
-        hasArticleQuery && articleSection.query?.success
-          ? runFinalSearch(articleSection.query.query!, 'scopus')
+        hasArticleQuery && articleSection.query?.success && articleSection.query.year_range
+          ? runFinalSearch(
+              articleSection.query.query!,
+              'scopus',
+              articleSection.query.year_range.from,
+              articleSection.query.year_range.to
+            )
           : Promise.resolve(null),
       ])
 

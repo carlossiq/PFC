@@ -179,20 +179,66 @@ export async function rebuildFinalQuery(
   return data.data
 }
 
-// Roda a busca final real (OPS ou Scopus) com a query escolhida entre as
-// variantes geradas - mesmo shape de resultado da probe search.
+// Compilado agregado devolvido pela busca final da OPS (patentes) - a rota
+// não devolve mais a lista bruta de documentos pro lado OPS (ver
+// ChatService.run_final_search no backend), só esses 4 agregados. Um
+// redesenho de UI pra exibi-los (gráficos de depositantes/CPC/ano) fica pra
+// depois - por ora só evita quebrar a chamada e o save de sessão (que só
+// usa `resultsCount`, ver sessionInput.ts).
+export interface OpsFinalAggregateResult {
+  success: boolean
+  resultsCount: number
+  depositants: Record<string, number>
+  cpc: Record<string, number>
+  title: string[]
+  patentsByYear: Record<string, number>
+}
+
+// Roda a busca final real com a query escolhida entre as variantes geradas.
+// OPS: devolve o compilado agregado (depositants/cpc/title/patentsByYear).
+// Scopus: mantém o mesmo shape de resultado da probe search (lista bruta de
+// itens) - a agregação equivalente à da OPS ainda não foi feita pro Scopus.
+export async function runFinalSearch(
+  query: { query: string } & Record<string, unknown>,
+  api: 'ops',
+  yearFrom: number,
+  yearTo: number,
+  maxResults?: number
+): Promise<OpsFinalAggregateResult>
+export async function runFinalSearch(
+  query: { query: string } & Record<string, unknown>,
+  api: 'scopus',
+  yearFrom: number,
+  yearTo: number,
+  maxResults?: number
+): Promise<ProbeSearchResult>
 export async function runFinalSearch(
   query: { query: string } & Record<string, unknown>,
   api: ProbeApi,
+  yearFrom: number,
+  yearTo: number,
   maxResults = 500
-): Promise<ProbeSearchResult> {
+): Promise<ProbeSearchResult | OpsFinalAggregateResult> {
   const { data } = await apiClient.post('/chat/final/search', query, {
-    params: { api, max_results: maxResults },
+    params: { api, year_from: yearFrom, year_to: yearTo, max_results: maxResults },
   })
   if (!data.success) {
     throw new Error(data.data?.error || data.message || 'Falha ao buscar resultados finais.')
   }
   const result = data.data
+
+  if (api === 'ops') {
+    const title: string[] = result.title ?? []
+    return {
+      success: result.success,
+      resultsCount: title.length,
+      depositants: result.depositants ?? {},
+      cpc: result.cpc ?? {},
+      title,
+      patentsByYear: result.patents_by_year ?? {},
+    }
+  }
+
   const results: Record<string, unknown>[] = result.results ?? []
   return {
     ...buildProbeSearchResult(results, api, result.total_available ?? null),
