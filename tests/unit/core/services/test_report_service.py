@@ -37,6 +37,13 @@ def _articles(n_years=6):
     ]
 
 
+def _patents_by_year_from(patents):
+    counts: dict[int, int] = {}
+    for patent in patents:
+        counts[patent["year"]] = counts.get(patent["year"], 0) + 1
+    return counts
+
+
 def test_generate_session_report_creates_expected_charts(svc, tmp_path):
     result = svc.generate_session_report(1, _patents(), _articles())
 
@@ -44,9 +51,11 @@ def test_generate_session_report_creates_expected_charts(svc, tmp_path):
     assert result["articles_used"] == 12
     assert result["skipped"] == []
 
+    # A curva S de patentes NÃO é mais gerada por generate_session_report -
+    # ela vem de generate_patent_s_curve, a partir de patents_by_year
+    # fornecido pelo chamador (ver test_generate_patent_s_curve_* abaixo).
     chart_keys = {(c["document_type"], c["chart"]) for c in result["charts"]}
     assert chart_keys == {
-        ("patent", "s_curve"),
         ("article", "s_curve"),
         ("patent", "top_applicants"),
         ("patent", "top_inventors"),
@@ -72,7 +81,7 @@ def test_generate_session_report_skips_charts_without_data(svc):
     assert result["patents_used"] == 0
     assert result["articles_used"] == 0
     assert result["charts"] == []
-    assert len(result["skipped"]) == 11
+    assert len(result["skipped"]) == 10
 
 
 def test_generate_session_report_partial_data_skips_only_missing_side(svc):
@@ -83,9 +92,111 @@ def test_generate_session_report_partial_data_skips_only_missing_side(svc):
     assert all(s.startswith("article:") for s in result["skipped"])
 
 
-def test_s_curve_requires_at_least_two_distinct_years(svc):
-    single_year_patents = [{"year": 2020, "applicants": ["Acme"]} for _ in range(5)]
-    result = svc.generate_session_report(4, patents=single_year_patents, articles=[])
+def test_article_s_curve_requires_at_least_two_distinct_years(svc):
+    single_year_articles = [{"year": 2020, "authors": ["Doe, J."]} for _ in range(5)]
+    result = svc.generate_session_report(4, patents=[], articles=single_year_articles)
 
-    assert "patent:s_curve" in result["skipped"]
-    assert any(c["chart"] == "top_applicants" for c in result["charts"])
+    assert "article:s_curve" in result["skipped"]
+
+
+def test_generate_patent_s_curve_requires_at_least_two_distinct_years(svc):
+    result = svc.generate_patent_s_curve(session_id=5, patents_by_year={"2020": 5})
+
+    assert result["chart"] is None
+    assert result["fit"] is None
+    assert "2 anos distintos" in result["skipped_reason"]
+
+
+def test_generate_patent_s_curve_from_yearly_counts(svc, tmp_path):
+    patents_by_year = _patents_by_year_from(_patents())
+
+    result = svc.generate_patent_s_curve(session_id=6, patents_by_year=patents_by_year, projection_end_year=2035)
+
+    assert result["skipped_reason"] is None
+    assert result["chart"]["document_type"] == "patent"
+    assert result["chart"]["chart"] == "s_curve"
+
+    path = Path(result["chart"]["path"])
+    assert path.exists()
+    assert path.stat().st_size > 0
+    assert path.parent == tmp_path / "session_6"
+
+    fit = result["fit"]
+    assert set(fit) == {
+        "K", "r", "t0", "gp_year", "mp_year", "sp_year",
+        "current_saturation", "years_observed", "cumulative_observed", "fit_quality",
+    }
+    assert fit["mp_year"] == fit["t0"]
+    assert set(fit["fit_quality"]) == {"r_squared", "reliable", "warning"}
+
+
+def test_generate_patent_yearly_volume_requires_data(svc):
+    result = svc.generate_patent_yearly_volume(session_id=7, patents_by_year={})
+
+    assert result["chart"] is None
+    assert "nenhum dado" in result["skipped_reason"]
+
+
+def test_generate_patent_yearly_volume_from_yearly_counts(svc, tmp_path):
+    patents_by_year = _patents_by_year_from(_patents())
+
+    result = svc.generate_patent_yearly_volume(session_id=8, patents_by_year=patents_by_year)
+
+    assert result["skipped_reason"] is None
+    assert result["chart"]["document_type"] == "patent"
+    assert result["chart"]["chart"] == "yearly_volume"
+
+    path = Path(result["chart"]["path"])
+    assert path.exists()
+    assert path.stat().st_size > 0
+    assert path.parent == tmp_path / "session_8"
+
+
+def test_generate_top10_heatmap_requires_data(svc):
+    result = svc.generate_top10_heatmap(session_id=9, top10={})
+
+    assert result["chart"] is None
+    assert "nenhum dado" in result["skipped_reason"]
+
+
+def test_generate_top10_heatmap_from_cpc_distribution(svc, tmp_path):
+    cpc = {
+        "Y02E": 1447,
+        "B32B": 60,
+        "C09J": 32,
+        "H10F": 1100,
+        "Y02P": 191,
+        "H01G": 56,
+        "H10P": 68,
+        "E06B": 12,
+        "F24S": 641,
+        "H02S": 376,
+    }
+
+    result = svc.generate_top10_heatmap(
+        session_id=10, top10=cpc, title="Distribuição por CPC", document_type="patent"
+    )
+
+    assert result["skipped_reason"] is None
+    assert result["chart"]["document_type"] == "patent"
+    assert result["chart"]["chart"] == "top10_heatmap"
+
+    path = Path(result["chart"]["path"])
+    assert path.exists()
+    assert path.stat().st_size > 0
+    assert path.parent == tmp_path / "session_10"
+
+
+def test_generate_top10_heatmap_reused_for_articles_with_fewer_than_ten(svc, tmp_path):
+    field_of_study = {"AI": 40, "Robotics": 12, "Optics": 5}
+
+    result = svc.generate_top10_heatmap(
+        session_id=11, top10=field_of_study, title="Distribuição por Área de Estudo", document_type="article"
+    )
+
+    assert result["skipped_reason"] is None
+    assert result["chart"]["document_type"] == "article"
+
+    path = Path(result["chart"]["path"])
+    assert path.exists()
+    assert path.stat().st_size > 0

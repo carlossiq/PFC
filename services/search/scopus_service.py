@@ -4,6 +4,7 @@ Search service for Scopus API with pagination.
 
 import asyncio
 import time
+from dataclasses import replace
 from typing import Any, Optional
 
 import httpx
@@ -13,6 +14,35 @@ from core.logging import get_logger
 from services.search.base import SearchError, SearchResult
 
 logger = get_logger(__name__)
+
+
+def _extract_final_fields(entry: dict[str, Any]) -> dict[str, Any]:
+    """
+    Extração enxuta (title/institutions/year) usada só pela busca final (ver
+    ScopusService.fetch_results_page) - dedicada, não a mesma usada pela
+    probe (que devolve o entry inteiro pra enriquecimento via OpenAlex em
+    ChatService._enrich_scopus_abstracts), pra não arriscar mudar o
+    comportamento dela.
+
+    "affilname" é o campo confirmado contra resposta real desta API key -
+    diferente de "organization", usado sem confirmação em
+    NormalizationService._extract_scopus_affiliations. "affiliation" vem
+    como lista normalmente, mas a Scopus devolve um dict solto (não
+    envolto em lista) quando há só 1 afiliação (mesma ressalva de
+    NormalizationService._extract_scopus_affiliation_countries).
+    """
+    title = entry.get("dc:title")
+
+    cover_date = entry.get("prism:coverDate") or ""
+    year = int(cover_date[:4]) if cover_date[:4].isdigit() else None
+
+    raw_affiliations = entry.get("affiliation")
+    affiliation_list = raw_affiliations if isinstance(raw_affiliations, list) else [raw_affiliations] if raw_affiliations else []
+    institutions = [
+        aff["affilname"] for aff in affiliation_list if isinstance(aff, dict) and aff.get("affilname")
+    ]
+
+    return {"title": title, "institutions": institutions, "year": year}
 
 
 class ScopusService:
@@ -33,6 +63,11 @@ class ScopusService:
     # margem suficiente pro fetch com 3x de folga do final search (ver
     # ChatService.run_final_search) sem risco de loop indefinido.
     _MAX_PAGES = 40
+    # Limite por requisição observado pra essa API key na busca final
+    # (diferente do _DEFAULT_RESULTS_PER_PAGE, 25, usado por search()/probe;
+    # OPS usa 100 - ver OPSService._OPS_PAGE_SIZE) - usado só por
+    # fetch_results_page/count, nunca por search().
+    _FINAL_SEARCH_PAGE_SIZE = 200
 
     def __init__(self, api_key: Optional[str] = None) -> None:
         """
@@ -341,6 +376,46 @@ class ScopusService:
             retry_count=self._MAX_RETRIES,
             run_id=run_id,
         )
+
+    async def count(
+        self,
+        query_params: dict[str, Any],
+        run_id: Optional[str] = None,
+    ) -> SearchResult:
+        """
+        Requisição leve (count=1) só pra ler opensearch:totalResults, sem
+        paginar - usada pela busca final (ver ChatService._run_scopus_final_search)
+        pra decidir range vs ano ANTES de buscar de verdade, e pra contar
+        cada área de estudo via SUBJAREA(CODE) (ver
+        ChatService._run_scopus_area_of_study_counts). Não faz sentido
+        aplicar _extract_final_fields aqui - o único dado que importa é
+        total_count, e count=1 já limita a 1 item bruto na resposta.
+        """
+        return await self._search_page(query_params, start=0, count=1, run_id=run_id)
+
+    async def fetch_results_page(
+        self,
+        query_params: dict[str, Any],
+        start: int = 0,
+        count: int = _FINAL_SEARCH_PAGE_SIZE,
+        run_id: Optional[str] = None,
+    ) -> SearchResult:
+        """
+        Busca UMA página de até _FINAL_SEARCH_PAGE_SIZE resultados já com a
+        extração enxuta da busca final (title/institutions/year, ver
+        _extract_final_fields) - mesma ideia de OPSService.search_biblio_page,
+        adaptada: aqui a extração roda depois da resposta bruta (a Scopus já
+        devolve JSON plano, sem o parsing XML/aninhado que a OPS precisa),
+        não injetada no parser via extract_json_fn/extract_xml_fn.
+
+        Diferente de search() (usado pela probe), que pagina automaticamente
+        em blocos de _DEFAULT_RESULTS_PER_PAGE (25) - aqui o chamador
+        controla start/count diretamente, sem paginação automática.
+        """
+        result = await self._search_page(query_params, start=start, count=count, run_id=run_id)
+        if not result.success:
+            return result
+        return replace(result, results=[_extract_final_fields(entry) for entry in result.results])
 
     @staticmethod
     def _should_continue_pagination(page_results: list[dict[str, Any]]) -> bool:

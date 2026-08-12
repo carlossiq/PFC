@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Request
+from fastapi import APIRouter, Body, Query, Request
 
 from app.core.services.chat_service import ChatService
 from core.logging import get_logger
@@ -286,11 +286,21 @@ async def run_final_search(
     year_to: int,
     query: dict[str, Any] = Body(..., description="Query dict returned by /final/query"),
     api: str = "ops",
-    max_results: int = 500,
+    iteration: int = Query(
+        0,
+        ge=0,
+        description=(
+            "Janela da amostra por ano (0 = primeira página, default) - não é cumulativo: "
+            "iteration=N devolve só a página N daquele ano, não 0..N somadas. Custo por "
+            "chamada não muda com o valor (sempre 1 requisição/ano), por isso sem teto. "
+            "Uso atual sempre chama com o default; existe para um futuro módulo de "
+            "inferência estatística pedir outras janelas da amostra."
+        ),
+    ),
 ) -> SuccessResponse[dict[str, Any]]:
     run_id = _run_id(request)
     try:
-        result = await _svc(request).run_final_search(query, api, year_from, year_to, max_results)
+        result = await _svc(request).run_final_search(query, api, year_from, year_to, iteration=iteration)
         message = (
             f"Final search returned {result.get('results_count', len(result.get('title', [])))} results"
             if result["success"]

@@ -26,3 +26,21 @@ class ScopusAdapter:
     ) -> SearchResult:
         result = await self._service.search(query, run_id, max_results=max_results)
         return to_domain(result)
+
+    async def count(
+        self,
+        query: dict[str, Any],
+        run_id: Optional[str] = None,
+    ) -> SearchResult:
+        result = await self._service.count(query, run_id)
+        return to_domain(result)
+
+    async def fetch_results_page(
+        self,
+        query: dict[str, Any],
+        start: int = 0,
+        count: int = 200,
+        run_id: Optional[str] = None,
+    ) -> SearchResult:
+        result = await self._service.fetch_results_page(query, start=start, count=count, run_id=run_id)
+        return to_domain(result)

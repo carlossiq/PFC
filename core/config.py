@@ -131,6 +131,21 @@ class Settings(BaseSettings):
     # Report Configuration
     report_output_dir: str = "gerados"
 
+    # Fuzzy Matching de entidades (busca final OPS/Scopus)
+    # Agrupa entidades que provavelmente são a mesma (variações de
+    # grafia/pontuação/sufixo societário, ex: "Acme Corp" vs "ACME CORP."
+    # vs "Acme Corporation") antes de contar - compartilhado por
+    # depositantes de patente (ChatService._fuzzy_group_depositants) e
+    # instituições de artigo (ChatService._fuzzy_group_institutions), ambos
+    # delegando pro mesmo helper (_fuzzy_group_names) com este threshold -
+    # mesma natureza de problema (variação de grafia de nome de entidade)
+    # nas duas fontes. Score 0-100 do rapidfuzz (fuzz.WRatio); 90 é
+    # conservador o suficiente pra não fundir entidades distintas com nomes
+    # parecidos (ex: "Acme Inc" vs "Acme Solutions Inc"), mas pega
+    # variações triviais de grafia. Diminuir agrupa mais agressivamente
+    # (risco de falsos positivos); aumentar agrupa menos.
+    depositant_fuzzy_match_threshold: float = 90.0
+
     # Feature flags - APIs habilitadas (busca final)
     lens_patent_enabled: bool = True
     lens_scholarly_enabled: bool = True

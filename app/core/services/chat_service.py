@@ -1027,6 +1027,12 @@ class ChatService:
         (None, 8, 0.1),  # o resto (9+ anos atrás até year_from)
     ]
 
+    # Limite por requisição da busca final do Scopus (ver
+    # ScopusService._FINAL_SEARCH_PAGE_SIZE, mesmo valor duplicado aqui - o
+    # OPS segue o mesmo padrão de repetir _OPS_PAGE_SIZE=100 como literal em
+    # _run_ops_search_by_range/_run_ops_search_by_year em vez de importar).
+    _SCOPUS_FINAL_PAGE_SIZE = 200
+
     @classmethod
     def _year_buckets(cls, year_from: int, year_to: int) -> list[tuple[int, int, float]]:
         """
@@ -1209,59 +1215,222 @@ class ChatService:
         )
         return collected, (total_available or None)
 
+    def _aggregate_scopus_final_items(
+        self,
+        items: list[dict[str, Any]],
+    ) -> tuple[dict[str, int], list[str]]:
+        """
+        Agrega os itens enxutos (title/institutions/year - ver
+        services.search.scopus_service._extract_final_fields) coletados por
+        _run_scopus_final_search em institutions/title. Compartilhado pelas
+        duas estratégias (range e ano) - só muda de onde `items` veio.
+        Equivalente a _aggregate_ops_final_items, mas sem CPC: a área de
+        estudo do Scopus não é extraída item-a-item (a API não expõe
+        subject-area por item nessa key), é contada à parte por
+        _run_scopus_area_of_study_counts.
+        """
+        institutions: Counter = Counter()
+        title: list[str] = []
+        for item in items:
+            institutions.update(item.get("institutions") or [])
+            if item.get("title"):
+                title.append(item["title"])
+        return self._fuzzy_group_institutions(dict(institutions)), title
+
+    async def _run_scopus_search_by_range(
+        self,
+        adapter: Any,
+        query: dict[str, Any],
+        max_requests: int,
+        year_from: int,
+        year_to: int,
+        run_id: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Pagina a query inteira em janelas sequenciais de
+        _SCOPUS_FINAL_PAGE_SIZE (200) - 0-200, 200-400, ... - até
+        max_requests requisições ou até a API devolver menos que uma página
+        cheia (sinal de que não há mais resultados). Equivalente a
+        _run_ops_search_by_range, mas a data é aplicada uma vez só antes do
+        loop (a Scopus não tem um parâmetro `year_range` separado do corpo
+        da query, como o fetch_biblio_page da OPS).
+        """
+        range_query = {
+            **query,
+            "query": self._scopus_replace_date_clause(query.get("query", ""), year_from, year_to),
+        }
+        collected: list[dict[str, Any]] = []
+        for page_idx in range(max_requests):
+            start = page_idx * self._SCOPUS_FINAL_PAGE_SIZE
+            result = await adapter.fetch_results_page(
+                range_query, start=start, count=self._SCOPUS_FINAL_PAGE_SIZE, run_id=run_id
+            )
+            if not result.success:
+                logger.warning("scopus_final_range_page_failed", start=start, error=result.error_message)
+                continue
+            collected.extend(result.results)
+            if len(result.results) < self._SCOPUS_FINAL_PAGE_SIZE:
+                break
+        return collected
+
+    async def _run_scopus_search_by_year(
+        self,
+        adapter: Any,
+        query: dict[str, Any],
+        year_from: int,
+        year_to: int,
+        run_id: Optional[str] = None,
+        iteration: int = 0,
+    ) -> tuple[list[dict[str, Any]], dict[int, int]]:
+        """
+        Uma requisição por ano cobrindo todo o intervalo pedido - usado
+        quando o volume total de resultados é grande demais pra caber num
+        nº de páginas menor que o nº de anos (ver _run_scopus_final_search),
+        garantindo cobertura de todo o intervalo em vez de só dos itens mais
+        recentes. Equivalente a _run_ops_search_by_year.
+
+        `iteration` seleciona QUAL bloco de _SCOPUS_FINAL_PAGE_SIZE (200)
+        buscar por ano (0 = 0-200, default; 1 = 200-400; ...) - não é
+        cumulativo, cada chamada busca só esse bloco (ver docstring de
+        run_final_search pro raciocínio completo). O total-result-count de
+        cada resposta já é a contagem exata de artigos daquele ano (igual em
+        qualquer iteração), então é devolvido separado dos itens em si (a
+        amostra de itens continua limitada a _SCOPUS_FINAL_PAGE_SIZE/ano/
+        iteração).
+        """
+        collected: list[dict[str, Any]] = []
+        articles_by_year: dict[int, int] = {}
+        scopus_query = query.get("query", "")
+        start = iteration * self._SCOPUS_FINAL_PAGE_SIZE
+        for year in range(year_from, year_to + 1):
+            year_query = {**query, "query": self._scopus_replace_date_clause(scopus_query, year, year)}
+            result = await adapter.fetch_results_page(
+                year_query, start=start, count=self._SCOPUS_FINAL_PAGE_SIZE, run_id=run_id
+            )
+            if not result.success:
+                logger.warning("scopus_final_year_page_failed", year=year, error=result.error_message)
+                continue
+            collected.extend(result.results)
+            articles_by_year[year] = result.total_count or 0
+        return collected, articles_by_year
+
+    async def _run_scopus_area_of_study_counts(
+        self,
+        adapter: Any,
+        query: dict[str, Any],
+        year_from: int,
+        year_to: int,
+        run_id: Optional[str] = None,
+    ) -> dict[str, int]:
+        """
+        Conta documentos por área de estudo ASJC (as 27 áreas maiores da
+        Scopus - ver ASJC_SUBJECT_AREAS) via uma requisição count=1 por área
+        (query original AND SUBJAREA(CODE)) - diferente do CPC do OPS
+        (extraído dos itens já buscados), a Scopus não expõe subject-area
+        por item nessa API key, então a única forma confiável de contar por
+        área é filtrar a busca inteira por SUBJAREA. As 27 requisições
+        rodam concorrentemente (asyncio.gather) - independentes entre si,
+        sem motivo pra serializar.
+
+        Chaves do resultado são o NOME completo da área
+        (ASJC_SUBJECT_AREAS[code]), não a sigla; áreas sem nenhum resultado
+        são omitidas (mesmo padrão de cpc/depositants, que só trazem
+        valores presentes).
+        """
+        from services.query_builders.constants.scopus_subject_areas import ASJC_SUBJECT_AREAS
+
+        base_query = self._scopus_replace_date_clause(query.get("query", ""), year_from, year_to)
+
+        async def _count_area(code: str) -> tuple[str, int]:
+            area_query = {**query, "query": f"{base_query} AND SUBJAREA({code})"}
+            result = await adapter.count(area_query, run_id)
+            total = result.total_count if result.success and result.total_count else 0
+            return code, total
+
+        counts = await asyncio.gather(*(_count_area(code) for code in ASJC_SUBJECT_AREAS))
+        return {ASJC_SUBJECT_AREAS[code]: total for code, total in counts if total > 0}
+
     async def _run_scopus_final_search(
         self,
         adapter: Any,
         query: dict[str, Any],
         year_from: int,
         year_to: int,
-        top_k: int,
-        fetch_cap: int = 300,
-    ) -> tuple[list[dict[str, Any]], Optional[int]]:
+        run_id: Optional[str] = None,
+        iteration: int = 0,
+    ) -> dict[str, Any]:
         """
-        Cópia de _run_scopus_year_diversified_search parametrizada com
-        year_from/year_to explícitos (vindos da rota) em vez de lidos de
-        settings - usada só pela busca final. Criada em vez de alterar
-        _run_scopus_year_diversified_search porque esse método também é
-        usado por run_probe_search, que não pode ter seu comportamento
-        alterado por esta mudança.
+        Equivalente a _run_ops_final_search, pro Scopus: descobre o total de
+        resultados via uma requisição count=1 (ScopusService.count) e
+        escolhe entre paginar por range ou por ano - mesmo critério (menos
+        requisições vence). área de estudo é sempre calculada (independente
+        da estratégia escolhida e de `iteration` - ver
+        _run_scopus_area_of_study_counts), já que vem de requisições
+        próprias (contagens exatas por SUBJAREA), não dos itens buscados.
+
+        `iteration` (ver docstring de run_final_search) só afeta a
+        estratégia por ano - repassado pra _run_scopus_search_by_year, que
+        seleciona qual bloco de _SCOPUS_FINAL_PAGE_SIZE buscar por ano. A
+        decisão range-vs-ano (`threshold` abaixo) usa sempre o page_size
+        base, independente de `iteration`: range já é exaustiva, então
+        `iteration` não muda nada nela.
+
+        Returns:
+            Dict com institutions, area_of_study, title, articles_by_year,
+            strategy ("range" ou "year") e total_count - o compilado
+            retornado por run_final_search para api="scopus".
         """
-        scopus_query = query.get("query", "")
+        count_query = {
+            **query,
+            "query": self._scopus_replace_date_clause(query.get("query", ""), year_from, year_to),
+        }
+        count_result = await adapter.count(count_query, run_id)
+        total_count = count_result.total_count if count_result.success else None
 
-        buckets = self._year_buckets(year_from, year_to)
-        quotas = self._bucket_quotas(buckets, top_k)
+        area_of_study = await self._run_scopus_area_of_study_counts(adapter, query, year_from, year_to, run_id)
 
-        collected: list[dict[str, Any]] = []
-        total_available = 0
+        n_years = year_to - year_from + 1
 
-        for (b_from, b_to, _weight), quota in zip(buckets, quotas):
-            bucket_query = {**query, "query": self._scopus_replace_date_clause(scopus_query, b_from, b_to)}
-            fetch_n = min(max(quota * 3, quota), fetch_cap)
-            try:
-                result = await adapter.search(bucket_query, max_results=fetch_n)
-            except Exception as exc:
-                logger.warning(
-                    "scopus_final_year_bucket_search_failed",
-                    year_from=b_from,
-                    year_to=b_to,
-                    error=str(exc),
-                )
-                continue
+        if total_count is None:
+            logger.warning("scopus_final_total_count_unavailable")
+            # Caso degradado (contagem indisponível) - sem base pra decidir
+            # estratégia, então sempre busca a página 1 (iteration
+            # deliberadamente ignorado aqui, ver docstring).
+            items = await self._run_scopus_search_by_range(
+                adapter, query, max_requests=1, year_from=year_from, year_to=year_to, run_id=run_id
+            )
+            institutions, title = self._aggregate_scopus_final_items(items)
+            return {
+                "institutions": institutions,
+                "area_of_study": area_of_study,
+                "title": title,
+                "articles_by_year": {},
+                "strategy": "range",
+                "total_count": None,
+            }
 
-            if not result.success:
-                continue
+        threshold = n_years * self._SCOPUS_FINAL_PAGE_SIZE - (self._SCOPUS_FINAL_PAGE_SIZE - 1)
+        if total_count < threshold:
+            max_requests = (total_count + self._SCOPUS_FINAL_PAGE_SIZE - 1) // self._SCOPUS_FINAL_PAGE_SIZE
+            items = await self._run_scopus_search_by_range(adapter, query, max_requests, year_from, year_to, run_id)
+            institutions, title = self._aggregate_scopus_final_items(items)
+            articles_by_year = dict(Counter(item["year"] for item in items if item.get("year") is not None))
+            strategy = "range"
+        else:
+            items, articles_by_year = await self._run_scopus_search_by_year(
+                adapter, query, year_from, year_to, run_id, iteration=iteration
+            )
+            institutions, title = self._aggregate_scopus_final_items(items)
+            strategy = "year"
 
-            total_available += result.total_count or 0
-            collected.extend(await self._enrich_scopus_abstracts(result.results, top_k=quota))
-
-        logger.info(
-            "scopus_final_year_diversified_search",
-            buckets=[(f, t) for f, t, _ in buckets],
-            quotas=quotas,
-            collected=len(collected),
-            requested=top_k,
-        )
-        return collected, (total_available or None)
+        return {
+            "institutions": institutions,
+            "area_of_study": area_of_study,
+            "title": title,
+            "articles_by_year": articles_by_year,
+            "strategy": strategy,
+            "total_count": total_count,
+        }
 
     async def _run_ops_search_by_range(
         self,
@@ -1304,22 +1473,30 @@ class ChatService:
         year_from: int,
         year_to: int,
         run_id: Optional[str] = None,
+        iteration: int = 0,
     ) -> tuple[list[dict[str, Any]], dict[int, int]]:
         """
-        Uma requisição por ano (range default 1-100) cobrindo todo o
-        intervalo pedido - usado quando o volume total de resultados é
-        grande demais pra caber num nº de páginas menor que o nº de anos
-        (ver _run_ops_final_search), garantindo cobertura de todo o
-        intervalo em vez de só dos itens mais recentes. O total-result-count
-        de cada resposta já é a contagem exata de patentes daquele ano, então
-        é devolvido separado dos itens em si (a amostra de itens continua
-        limitada a 100/ano, usada só pra agregar depositants/cpc/title).
+        Uma requisição por ano cobrindo todo o intervalo pedido - usado
+        quando o volume total de resultados é grande demais pra caber num
+        nº de páginas menor que o nº de anos (ver _run_ops_final_search),
+        garantindo cobertura de todo o intervalo em vez de só dos itens mais
+        recentes.
+
+        `iteration` seleciona QUAL bloco de 100 buscar por ano (0 = 1-100,
+        default; 1 = 101-200; ...) - não é cumulativo, cada chamada busca só
+        esse bloco (ver docstring de run_final_search pro raciocínio
+        completo). O total-result-count de cada resposta já é a contagem
+        exata de patentes daquele ano (igual em qualquer iteração), então é
+        devolvido separado dos itens em si (a amostra de itens continua
+        limitada a 100/ano/iteração, usada só pra agregar
+        depositants/cpc/title).
         """
         collected: list[dict[str, Any]] = []
         patents_by_year: dict[int, int] = {}
+        start = iteration * 100 + 1
         for year in range(year_from, year_to + 1):
             result = await adapter.fetch_biblio_page(
-                query, start=1, page_size=100, year_range=(year, year), run_id=run_id
+                query, start=start, page_size=100, year_range=(year, year), run_id=run_id
             )
             if not result.success:
                 logger.warning("ops_final_year_page_failed", year=year, error=result.error_message)
@@ -1329,7 +1506,69 @@ class ChatService:
         return collected, patents_by_year
 
     @staticmethod
+    def _fuzzy_group_names(counts: dict[str, int], threshold: float) -> dict[str, int]:
+        """
+        Funde nomes de entidade que provavelmente são a mesma (variação de
+        grafia/pontuação/sufixo societário - ex: "Acme Corp" vs "ACME CORP."
+        vs "Acme Corporation") antes de expor a contagem final. Compartilhado
+        por _fuzzy_group_depositants (patentes/OPS) e
+        _fuzzy_group_institutions (artigos/Scopus) - mesma natureza de
+        problema, só muda de onde `counts` e `threshold` vêm.
+
+        Clustering guloso, não pairwise completo: ordena por contagem desc
+        (o nome mais frequente de cada cluster vira o "representante" -
+        normalmente a grafia mais usada/canônica) e compara cada nome
+        seguinte contra os representantes já aceitos via
+        rapidfuzz.fuzz.WRatio (0-100; robusto a diferenças de tamanho/ordem
+        de tokens, melhor pra nomes de empresa/instituição que ratio
+        simples). O(n²) em nomes ÚNICOS, não em itens - na prática algumas
+        centenas de nomes distintos por busca final, custo desprezível.
+        """
+        if not counts:
+            return {}
+
+        from rapidfuzz import fuzz, utils
+
+        ordered = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
+
+        grouped: dict[str, int] = {}
+        representatives: list[str] = []
+        for name, count in ordered:
+            best_match: Optional[str] = None
+            best_score = 0.0
+            for rep in representatives:
+                # default_process (lowercase + remove pontuação) - sem isso
+                # "Acme Corp" vs "ACME CORP." pontua baixo só por causa de
+                # caixa/pontuação, exatamente o tipo de variação que esse
+                # agrupamento deveria pegar.
+                score = fuzz.WRatio(name, rep, processor=utils.default_process)
+                if score >= threshold and score > best_score:
+                    best_match = rep
+                    best_score = score
+            if best_match is not None:
+                grouped[best_match] += count
+            else:
+                grouped[name] = count
+                representatives.append(name)
+        return grouped
+
+    def _fuzzy_group_depositants(self, counts: dict[str, int]) -> dict[str, int]:
+        """Depositantes de patente (OPS) - ver _fuzzy_group_names. threshold
+        vem de settings.depositant_fuzzy_match_threshold (configurável,
+        nunca hardcoded aqui) - ver core/config.py."""
+        threshold = getattr(self.settings, "depositant_fuzzy_match_threshold", 90.0)
+        return self._fuzzy_group_names(counts, threshold)
+
+    def _fuzzy_group_institutions(self, counts: dict[str, int]) -> dict[str, int]:
+        """Instituições de artigo (Scopus) - ver _fuzzy_group_names. Reusa o
+        mesmo settings.depositant_fuzzy_match_threshold de
+        _fuzzy_group_depositants (mesma natureza de problema - ver
+        core/config.py)."""
+        threshold = getattr(self.settings, "depositant_fuzzy_match_threshold", 90.0)
+        return self._fuzzy_group_names(counts, threshold)
+
     def _aggregate_ops_final_items(
+        self,
         items: list[dict[str, Any]],
     ) -> tuple[dict[str, int], dict[str, int], list[str]]:
         """
@@ -1343,10 +1582,13 @@ class ChatService:
         title: list[str] = []
         for item in items:
             depositants.update(item.get("applicants") or [])
-            cpc.update(item.get("cpc") or [])
+            # Agrupa pelos 4 primeiros caracteres (a classe CPC, ex. "B64G"
+            # em "B64G 1/2222") em vez do subgrupo completo - soma
+            # subgrupos da mesma classe num único bucket.
+            cpc.update(str(code)[:4] for code in (item.get("cpc") or []) if code)
             if item.get("title"):
                 title.append(item["title"])
-        return dict(depositants), dict(cpc), title
+        return self._fuzzy_group_depositants(dict(depositants)), dict(cpc), title
 
     async def _run_ops_final_search(
         self,
@@ -1355,6 +1597,7 @@ class ChatService:
         year_from: int,
         year_to: int,
         run_id: Optional[str] = None,
+        iteration: int = 0,
     ) -> dict[str, Any]:
         """
         Descobre o total de resultados via /published-data/search (sem
@@ -1371,9 +1614,19 @@ class ChatService:
         a contagem refletir o intervalo pedido agora, não o que ficou
         embutido na query no momento em que ela foi gerada.
 
+        `iteration` (ver docstring de run_final_search) só afeta a
+        estratégia por ano - repassado pra _run_ops_search_by_year, que
+        seleciona qual bloco de 100 buscar por ano. A decisão range-vs-ano
+        (`threshold` abaixo) usa sempre o page_size base (100), independente
+        de `iteration`: range já é exaustiva (cobre tudo numa chamada só),
+        então `iteration` não muda nada nela - pedir outra iteração de uma
+        query resolvida como range simplesmente devolve o mesmo conjunto
+        completo de novo.
+
         Returns:
-            Dict com depositants, cpc, title, patents_by_year e total_count -
-            o compilado retornado por run_final_search para api="ops".
+            Dict com depositants, cpc, title, patents_by_year, strategy
+            ("range" ou "year") e total_count - o compilado retornado por
+            run_final_search para api="ops".
         """
         count_query = {**query, "query": self._ops_replace_date_clause(query.get("query", ""), year_from, year_to)}
         count_result = await adapter.search(count_query, run_id)
@@ -1383,6 +1636,9 @@ class ChatService:
 
         if total_count is None:
             logger.warning("ops_final_total_count_unavailable")
+            # Caso degradado (contagem indisponível) - sem base pra decidir
+            # estratégia, então sempre busca a página 1 (iteration
+            # deliberadamente ignorado aqui, ver docstring).
             items = await self._run_ops_search_by_range(
                 adapter, query, max_requests=1, year_from=year_from, year_to=year_to, run_id=run_id
             )
@@ -1392,6 +1648,7 @@ class ChatService:
                 "cpc": cpc,
                 "title": title,
                 "patents_by_year": {},
+                "strategy": "range",
                 "total_count": None,
             }
 
@@ -1401,15 +1658,20 @@ class ChatService:
             items = await self._run_ops_search_by_range(adapter, query, max_requests, year_from, year_to, run_id)
             depositants, cpc, title = self._aggregate_ops_final_items(items)
             patents_by_year = dict(Counter(item["year"] for item in items if item.get("year") is not None))
+            strategy = "range"
         else:
-            items, patents_by_year = await self._run_ops_search_by_year(adapter, query, year_from, year_to, run_id)
+            items, patents_by_year = await self._run_ops_search_by_year(
+                adapter, query, year_from, year_to, run_id, iteration=iteration
+            )
             depositants, cpc, title = self._aggregate_ops_final_items(items)
+            strategy = "year"
 
         return {
             "depositants": depositants,
             "cpc": cpc,
             "title": title,
             "patents_by_year": patents_by_year,
+            "strategy": strategy,
             "total_count": total_count,
         }
 
@@ -1481,7 +1743,7 @@ class ChatService:
         api: str,
         year_from: int,
         year_to: int,
-        max_results: int = 500,
+        iteration: int = 0,
     ) -> dict[str, Any]:
         """
         year_from/year_to vêm sempre da rota (obrigatórios - ver
@@ -1489,38 +1751,50 @@ class ChatService:
         settings.search_year_from/to pra busca final (isso continua valendo
         só pra probe search e pra geração de query, que não foram alteradas).
 
-        OPS: usa _run_ops_final_search - esquema determinístico por
-        range/ano, sem corte por max_results e sem filtro de idioma - devolve
-        só o compilado agregado (depositants/cpc/title/patents_by_year), não
-        mais a lista bruta de itens.
+        `iteration` (default 0, sem teto) é um seletor de JANELA da amostra
+        por ano, não um multiplicador cumulativo: `iteration=N` devolve só a
+        página N daquele ano (OPS: bloco de 100; Scopus: bloco de 200) - não
+        as páginas 0..N somadas. Quem quiser uma amostra maior (o futuro
+        módulo de inferência estatística) chama esta rota várias vezes com
+        `iteration` crescente e junta os pedaços do lado de fora - este
+        método continua stateless, sem cache/merge entre chamadas. Custo por
+        chamada não muda com `iteration` (sempre 1 requisição/ano na
+        estratégia por ano), por isso não há necessidade de teto. Na
+        estratégia range (já exaustiva, decisão independente de `iteration` -
+        ver _run_ops_final_search/_run_scopus_final_search) `iteration` não
+        se aplica: qualquer valor devolve o mesmo conjunto completo. Rota
+        chamada hoje sempre com o default (0); o parâmetro só existe pro uso
+        futuro citado acima.
 
-        Scopus: usa _run_scopus_final_search - mesma ideia de diversidade por
-        faixa de ano do run_probe_search (a ordenação default não tem
-        critério de relevância - ver notes/pendencias.md - então uma busca
-        "crua" tende a vir toda concentrada nos itens mais recentes), com um
-        alvo bem maior (até 250, contra ~10-20 da probe) e um fetch_cap maior
-        por faixa: o enriquecimento via OpenAlex e o filtro de idioma
-        descartam boa parte dos itens brutos - sem essa margem maior, "até
-        250" na tela final vinha bem menos que 250 na prática (observado: 250
-        brutos -> 55 finais sem margem). Continua devolvendo a lista bruta de
-        itens (shape inalterado) - a agregação equivalente ao OPS fica pra
-        depois.
+        OPS: usa _run_ops_final_search - esquema determinístico por
+        range/ano, sem filtro de idioma - devolve só o compilado agregado
+        (depositants/cpc/title/patents_by_year/strategy), não mais a lista
+        bruta de itens.
+
+        Scopus: usa _run_scopus_final_search - mesmo esquema determinístico
+        da OPS (range/ano, o que exigir menos requisições, sem filtro de
+        idioma), devolvendo o compilado agregado
+        (institutions/area_of_study/title/articles_by_year/strategy) em vez
+        da lista bruta de itens. institutions vem com fuzzy matching (mesmo
+        mecanismo de depositants da OPS); area_of_study é contado à parte
+        via SUBJAREA (a API não expõe subject-area por item nessa API key) e
+        usa o nome completo da área, não a sigla.
+
+        Outras APIs (lens_patent/lens_scholarly/openalex): busca simples via
+        adapter.search(query), sem corte artificial de tamanho - cada
+        adapter já controla seu próprio limite de paginação internamente.
+        `iteration` é aceito mas ignorado aqui por enquanto (nenhuma dessas
+        APIs tem hoje um esquema exaustivo range/ano como OPS/Scopus pra
+        `iteration` selecionar uma janela de) - ponto de extensão pra quando
+        alguma migrar pro mesmo esquema.
         """
         adapter = self._find_search_adapter(api)
         if adapter is None:
             return {"success": False, "api": api, "error": f"API '{api}' not enabled or not found"}
 
-        # fetch_cap por faixa: com top_k até 250 e 4 faixas, a faixa mais
-        # cotada pode pedir até ~100 itens de cota - 300 dá margem de 3x
-        # sem esbarrar no teto antes da hora. Ambas as APIs paginam
-        # internamente além do limite por requisição (OPSService.
-        # search_with_abstracts, ScopusService.search), então pedir 300
-        # numa faixa só é mais lento, não um erro.
-        target_top_k = min(max_results, 250)
-        fetch_cap = 300
         try:
             if api == "ops" and hasattr(adapter, "fetch_biblio_page"):
-                compiled = await self._run_ops_final_search(adapter, query, year_from, year_to)
+                compiled = await self._run_ops_final_search(adapter, query, year_from, year_to, iteration=iteration)
                 return {
                     "success": True,
                     "api": api,
@@ -1528,21 +1802,32 @@ class ChatService:
                     "cpc": compiled["cpc"],
                     "title": compiled["title"],
                     "patents_by_year": compiled["patents_by_year"],
+                    "strategy": compiled["strategy"],
                     "error": None,
                 }
 
-            if api == "scopus":
-                items, total_available = await self._run_scopus_final_search(
-                    adapter, query, year_from, year_to, top_k=target_top_k, fetch_cap=fetch_cap
+            if api == "scopus" and hasattr(adapter, "fetch_results_page"):
+                compiled = await self._run_scopus_final_search(
+                    adapter, query, year_from, year_to, iteration=iteration
                 )
-            else:
-                from services.nlp.language_filter import filter_english_abstracts
+                return {
+                    "success": True,
+                    "api": api,
+                    "institutions": compiled["institutions"],
+                    "area_of_study": compiled["area_of_study"],
+                    "title": compiled["title"],
+                    "articles_by_year": compiled["articles_by_year"],
+                    "strategy": compiled["strategy"],
+                    "error": None,
+                }
 
-                result = await adapter.search(query)
-                if not result.success:
-                    return {"success": False, "api": api, "error": result.error_message}
-                items = filter_english_abstracts(result.results)[:target_top_k]
-                total_available = result.total_count
+            from services.nlp.language_filter import filter_english_abstracts
+
+            result = await adapter.search(query)
+            if not result.success:
+                return {"success": False, "api": api, "error": result.error_message}
+            items = filter_english_abstracts(result.results)
+            total_available = result.total_count
 
             return {
                 "success": True,

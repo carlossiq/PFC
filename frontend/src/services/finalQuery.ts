@@ -194,33 +194,55 @@ export interface OpsFinalAggregateResult {
   patentsByYear: Record<string, number>
 }
 
+// Equivalente a OpsFinalAggregateResult, pro Scopus (artigos) - mesmo
+// motivo de existir: a rota não devolve mais a lista bruta de artigos pro
+// lado Scopus (ver ChatService._run_scopus_final_search no backend), só
+// esses 4 agregados. areaOfStudy usa o nome completo da área ASJC (ex:
+// "Medicine"), não a sigla (ex: "MEDI") - já resolvido no backend.
+export interface ScopusFinalAggregateResult {
+  success: boolean
+  resultsCount: number
+  institutions: Record<string, number>
+  areaOfStudy: Record<string, number>
+  title: string[]
+  articlesByYear: Record<string, number>
+}
+
 // Roda a busca final real com a query escolhida entre as variantes geradas.
 // OPS: devolve o compilado agregado (depositants/cpc/title/patentsByYear).
-// Scopus: mantém o mesmo shape de resultado da probe search (lista bruta de
-// itens) - a agregação equivalente à da OPS ainda não foi feita pro Scopus.
+// Scopus: devolve o compilado agregado equivalente
+// (institutions/areaOfStudy/title/articlesByYear) - mesmo esquema da OPS.
+// Demais APIs (lens_patent/lens_scholarly/openalex) mantêm o shape de
+// resultado da probe search (lista bruta de itens).
 export async function runFinalSearch(
   query: { query: string } & Record<string, unknown>,
   api: 'ops',
   yearFrom: number,
-  yearTo: number,
-  maxResults?: number
+  yearTo: number
 ): Promise<OpsFinalAggregateResult>
 export async function runFinalSearch(
   query: { query: string } & Record<string, unknown>,
   api: 'scopus',
   yearFrom: number,
-  yearTo: number,
-  maxResults?: number
+  yearTo: number
+): Promise<ScopusFinalAggregateResult>
+export async function runFinalSearch(
+  query: { query: string } & Record<string, unknown>,
+  api: ProbeApi,
+  yearFrom: number,
+  yearTo: number
 ): Promise<ProbeSearchResult>
 export async function runFinalSearch(
   query: { query: string } & Record<string, unknown>,
   api: ProbeApi,
   yearFrom: number,
-  yearTo: number,
-  maxResults = 500
-): Promise<ProbeSearchResult | OpsFinalAggregateResult> {
+  yearTo: number
+): Promise<ProbeSearchResult | OpsFinalAggregateResult | ScopusFinalAggregateResult> {
+  // iteration não é exposto aqui - a UI sempre usa o default (0) do backend
+  // (ver ChatService.run_final_search); parâmetro existe pro futuro módulo
+  // de inferência estatística chamar a mesma rota HTTP diretamente.
   const { data } = await apiClient.post('/chat/final/search', query, {
-    params: { api, year_from: yearFrom, year_to: yearTo, max_results: maxResults },
+    params: { api, year_from: yearFrom, year_to: yearTo },
   })
   if (!data.success) {
     throw new Error(data.data?.error || data.message || 'Falha ao buscar resultados finais.')
@@ -236,6 +258,18 @@ export async function runFinalSearch(
       cpc: result.cpc ?? {},
       title,
       patentsByYear: result.patents_by_year ?? {},
+    }
+  }
+
+  if (api === 'scopus') {
+    const title: string[] = result.title ?? []
+    return {
+      success: result.success,
+      resultsCount: title.length,
+      institutions: result.institutions ?? {},
+      areaOfStudy: result.area_of_study ?? {},
+      title,
+      articlesByYear: result.articles_by_year ?? {},
     }
   }
 
