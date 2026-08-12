@@ -102,6 +102,7 @@ def build_container(settings: Settings) -> dict[str, Any]:
     from app.core.services.dedup_service import DedupService
     from app.core.services.chat_service import ChatService
     from app.core.services.report_service import ReportService
+    from app.core.services.statistical_inference_service import StatisticalInferenceService
 
     chat_service = ChatService(
         llm=llm,
@@ -111,6 +112,11 @@ def build_container(settings: Settings) -> dict[str, Any]:
         openalex=openalex_service,
     )
     report_service = ReportService(output_dir=settings.report_output_dir)
+    inference_service = StatisticalInferenceService(
+        chat_service=chat_service,
+        embedding=embedding,
+        settings=settings,
+    )
 
     return {
         "llm": llm,
@@ -121,6 +127,7 @@ def build_container(settings: Settings) -> dict[str, Any]:
             "dedup": DedupService(),
             "chat": chat_service,
             "report": report_service,
+            "inference": inference_service,
         },
         "_settings": settings,
         "_services_to_close": _services_to_close,

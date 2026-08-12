@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.adapters.driving.http import (
     chat_router,
     health_router,
+    inference_router,
     report_router,
     research_session,
     session_input,
@@ -92,6 +93,7 @@ def create_app() -> FastAPI:
     app.include_router(session_input.router, prefix=settings.api_prefix)
     app.include_router(research_session.router, prefix=settings.api_prefix)
     app.include_router(report_router.router, prefix=settings.api_prefix)
+    app.include_router(inference_router.router, prefix=settings.api_prefix)
 
     # Infraestrutura
     app.include_router(health_router.router, prefix=settings.api_prefix)

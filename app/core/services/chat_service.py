@@ -13,6 +13,7 @@ from app.core.services.query_complexity import QueryComplexityAnalyzer
 from core.config import Settings
 from core.logging import get_logger
 from services.llm.base import LLMJSONParseError
+from services.nlp.fuzzy_grouping import fuzzy_group_names
 
 logger = get_logger(__name__)
 
@@ -1505,67 +1506,22 @@ class ChatService:
             patents_by_year[year] = result.total_count or 0
         return collected, patents_by_year
 
-    @staticmethod
-    def _fuzzy_group_names(counts: dict[str, int], threshold: float) -> dict[str, int]:
-        """
-        Funde nomes de entidade que provavelmente são a mesma (variação de
-        grafia/pontuação/sufixo societário - ex: "Acme Corp" vs "ACME CORP."
-        vs "Acme Corporation") antes de expor a contagem final. Compartilhado
-        por _fuzzy_group_depositants (patentes/OPS) e
-        _fuzzy_group_institutions (artigos/Scopus) - mesma natureza de
-        problema, só muda de onde `counts` e `threshold` vêm.
-
-        Clustering guloso, não pairwise completo: ordena por contagem desc
-        (o nome mais frequente de cada cluster vira o "representante" -
-        normalmente a grafia mais usada/canônica) e compara cada nome
-        seguinte contra os representantes já aceitos via
-        rapidfuzz.fuzz.WRatio (0-100; robusto a diferenças de tamanho/ordem
-        de tokens, melhor pra nomes de empresa/instituição que ratio
-        simples). O(n²) em nomes ÚNICOS, não em itens - na prática algumas
-        centenas de nomes distintos por busca final, custo desprezível.
-        """
-        if not counts:
-            return {}
-
-        from rapidfuzz import fuzz, utils
-
-        ordered = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
-
-        grouped: dict[str, int] = {}
-        representatives: list[str] = []
-        for name, count in ordered:
-            best_match: Optional[str] = None
-            best_score = 0.0
-            for rep in representatives:
-                # default_process (lowercase + remove pontuação) - sem isso
-                # "Acme Corp" vs "ACME CORP." pontua baixo só por causa de
-                # caixa/pontuação, exatamente o tipo de variação que esse
-                # agrupamento deveria pegar.
-                score = fuzz.WRatio(name, rep, processor=utils.default_process)
-                if score >= threshold and score > best_score:
-                    best_match = rep
-                    best_score = score
-            if best_match is not None:
-                grouped[best_match] += count
-            else:
-                grouped[name] = count
-                representatives.append(name)
-        return grouped
-
     def _fuzzy_group_depositants(self, counts: dict[str, int]) -> dict[str, int]:
-        """Depositantes de patente (OPS) - ver _fuzzy_group_names. threshold
-        vem de settings.depositant_fuzzy_match_threshold (configurável,
-        nunca hardcoded aqui) - ver core/config.py."""
+        """Depositantes de patente (OPS) - ver
+        services.nlp.fuzzy_grouping.fuzzy_group_names. threshold vem de
+        settings.depositant_fuzzy_match_threshold (configurável, nunca
+        hardcoded aqui) - ver core/config.py."""
         threshold = getattr(self.settings, "depositant_fuzzy_match_threshold", 90.0)
-        return self._fuzzy_group_names(counts, threshold)
+        return fuzzy_group_names(counts, threshold)
 
     def _fuzzy_group_institutions(self, counts: dict[str, int]) -> dict[str, int]:
-        """Instituições de artigo (Scopus) - ver _fuzzy_group_names. Reusa o
-        mesmo settings.depositant_fuzzy_match_threshold de
+        """Instituições de artigo (Scopus) - ver
+        services.nlp.fuzzy_grouping.fuzzy_group_names. Reusa o mesmo
+        settings.depositant_fuzzy_match_threshold de
         _fuzzy_group_depositants (mesma natureza de problema - ver
         core/config.py)."""
         threshold = getattr(self.settings, "depositant_fuzzy_match_threshold", 90.0)
-        return self._fuzzy_group_names(counts, threshold)
+        return fuzzy_group_names(counts, threshold)
 
     def _aggregate_ops_final_items(
         self,

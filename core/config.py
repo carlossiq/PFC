@@ -137,14 +137,44 @@ class Settings(BaseSettings):
     # vs "Acme Corporation") antes de contar - compartilhado por
     # depositantes de patente (ChatService._fuzzy_group_depositants) e
     # instituições de artigo (ChatService._fuzzy_group_institutions), ambos
-    # delegando pro mesmo helper (_fuzzy_group_names) com este threshold -
-    # mesma natureza de problema (variação de grafia de nome de entidade)
-    # nas duas fontes. Score 0-100 do rapidfuzz (fuzz.WRatio); 90 é
+    # delegando pro mesmo helper (services.nlp.fuzzy_grouping.fuzzy_group_names)
+    # com este threshold - mesma natureza de problema (variação de grafia de
+    # nome de entidade) nas duas fontes. Score 0-100 do rapidfuzz (fuzz.WRatio); 90 é
     # conservador o suficiente pra não fundir entidades distintas com nomes
     # parecidos (ex: "Acme Inc" vs "Acme Solutions Inc"), mas pega
     # variações triviais de grafia. Diminuir agrupa mais agressivamente
     # (risco de falsos positivos); aumentar agrupa menos.
     depositant_fuzzy_match_threshold: float = 90.0
+
+    # Statistical Inference Configuration (Chao1 + Bootstrap)
+    # Ver app/core/services/statistical_inference_service.py e
+    # app/core/services/sample_statistics.py. A rota /inference/final-search
+    # pede iterações extras de run_final_search (iteration=1,2,...) até a
+    # amostra "saturar" (Chao1) ou esse teto de tempo acabar - o que vier
+    # primeiro.
+    statistical_inference_max_duration_seconds: int = 60
+
+    # Critério composto de "amostra insuficiente" (is_sample_insufficient) -
+    # QUALQUER UM dos três abaixo sendo verdadeiro já conta como
+    # insuficiente:
+    # - saturação (S_obs/S_chao1, cobertura estimada) abaixo deste valor.
+    statistical_inference_saturation_threshold: float = 0.5
+    # - proporção de singletons (categorias vistas só 1x) acima deste valor
+    #   entre as categorias observadas - sinal de cauda longa não capturada.
+    statistical_inference_f1_ratio_threshold: float = 0.7
+    # - nº de doubletons (categorias vistas exatamente 2x) abaixo deste
+    #   valor - poucas repetições pra uma estimativa Chao1 estável.
+    statistical_inference_f2_min: int = 5
+
+    # Nº de reamostragens (bootstrap, com reposição) usadas pra medir a
+    # estabilidade do ranking top-10 - xx de cada entidade no top10 da
+    # resposta é a fração dessas reamostragens em que ela permaneceu entre
+    # as 10 primeiras.
+    statistical_inference_bootstrap_resamples: int = 1000
+
+    # Nº máximo de títulos amostrados aleatoriamente (em inglês) pra
+    # calcular a relevância semântica (SBERT) média com o tema da pesquisa.
+    statistical_inference_max_titles_for_relevance: int = 20
 
     # Feature flags - APIs habilitadas (busca final)
     lens_patent_enabled: bool = True
