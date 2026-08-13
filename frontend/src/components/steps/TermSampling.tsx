@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useFormStore } from '../../stores/useFormStore'
 import { useTermSampling } from '../../hooks/useTermSampling'
-import { generateFinalQuery } from '../../services/finalQuery'
+import { generateFinalQuery, buildFinalQuerySelectionSignature } from '../../services/finalQuery'
 import type { ExtractedTerm, FinalQueryVariant } from '../../services/finalQuery'
 import { FINAL_QUERY_VARIANTS, FINAL_QUERY_VARIANT_LABELS } from '../../constants/finalQueryVariants'
 import { selectableCardClass } from '../CandidatePicker'
@@ -35,6 +35,8 @@ interface TermChecklistProps {
   error: string | null
   onToggle: (term: string) => void
   onRetry: () => void
+  onSelectAll: () => void
+  onDeselectAll: () => void
   selectedVariant: FinalQueryVariant
   onVariantChange: (variant: FinalQueryVariant) => void
 }
@@ -53,9 +55,14 @@ function TermChecklist({
   error,
   onToggle,
   onRetry,
+  onSelectAll,
+  onDeselectAll,
   selectedVariant,
   onVariantChange,
 }: TermChecklistProps) {
+  const hasTerms = !!terms && terms.length > 0
+  const allSelected = hasTerms && selectedTerms.length === terms!.length
+
   return (
     <div className="flex flex-col">
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-4">
@@ -84,6 +91,27 @@ function TermChecklist({
                 </option>
               ))}
             </select>
+          </div>
+        )}
+
+        {hasDocs && !isLoading && !error && hasTerms && (
+          <div className="flex items-center justify-end gap-3 mb-2">
+            <button
+              type="button"
+              onClick={onSelectAll}
+              disabled={allSelected}
+              className="text-xs font-semibold text-[#0f9448] hover:text-[#0d843f] disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Selecionar todos
+            </button>
+            <button
+              type="button"
+              onClick={onDeselectAll}
+              disabled={selectedTerms.length === 0}
+              className="text-xs font-semibold text-gray-500 hover:text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Desmarcar todos
+            </button>
           </div>
         )}
 
@@ -152,17 +180,23 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
     step4PatentSelectedTerms,
     setStep4PatentTerms,
     toggleStep4PatentTerm,
+    setStep4PatentSelectedTerms,
     step4ArticleTerms,
     step4ArticleTermsForQuery,
     step4ArticleSelectedTerms,
     setStep4ArticleTerms,
     toggleStep4ArticleTerm,
+    setStep4ArticleSelectedTerms,
     step4PatentSelectedVariant,
     setStep4PatentSelectedVariant,
+    step4PatentQuery,
+    step4PatentGeneratedForSelection,
     setStep4PatentQuery,
     resetStep4PatentQueryIterations,
     step4ArticleSelectedVariant,
     setStep4ArticleSelectedVariant,
+    step4ArticleQuery,
+    step4ArticleGeneratedForSelection,
     setStep4ArticleQuery,
     resetStep4ArticleQueryIterations,
     addAiUsage,
@@ -210,13 +244,33 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
   const canBuildQueries =
     (patentTerms.hasDocs || articleTerms.hasDocs) && patentTermsReady && articleTermsReady
 
+  // Assinatura da seleção atual (termos marcados + tipo escolhido) por
+  // fonte - comparada com a assinatura que gerou a query já guardada no
+  // store pra decidir se dá pra reaproveitá-la em vez de chamar a IA de
+  // novo (mesmo padrão de step3GeneratedForIntake em useProbeQuerySection).
+  const currentPatentSignature = buildFinalQuerySelectionSignature(step4PatentSelectedTerms, step4PatentSelectedVariant)
+  const currentArticleSignature = buildFinalQuerySelectionSignature(step4ArticleSelectedTerms, step4ArticleSelectedVariant)
+  const patentNeedsGeneration =
+    patentTerms.hasDocs && (!step4PatentQuery || step4PatentGeneratedForSelection !== currentPatentSignature)
+  const articleNeedsGeneration =
+    articleTerms.hasDocs && (!step4ArticleQuery || step4ArticleGeneratedForSelection !== currentArticleSignature)
+
   async function handleBuildQueries() {
     if (!canBuildQueries) return
+
+    // Nada mudou desde a última geração (mesmos termos marcados + mesmo
+    // tipo) e já existe uma query pronta pras duas fontes com docs - reusa
+    // em vez de chamar a IA de novo.
+    if (!patentNeedsGeneration && !articleNeedsGeneration) {
+      onNext()
+      return
+    }
+
     setIsBuildingQueries(true)
     setBuildQueriesError(null)
     try {
       const [patentOutcome, articleOutcome] = await Promise.allSettled([
-        patentTerms.hasDocs
+        patentNeedsGeneration
           ? generateFinalQuery(
               input,
               step2SelectedTheme,
@@ -225,7 +279,7 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
               'ops'
             )
           : Promise.resolve(null),
-        articleTerms.hasDocs
+        articleNeedsGeneration
           ? generateFinalQuery(
               input,
               step2SelectedTheme,
@@ -246,12 +300,12 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
 
       if (patentOutcome.value) {
         addAiUsage(patentOutcome.value.aiUsage)
-        setStep4PatentQuery(patentOutcome.value.query)
+        setStep4PatentQuery(patentOutcome.value.query, currentPatentSignature)
         resetStep4PatentQueryIterations()
       }
       if (articleOutcome.value) {
         addAiUsage(articleOutcome.value.aiUsage)
-        setStep4ArticleQuery(articleOutcome.value.query)
+        setStep4ArticleQuery(articleOutcome.value.query, currentArticleSignature)
         resetStep4ArticleQueryIterations()
       }
       onNext()
@@ -286,6 +340,8 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
           error={patentTerms.error}
           onToggle={patentTerms.toggleTerm}
           onRetry={patentTerms.retryExtraction}
+          onSelectAll={() => setStep4PatentSelectedTerms((patentTerms.terms ?? []).map((t) => t.term))}
+          onDeselectAll={() => setStep4PatentSelectedTerms([])}
           selectedVariant={step4PatentSelectedVariant}
           onVariantChange={setStep4PatentSelectedVariant}
         />
@@ -298,6 +354,8 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
           error={articleTerms.error}
           onToggle={articleTerms.toggleTerm}
           onRetry={articleTerms.retryExtraction}
+          onSelectAll={() => setStep4ArticleSelectedTerms((articleTerms.terms ?? []).map((t) => t.term))}
+          onDeselectAll={() => setStep4ArticleSelectedTerms([])}
           selectedVariant={step4ArticleSelectedVariant}
           onVariantChange={setStep4ArticleSelectedVariant}
         />
@@ -310,7 +368,11 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
           Voltar
         </Button>
         <Button fullWidth onClick={handleBuildQueries} disabled={!canBuildQueries || isBuildingQueries}>
-          {isBuildingQueries ? 'Gerando query...' : 'Gerar Query Final'}
+          {isBuildingQueries
+            ? 'Gerando query...'
+            : patentNeedsGeneration || articleNeedsGeneration
+              ? 'Gerar Query Final'
+              : 'Avançar'}
         </Button>
       </div>
     </div>

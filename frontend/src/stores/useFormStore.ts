@@ -58,6 +58,12 @@ export type FormStorePatch = Partial<
     | 'step4ArticleTerms'
     | 'step4ArticleTermsForQuery'
     | 'step4ArticleSelectedTerms'
+    | 'step4PatentSelectedVariant'
+    | 'step4PatentQuery'
+    | 'step4PatentGeneratedForSelection'
+    | 'step4ArticleSelectedVariant'
+    | 'step4ArticleQuery'
+    | 'step4ArticleGeneratedForSelection'
   >
 >
 
@@ -179,12 +185,14 @@ interface FormStore {
   step4PatentSelectedTerms: string[]
   setStep4PatentTerms: (terms: ExtractedTerm[], forQuery: string | null) => void
   toggleStep4PatentTerm: (term: string) => void
+  setStep4PatentSelectedTerms: (terms: string[]) => void
 
   step4ArticleTerms: ExtractedTerm[] | null
   step4ArticleTermsForQuery: string | null
   step4ArticleSelectedTerms: string[]
   setStep4ArticleTerms: (terms: ExtractedTerm[], forQuery: string | null) => void
   toggleStep4ArticleTerm: (term: string) => void
+  setStep4ArticleSelectedTerms: (terms: string[]) => void
 
   // Tipo de query final escolhido pelo usuário ANTES de gerar (select no
   // card de termos em TermSampling.tsx) - default 'balanced', sempre tem
@@ -196,7 +204,15 @@ interface FormStore {
 
   // A única query final gerada pro tipo escolhido acima.
   step4PatentQuery: QueryOptionResult | null
-  setStep4PatentQuery: (query: QueryOptionResult | null) => void
+  // Assinatura (ver finalQuery.ts#buildFinalQuerySelectionSignature) dos
+  // termos marcados + variante que geraram step4PatentQuery - comparada com
+  // a seleção atual em TermSampling.tsx pra decidir se "Gerar Query Final"
+  // pode reaproveitar essa query em vez de chamar a IA de novo (mesmo padrão
+  // de step3GeneratedForIntake pra queries da probe). `generatedForSelection`
+  // é opcional: omitido (ex: regeneração manual em FinalExploration.tsx, que
+  // não muda a seleção) preserva a assinatura já guardada.
+  step4PatentGeneratedForSelection: string | null
+  setStep4PatentQuery: (query: QueryOptionResult | null, generatedForSelection?: string | null) => void
   // Atualiza a query já gerada (ex: depois de editar/salvar campos
   // estruturados em FinalExploration.tsx).
   updateStep4PatentQuery: (patch: Partial<QueryOptionResult>) => void
@@ -210,7 +226,9 @@ interface FormStore {
   setStep4ArticleSelectedVariant: (variant: FinalQueryVariant) => void
 
   step4ArticleQuery: QueryOptionResult | null
-  setStep4ArticleQuery: (query: QueryOptionResult | null) => void
+  // Espelha step4PatentGeneratedForSelection acima, pro lado artigos.
+  step4ArticleGeneratedForSelection: string | null
+  setStep4ArticleQuery: (query: QueryOptionResult | null, generatedForSelection?: string | null) => void
   updateStep4ArticleQuery: (patch: Partial<QueryOptionResult>) => void
 
   step4ArticleQueryIterations: number
@@ -305,9 +323,11 @@ export const useFormStore = create<FormStore>((set, get) => ({
   step4ArticleSelectedTerms: [],
   step4PatentSelectedVariant: 'balanced',
   step4PatentQuery: null,
+  step4PatentGeneratedForSelection: null,
   step4PatentQueryIterations: 0,
   step4ArticleSelectedVariant: 'balanced',
   step4ArticleQuery: null,
+  step4ArticleGeneratedForSelection: null,
   step4ArticleQueryIterations: 0,
   step4PatentResults: null,
   step4ArticleResults: null,
@@ -446,6 +466,11 @@ export const useFormStore = create<FormStore>((set, get) => ({
         : [...state.step4PatentSelectedTerms, term],
     })),
 
+  setStep4PatentSelectedTerms: (terms) =>
+    set({
+      step4PatentSelectedTerms: terms,
+    }),
+
   setStep4ArticleTerms: (terms, forQuery) =>
     set({
       step4ArticleTerms: terms,
@@ -460,15 +485,22 @@ export const useFormStore = create<FormStore>((set, get) => ({
         : [...state.step4ArticleSelectedTerms, term],
     })),
 
+  setStep4ArticleSelectedTerms: (terms) =>
+    set({
+      step4ArticleSelectedTerms: terms,
+    }),
+
   setStep4PatentSelectedVariant: (variant) =>
     set({
       step4PatentSelectedVariant: variant,
     }),
 
-  setStep4PatentQuery: (query) =>
-    set({
+  setStep4PatentQuery: (query, generatedForSelection) =>
+    set((state) => ({
       step4PatentQuery: query,
-    }),
+      step4PatentGeneratedForSelection:
+        generatedForSelection !== undefined ? generatedForSelection : state.step4PatentGeneratedForSelection,
+    })),
 
   updateStep4PatentQuery: (patch) =>
     set((state) => {
@@ -493,10 +525,12 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step4ArticleSelectedVariant: variant,
     }),
 
-  setStep4ArticleQuery: (query) =>
-    set({
+  setStep4ArticleQuery: (query, generatedForSelection) =>
+    set((state) => ({
       step4ArticleQuery: query,
-    }),
+      step4ArticleGeneratedForSelection:
+        generatedForSelection !== undefined ? generatedForSelection : state.step4ArticleGeneratedForSelection,
+    })),
 
   updateStep4ArticleQuery: (patch) =>
     set((state) => {
@@ -536,9 +570,11 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step4ArticleSelectedTerms: [],
       step4PatentSelectedVariant: 'balanced',
       step4PatentQuery: null,
+      step4PatentGeneratedForSelection: null,
       step4PatentQueryIterations: 0,
       step4ArticleSelectedVariant: 'balanced',
       step4ArticleQuery: null,
+      step4ArticleGeneratedForSelection: null,
       step4ArticleQueryIterations: 0,
       step4PatentResults: null,
       step4ArticleResults: null,

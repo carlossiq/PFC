@@ -18,6 +18,11 @@ interface Step1Props {
   onFormChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void
   onRefinirParametros: () => void
   onGerar: () => void
+  // Indica que já existe um resultado (parâmetros/query) gerado e válido pro
+  // input atual - troca o texto do botão pra deixar claro que o clique só
+  // navega, sem chamar a IA de novo (ver Workflow.tsx).
+  refineAlreadyGenerated: boolean
+  queryAlreadyGenerated: boolean
   onCancel: () => void
   onBack: () => void
   onNext: () => void
@@ -33,6 +38,8 @@ export function Step1({
   onFormChange,
   onRefinirParametros,
   onGerar,
+  refineAlreadyGenerated,
+  queryAlreadyGenerated,
   onCancel,
   onBack,
   onNext,
@@ -110,10 +117,10 @@ export function Step1({
 
         <div className="flex gap-4 pt-0">
           <Button fullWidth onClick={onRefinirParametros} disabled={isSaving}>
-            Refinar parâmetros
+            {refineAlreadyGenerated ? 'Ver parâmetros' : 'Refinar parâmetros'}
           </Button>
           <Button fullWidth onClick={onGerar} disabled={isSaving}>
-            {isSaving ? 'Gerando...' : 'Gerar Query'}
+            {isSaving ? 'Gerando...' : queryAlreadyGenerated ? 'Avançar' : 'Gerar Query'}
           </Button>
           <Button fullWidth variant="secondary" onClick={onCancel} disabled={isSaving}>
             Cancelar

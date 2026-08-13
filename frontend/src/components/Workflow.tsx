@@ -19,6 +19,7 @@ import { useSidebarStore } from "../stores/useSidebarStore";
 import { TABS } from "../constants/tabs";
 import { STEPS } from "../constants/steps";
 import { buildSaveSessionPayload, saveSession } from "../services/sessionInput";
+import { resolveIntakePayload } from "../services/refineTopic";
 
 const tabContents = {
   [TABS.WELCOME]: { title: "Welcome", label: "Welcome" },
@@ -44,10 +45,15 @@ export function WorkflowPage() {
     setInput,
     step2SelectedTheme,
     setStep2SelectedTheme,
+    step2Candidates,
     step2GeneratedForInput,
     setShouldRegenerateStep2,
     resetStep2Iterations,
     incrementStep2Iterations,
+    step3Queries,
+    step3GeneratedForIntake,
+    step3ArticleQueries,
+    step3ArticleGeneratedForIntake,
     aiCallsInFlight,
     reset: formReset,
   } = useFormStore();
@@ -177,6 +183,25 @@ export function WorkflowPage() {
   const currentTab = tabContents[tab as keyof typeof tabContents] || tabContents[TABS.SETTINGS];
   const isStartProspection = tab === TABS.START_PROSPECTION;
 
+  // "Refinar parâmetros" só navega (sem chamar IA de novo) quando já existem
+  // candidatos gerados pro input atual - mesma assinatura comparada em
+  // handleRefineParameters acima. `step2Candidates.length > 0` distingue de
+  // uma sessão retomada que nunca passou pelo Step2 (só o tema cru do
+  // usuário), onde a assinatura bate trivialmente mas não há parâmetros de
+  // IA pra "ver".
+  const step2AlreadyGenerated =
+    step2Candidates.length > 0 && JSON.stringify(input) === step2GeneratedForInput;
+
+  // "Gerar Query" pula o Step2 (zera step2SelectedTheme em
+  // handleStartProspection), então a assinatura do intake que o Step3 vai
+  // comparar é sempre a do input cru - ver resolveIntakePayload.
+  const step3IntakeSignature = JSON.stringify(resolveIntakePayload(input, null));
+  const step3AlreadyGenerated =
+    !!step3Queries &&
+    step3GeneratedForIntake === step3IntakeSignature &&
+    !!step3ArticleQueries &&
+    step3ArticleGeneratedForIntake === step3IntakeSignature;
+
   return (
     <main className="flex-1 p-2 transition-all duration-300">
       <div className="h-[calc(100vh-5rem)] bg-gray-200 rounded-tl-2xl overflow-hidden flex flex-col">
@@ -200,6 +225,8 @@ export function WorkflowPage() {
                 onFormChange={handleFormChange}
                 onRefinirParametros={handleRefineParameters}
                 onGerar={handleStartProspection}
+                refineAlreadyGenerated={step2AlreadyGenerated}
+                queryAlreadyGenerated={step3AlreadyGenerated}
                 onCancel={handleCancel}
                 onBack={handlePrevStep}
                 onNext={handleNext}
