@@ -3,7 +3,8 @@ import type { ResearchSessionSummary } from './researchSession'
 import type { SessionProbeQueryRow } from './sessionInput'
 import { buildProbeSearchResult } from './probeQuery'
 import type { QueryOptionResult } from './probeQuery'
-import type { ExtractedTerm } from './finalQuery'
+import { buildFinalQuerySelectionSignature } from './finalQuery'
+import type { ExtractedTerm, FinalQueryVariant } from './finalQuery'
 import type { FormStorePatch } from '../stores/useFormStore'
 
 // Mapeia uma sessão salva pra um patch de useFormStore, usado ao retomar uma
@@ -14,10 +15,16 @@ export function mapSessionToFormStorePatch(session: ResearchSessionSummary): For
   const generated = session.inputs.find((i) => i.parent_id !== null)
   // tipo === null identifica a linha de probe (Exploração Inicial) - session
   // pode ter uma segunda linha por fonte (tipo=variante escolhida) pra query
-  // final, que essa retomada ainda não reidrata (Escolha da Query Final
-  // sempre reabre do zero, mesmo padrão de step3PatentResults hoje).
+  // final (ver patentFinalQuery/articleFinalQuery abaixo).
   const patentQuery = session.probe_queries.find((q) => q.fonte === 'ops' && q.tipo === null)
   const articleQuery = session.probe_queries.find((q) => q.fonte === 'scopus' && q.tipo === null)
+  // Linha de query final (tipo=variante escolhida), auto-relacionada à
+  // linha de probe acima pela mesma fonte - ver buildProbeQueryPayload em
+  // sessionInput.ts. undefined = usuário ainda não gerou uma query final
+  // nesta sessão (Amostragem de Termos preenchida, mas "Gerar Query Final"
+  // nunca confirmado).
+  const patentFinalQuery = session.probe_queries.find((q) => q.fonte === 'ops' && q.tipo !== null)
+  const articleFinalQuery = session.probe_queries.find((q) => q.fonte === 'scopus' && q.tipo !== null)
 
   const input = {
     theme: root?.theme ?? '',
@@ -59,6 +66,15 @@ export function mapSessionToFormStorePatch(session: ResearchSessionSummary): For
     ]
   }
 
+  // Mesma reconstrução de toQueryOption, mas devolve um único objeto (não
+  // uma lista de tentativas) - formato que step4PatentQuery/step4ArticleQuery
+  // esperam (Escolha da Query Final não tem mais "3 variantes pra escolher",
+  // só a única já gerada pro tipo escolhido em TermSampling.tsx).
+  function toFinalQueryOption(row: SessionProbeQueryRow | undefined): QueryOptionResult | null {
+    const wrapped = toQueryOption(row)
+    return wrapped ? wrapped[0] : null
+  }
+
   // Reconstrói os termos da Amostragem de Termos (todos os extraídos, com
   // `selected` marcando os escolhidos) - null se a linha não tem termos
   // salvos (sessão sem docs na fonte, ou salva antes dessa feature existir).
@@ -87,6 +103,11 @@ export function mapSessionToFormStorePatch(session: ResearchSessionSummary): For
 
   const patentResults = toResults(patentQuery, 'ops')
   const articleResults = toResults(articleQuery, 'scopus')
+
+  const patentFinalVariant = (patentFinalQuery?.tipo ?? 'balanced') as FinalQueryVariant
+  const articleFinalVariant = (articleFinalQuery?.tipo ?? 'balanced') as FinalQueryVariant
+  const patentFinalSelectedTerms = toSelectedTerms(patentQuery)
+  const articleFinalSelectedTerms = toSelectedTerms(articleQuery)
 
   return {
     sessionId: session.id,
@@ -118,5 +139,21 @@ export function mapSessionToFormStorePatch(session: ResearchSessionSummary): For
     step4ArticleTerms: toTerms(articleQuery),
     step4ArticleTermsForQuery: toTerms(articleQuery) ? articleResults.querySignature : null,
     step4ArticleSelectedTerms: toSelectedTerms(articleQuery),
+    // Query final já gerada nesta sessão (Escolha da Query Final), com a
+    // assinatura da seleção que a gerou - permite que TermSampling.tsx
+    // reconheça, logo ao reabrir a sessão, que a query já existe pra
+    // seleção atual e pule a chamada de IA em "Gerar Query Final" (mesmo
+    // cache que evita regeneração ao só navegar dentro da sessão, ver
+    // handleBuildQueries em TermSampling.tsx).
+    step4PatentSelectedVariant: patentFinalVariant,
+    step4PatentQuery: toFinalQueryOption(patentFinalQuery),
+    step4PatentGeneratedForSelection: patentFinalQuery
+      ? buildFinalQuerySelectionSignature(patentFinalSelectedTerms, patentFinalVariant)
+      : null,
+    step4ArticleSelectedVariant: articleFinalVariant,
+    step4ArticleQuery: toFinalQueryOption(articleFinalQuery),
+    step4ArticleGeneratedForSelection: articleFinalQuery
+      ? buildFinalQuerySelectionSignature(articleFinalSelectedTerms, articleFinalVariant)
+      : null,
   }
 }

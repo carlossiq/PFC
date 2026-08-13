@@ -1,10 +1,61 @@
-import { FileText } from 'lucide-react'
+import { FileText, Download } from 'lucide-react'
 import { useFormStore } from '../../stores/useFormStore'
+import { useFinalSCurve } from '../../hooks/useFinalSCurve'
+import type { SCurveKind } from '../../hooks/useFinalSCurve'
 import { Button } from '../Button'
+import { LoadingScreen } from '../LoadingScreen'
 import { SectionHeader } from '../SectionHeader'
 import { STEPS } from '../../constants/steps'
 import { PANEL_ACCENT } from '../../constants/probePanelAccent'
 import type { OpsFinalAggregateResult, ScopusFinalAggregateResult } from '../../services/finalQuery'
+
+// Curva S (Fisher-Pry) de patentes ou artigos, gerada a partir do
+// patentsByYear/articlesByYear que a busca final já devolve - gera
+// automaticamente assim que há resultado (ver useFinalSCurve), sem exigir
+// clique do usuário; "Baixar Gráfico" baixa o PNG já renderizado pelo
+// backend (ver ReportService._render_s_curve_chart).
+function SCurveSection({ kind, yearlyByYear }: { kind: SCurveKind; yearlyByYear: Record<string, number> | null }) {
+  const { hasData, isLoading, error, chart, chartUrl, downloadError, handleDownload } = useFinalSCurve(
+    kind,
+    yearlyByYear
+  )
+
+  if (!hasData) return null
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-100">
+      <h5 className="text-xs font-semibold text-gray-600 mb-2">Curva S (evolução temporal)</h5>
+
+      {isLoading && <LoadingScreen message="Gerando curva S..." />}
+
+      {!isLoading && error && <p className="text-sm text-red-600">{error}</p>}
+
+      {!isLoading && !error && !chart && (
+        <p className="text-sm text-gray-500">
+          Não foi possível ajustar a curva S com os dados disponíveis (série de anos ainda muito curta ou sem
+          sinal de desaceleração).
+        </p>
+      )}
+
+      {!isLoading && chart && chartUrl && (
+        <div className="space-y-2">
+          <img
+            src={chartUrl}
+            alt={`Curva S de ${kind === 'patent' ? 'patentes' : 'artigos'}`}
+            className="w-full rounded-md border border-gray-200"
+          />
+          {downloadError && <p className="text-sm text-red-600">{downloadError}</p>}
+          <Button size="sm" variant="secondary" onClick={handleDownload}>
+            <span className="inline-flex items-center gap-1.5">
+              <Download size={14} />
+              Baixar Gráfico
+            </span>
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // Painel de patentes (OPS) da busca final - a rota devolve um compilado
 // agregado (depositants/cpc/title/patentsByYear), não mais uma lista de
@@ -46,16 +97,20 @@ function OpsFinalAggregatePanel({
       )}
 
       {results !== null && results.resultsCount > 0 && (
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <div className="rounded-md bg-gray-50 p-2">
-            <div className="text-xs text-gray-500">Depositantes distintos</div>
-            <div className="font-semibold text-gray-900">{depositantsCount}</div>
+        <>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="rounded-md bg-gray-50 p-2">
+              <div className="text-xs text-gray-500">Depositantes distintos</div>
+              <div className="font-semibold text-gray-900">{depositantsCount}</div>
+            </div>
+            <div className="rounded-md bg-gray-50 p-2">
+              <div className="text-xs text-gray-500">Classificações CPC distintas</div>
+              <div className="font-semibold text-gray-900">{cpcCount}</div>
+            </div>
           </div>
-          <div className="rounded-md bg-gray-50 p-2">
-            <div className="text-xs text-gray-500">Classificações CPC distintas</div>
-            <div className="font-semibold text-gray-900">{cpcCount}</div>
-          </div>
-        </div>
+
+          <SCurveSection kind="patent" yearlyByYear={results.patentsByYear} />
+        </>
       )}
     </div>
   )
@@ -100,16 +155,20 @@ function ScopusFinalAggregatePanel({
       )}
 
       {results !== null && results.resultsCount > 0 && (
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <div className="rounded-md bg-gray-50 p-2">
-            <div className="text-xs text-gray-500">Instituições distintas</div>
-            <div className="font-semibold text-gray-900">{institutionsCount}</div>
+        <>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="rounded-md bg-gray-50 p-2">
+              <div className="text-xs text-gray-500">Instituições distintas</div>
+              <div className="font-semibold text-gray-900">{institutionsCount}</div>
+            </div>
+            <div className="rounded-md bg-gray-50 p-2">
+              <div className="text-xs text-gray-500">Áreas de estudo distintas</div>
+              <div className="font-semibold text-gray-900">{areaOfStudyCount}</div>
+            </div>
           </div>
-          <div className="rounded-md bg-gray-50 p-2">
-            <div className="text-xs text-gray-500">Áreas de estudo distintas</div>
-            <div className="font-semibold text-gray-900">{areaOfStudyCount}</div>
-          </div>
-        </div>
+
+          <SCurveSection kind="article" yearlyByYear={results.articlesByYear} />
+        </>
       )}
     </div>
   )

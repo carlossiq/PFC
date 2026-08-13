@@ -63,11 +63,14 @@ class ScopusService:
     # margem suficiente pro fetch com 3x de folga do final search (ver
     # ChatService.run_final_search) sem risco de loop indefinido.
     _MAX_PAGES = 40
-    # Limite por requisição observado pra essa API key na busca final
-    # (diferente do _DEFAULT_RESULTS_PER_PAGE, 25, usado por search()/probe;
-    # OPS usa 100 - ver OPSService._OPS_PAGE_SIZE) - usado só por
-    # fetch_results_page/count, nunca por search().
-    _FINAL_SEARCH_PAGE_SIZE = 200
+    # Limite por requisição pra essa API key na busca final - usado só por
+    # fetch_results_page/count, nunca por search(). Era 200 (valor nunca
+    # confirmado contra a API de verdade); testado diretamente agora:
+    # count=25 funciona, count=26 já devolve 400 INVALID_INPUT ("Exceeds
+    # the maximum number allowed for the service level") - o teto real
+    # dessa API key é o MESMO de _DEFAULT_RESULTS_PER_PAGE (25), não um
+    # valor maior liberado especificamente pra busca final.
+    _FINAL_SEARCH_PAGE_SIZE = 25
 
     def __init__(self, api_key: Optional[str] = None) -> None:
         """

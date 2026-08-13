@@ -71,7 +71,7 @@ export function TokenAveragesCard({ sessions }: TokenAveragesCardProps) {
           label="Duração média da extração de termos"
           value={avgTermExtractionDurationMs === null ? '—' : formatDuration(avgTermExtractionDurationMs)}
           sub={termExtractionCalls.length > 0 ? `${termExtractionCalls.length.toLocaleString('pt-BR')} extrações` : 'Nenhuma extração de termos ainda'}
-          tooltip="Tempo médio da extração de termos (spaCy + KeyBERT + TF-IDF) - processamento local, não é uma chamada de IA."
+          tooltip="Tempo médio da extração de termos (spaCy + KeyBERT + TF-IDF) r- processamento local, não é uma chamada de IA."
         />
       </div>
     </ChartCard>

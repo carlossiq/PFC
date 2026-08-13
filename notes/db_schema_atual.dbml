@@ -7,6 +7,7 @@ Table research_session {
   public_id varchar [unique, not null]
   name varchar
   completed boolean [not null]
+  completed_at datetime [note: "setado uma vez, quando completed vira true"]
   patent_source varchar
   scholarly_source varchar
   relevance_threshold float [not null]

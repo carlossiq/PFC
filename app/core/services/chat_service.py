@@ -1032,7 +1032,15 @@ class ChatService:
     # ScopusService._FINAL_SEARCH_PAGE_SIZE, mesmo valor duplicado aqui - o
     # OPS segue o mesmo padrão de repetir _OPS_PAGE_SIZE=100 como literal em
     # _run_ops_search_by_range/_run_ops_search_by_year em vez de importar).
-    _SCOPUS_FINAL_PAGE_SIZE = 200
+    # Era 200 - confirmado por teste direto contra a API real que essa API
+    # key só aceita count<=25 (count=26 já devolve 400 INVALID_INPUT,
+    # "Exceeds the maximum number allowed for the service level"); com 200,
+    # TODA página da busca final falhava silenciosamente (erro logado e
+    # ignorado, ver _run_scopus_search_by_range/_run_scopus_search_by_year),
+    # a busca final de artigos sempre voltava com 0 resultados mesmo quando
+    # o count() (que usa count=1, sempre dentro do limite) reportava total
+    # disponível > 0.
+    _SCOPUS_FINAL_PAGE_SIZE = 25
 
     @classmethod
     def _year_buckets(cls, year_from: int, year_to: int) -> list[tuple[int, int, float]]:
@@ -1249,7 +1257,7 @@ class ChatService:
     ) -> list[dict[str, Any]]:
         """
         Pagina a query inteira em janelas sequenciais de
-        _SCOPUS_FINAL_PAGE_SIZE (200) - 0-200, 200-400, ... - até
+        _SCOPUS_FINAL_PAGE_SIZE (25) - 0-25, 25-50, ... - até
         max_requests requisições ou até a API devolver menos que uma página
         cheia (sinal de que não há mais resultados). Equivalente a
         _run_ops_search_by_range, mas a data é aplicada uma vez só antes do
@@ -1290,8 +1298,8 @@ class ChatService:
         garantindo cobertura de todo o intervalo em vez de só dos itens mais
         recentes. Equivalente a _run_ops_search_by_year.
 
-        `iteration` seleciona QUAL bloco de _SCOPUS_FINAL_PAGE_SIZE (200)
-        buscar por ano (0 = 0-200, default; 1 = 200-400; ...) - não é
+        `iteration` seleciona QUAL bloco de _SCOPUS_FINAL_PAGE_SIZE (25)
+        buscar por ano (0 = 0-25, default; 1 = 25-50; ...) - não é
         cumulativo, cada chamada busca só esse bloco (ver docstring de
         run_final_search pro raciocínio completo). O total-result-count de
         cada resposta já é a contagem exata de artigos daquele ano (igual em

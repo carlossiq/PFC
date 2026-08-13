@@ -6,10 +6,20 @@ from pydantic import BaseModel
 
 
 class GeneratedChart(BaseModel):
-    """Um PNG gerado pelo ReportService."""
+    """Um PNG gerado pelo ReportService.
+
+    `path` só vem preenchido pra gráficos salvos em disco (ver
+    ReportService.generate_session_report/generate_patent_yearly_volume/
+    generate_top10_heatmap) - servidos depois via GET
+    /report/{session_id}/chart/{filename}. `image_base64` é o caminho
+    "efêmero": o PNG vem embutido direto na resposta (ver
+    ReportService.generate_patent_s_curve), sem nada persistido em disco -
+    só um dos dois vem preenchido, nunca os dois.
+    """
 
     filename: str
-    path: str
+    path: Optional[str] = None
+    image_base64: Optional[str] = None
     chart: str
     document_type: str
 
@@ -26,6 +36,19 @@ class PatentSCurveRequest(BaseModel):
     """
 
     patents_by_year: dict[str, int]
+    growth_threshold: float = 0.10
+    saturation_threshold: float = 0.90
+    projection_end_year: Optional[int] = None
+
+
+class ArticleSCurveRequest(BaseModel):
+    """Equivalente a `PatentSCurveRequest`, pro lado artigos (Scopus) - o
+    chamador fornece `articles_by_year` (mesmo dict que `/chat/final/search`
+    já devolve pra fonte Scopus), sem depender de documentos persistidos no
+    banco.
+    """
+
+    articles_by_year: dict[str, int]
     growth_threshold: float = 0.10
     saturation_threshold: float = 0.90
     projection_end_year: Optional[int] = None
@@ -98,6 +121,19 @@ class SCurveFit(BaseModel):
     years_observed: list[int]
     cumulative_observed: list[float]
     fit_quality: SCurveFitQuality
+
+
+class ArticleSCurveResponse(BaseModel):
+    """Resultado da geração da curva S de artigos - mesmo formato do
+    `patent_s_curve_fit`/`charts` embutidos em `ReportGraphicsResponse`,
+    mas isolado numa rota própria (`POST /report/{session_id}/article-s-curve`)
+    porque, diferente da curva de patentes, esta não precisa rodar junto do
+    resto do report da sessão (`generate_session_report`).
+    """
+
+    chart: Optional[GeneratedChart] = None
+    fit: Optional[SCurveFit] = None
+    skipped_reason: Optional[str] = None
 
 
 class ReportGraphicsResponse(BaseModel):

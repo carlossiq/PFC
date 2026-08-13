@@ -14,6 +14,7 @@ persisted when a session is saved/finalized).
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +30,8 @@ from db.research_session_models import (
     SessionProbeQuery,
 )
 from schemas.report import (
+    ArticleSCurveRequest,
+    ArticleSCurveResponse,
     PatentSCurveRequest,
     PatentYearlyVolumeRequest,
     PatentYearlyVolumeResponse,
@@ -66,6 +69,20 @@ def _article_to_dict(article: Article) -> dict[str, Any]:
         "field_of_study": article.field_of_study,
         "affiliation_countries": article.affiliation_countries,
     }
+
+
+@router.get("/{session_id}/chart/{filename}")
+async def get_report_chart(session_id: int, filename: str, request: Request) -> FileResponse:
+    """Serve os bytes de um PNG já gerado por /graphics,
+    /patents-yearly-volume ou /top10-heatmap para essa sessão - essas rotas
+    só devolvem o manifesto (filename/path) do arquivo já salvo em disco
+    pelo ReportService; esta é quem entrega a imagem de fato, pro <img> do
+    frontend exibir e pro botão de download baixar.
+    """
+    path = _svc(request).resolve_chart_path(session_id, filename)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Chart not found")
+    return FileResponse(path, media_type="image/png")
 
 
 @router.post("/{session_id}/graphics", response_model=SuccessResponse[ReportGraphicsResponse])
@@ -147,6 +164,51 @@ async def generate_session_graphics(
     )
 
     return SuccessResponse(data=ReportGraphicsResponse(**result))
+
+
+@router.post(
+    "/{session_id}/article-s-curve",
+    response_model=SuccessResponse[ArticleSCurveResponse],
+)
+async def generate_article_s_curve(
+    session_id: int,
+    payload: ArticleSCurveRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[ArticleSCurveResponse]:
+    """Gera a curva S (Fisher-Pry) de artigos, a partir do `articles_by_year`
+    já enviado no corpo da requisição - equivalente à parte de curva S de
+    `/graphics`, mas isolada numa rota própria porque não precisa (e não
+    deveria) rodar `generate_session_report` junto: diferente de patentes,
+    os documentos de artigo da busca final nunca são persistidos no banco
+    hoje (ver buildProbeQueryPayload no frontend), então essa parte do
+    report sempre viria vazia - sem sentido pagar esse custo aqui. Igual à
+    curva S de patentes, o PNG é gerado só em memória (base64 na resposta),
+    nada fica salvo em disco.
+    """
+    exists = await session.execute(select(ResearchSession.id).where(ResearchSession.id == session_id))
+    if exists.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    svc = _svc(request)
+    try:
+        result = svc.generate_article_s_curve(
+            session_id=session_id,
+            articles_by_year=payload.articles_by_year,
+            growth_threshold=payload.growth_threshold,
+            saturation_threshold=payload.saturation_threshold,
+            projection_end_year=payload.projection_end_year,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    logger.info(
+        "report_article_s_curve_requested",
+        session_id=session_id,
+        chart_generated=result["chart"] is not None,
+    )
+
+    return SuccessResponse(data=ArticleSCurveResponse(**result))
 
 
 @router.post(

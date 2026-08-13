@@ -10,6 +10,8 @@ work and disk writes.
 
 from __future__ import annotations
 
+import base64
+import io
 import math
 from pathlib import Path
 from typing import Any, Optional
@@ -73,6 +75,25 @@ class ReportService:
     def __init__(self, output_dir: str | Path) -> None:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def resolve_chart_path(self, session_id: int, filename: str) -> Optional[Path]:
+        """Resolve o caminho em disco de um PNG já gerado (por
+        generate_patent_s_curve/generate_patent_yearly_volume/generate_top10_heatmap)
+        para essa sessão, a partir só do `filename` do manifesto - usado por
+        GET /report/{session_id}/chart/{filename} pra servir os bytes de
+        volta ao cliente.
+
+        `filename != Path(filename).name` rejeita qualquer separador de
+        diretório ou `..` (Path(...).name descarta tudo antes do último
+        separador) - sem essa checagem um filename tipo "../../etc/passwd"
+        escaparia do diretório da sessão. Retorna None (não a exceção) pra
+        filename inválido ou arquivo inexistente - o router mapeia os dois
+        pro mesmo 404, já que do ponto de vista do cliente é indistinguível.
+        """
+        if not filename or filename != Path(filename).name:
+            return None
+        path = self.output_dir / f"session_{session_id}" / filename
+        return path if path.is_file() else None
 
     def generate_session_report(
         self,
@@ -262,6 +283,64 @@ class ReportService:
     # Curva S / evolução temporal (numpy + scipy)
     # ------------------------------------------------------------------
 
+    def _generate_s_curve_in_memory(
+        self,
+        document_type: str,
+        session_id: int,
+        yearly_by_year: dict[str, int] | dict[int, int],
+        growth_threshold: float,
+        saturation_threshold: float,
+        projection_end_year: Optional[int],
+    ) -> dict[str, Any]:
+        """Implementação compartilhada de generate_patent_s_curve e
+        generate_article_s_curve - só muda `document_type` ("patent" ou
+        "article") e a fonte do "contagem por ano" (patents_by_year vs
+        articles_by_year), ambos agregados que `/chat/final/search` já
+        devolve prontos pra fonte correspondente (OPS/Scopus) - nenhuma
+        etapa aqui depende de documentos persistidos no banco.
+
+        O PNG é desenhado só em memória e devolvido como base64 (não é
+        salvo em disco) - o gráfico é "use e esqueça": se o usuário sair da
+        sessão sem baixar, ele se perde, sem deixar arquivo órfão em
+        `gerados/` (que antes causava lentidão/inconsistência por viver
+        dentro de uma pasta sincronizada pelo OneDrive).
+
+        Returns:
+            dict com "chart" (filename + image_base64, ou None se pulado),
+            "fit" (dict de `fit_s_curve`, ou None se pulado) e
+            "skipped_reason" (motivo textual se algo foi pulado, ou None).
+        """
+        label = _DOCUMENT_LABELS[document_type].lower()
+        yearly_counts = {int(year): int(count) for year, count in yearly_by_year.items()}
+        if len(yearly_counts) < 2:
+            reason = f"menos de 2 anos distintos com dados de {label} (recebido: {len(yearly_counts)})"
+            logger.warning(f"{document_type}_s_curve_insufficient_data", session_id=session_id, reason=reason)
+            return {"chart": None, "fit": None, "skipped_reason": reason}
+
+        try:
+            fit_result = fit_s_curve(yearly_counts, growth_threshold, saturation_threshold)
+        except SCurveFitError as exc:
+            logger.warning(f"{document_type}_s_curve_fit_failed", session_id=session_id, error=str(exc))
+            return {"chart": None, "fit": None, "skipped_reason": str(exc)}
+
+        projection = None
+        if projection_end_year is not None:
+            projection = project_s_curve(fit_result, projection_end_year)
+
+        png_bytes = self._render_s_curve_chart(yearly_counts, fit_result, projection, document_type)
+        image_base64 = base64.b64encode(png_bytes).decode("ascii")
+
+        return {
+            "chart": {
+                "filename": f"{document_type}_s_curve.png",
+                "image_base64": image_base64,
+                "chart": "s_curve",
+                "document_type": document_type,
+            },
+            "fit": fit_result,
+            "skipped_reason": None,
+        }
+
     def generate_patent_s_curve(
         self,
         session_id: int,
@@ -273,41 +352,30 @@ class ReportService:
         """Ajusta e desenha a curva S (Fisher-Pry) de patentes a partir de
         uma contagem por ano já agregada e fornecida pelo chamador (ex.: o
         `patents_by_year` que `/chat/final/search` devolve para a fonte
-        OPS) - não depende de documentos persistidos no banco.
-
-        Returns:
-            dict com "chart" (manifesto do PNG gerado, ou None se pulado),
-            "fit" (dict de `fit_s_curve`, ou None se pulado) e
-            "skipped_reason" (motivo textual se algo foi pulado, ou None).
+        OPS) - não depende de documentos persistidos no banco. Ver
+        `_generate_s_curve_in_memory` para a implementação e o formato do
+        retorno.
         """
-        session_dir = self.output_dir / f"session_{session_id}"
-        session_dir.mkdir(parents=True, exist_ok=True)
+        return self._generate_s_curve_in_memory(
+            "patent", session_id, patents_by_year, growth_threshold, saturation_threshold, projection_end_year
+        )
 
-        yearly_counts = {int(year): int(count) for year, count in patents_by_year.items()}
-        if len(yearly_counts) < 2:
-            reason = (
-                f"menos de 2 anos distintos com dados de patentes (recebido: {len(yearly_counts)})"
-            )
-            logger.warning("patent_s_curve_insufficient_data", session_id=session_id, reason=reason)
-            return {"chart": None, "fit": None, "skipped_reason": reason}
-
-        try:
-            fit_result = fit_s_curve(yearly_counts, growth_threshold, saturation_threshold)
-        except SCurveFitError as exc:
-            logger.warning("patent_s_curve_fit_failed", session_id=session_id, error=str(exc))
-            return {"chart": None, "fit": None, "skipped_reason": str(exc)}
-
-        projection = None
-        if projection_end_year is not None:
-            projection = project_s_curve(fit_result, projection_end_year)
-
-        path = self._render_s_curve_chart(yearly_counts, fit_result, projection, "patent", session_dir)
-
-        return {
-            "chart": {"filename": path.name, "path": str(path), "chart": "s_curve", "document_type": "patent"},
-            "fit": fit_result,
-            "skipped_reason": None,
-        }
+    def generate_article_s_curve(
+        self,
+        session_id: int,
+        articles_by_year: dict[str, int] | dict[int, int],
+        growth_threshold: float = 0.10,
+        saturation_threshold: float = 0.90,
+        projection_end_year: Optional[int] = None,
+    ) -> dict[str, Any]:
+        """Equivalente a `generate_patent_s_curve`, pro lado artigos
+        (Scopus) - a partir do `articles_by_year` que `/chat/final/search`
+        já devolve pronto pra essa fonte. Ver `_generate_s_curve_in_memory`
+        para a implementação e o formato do retorno.
+        """
+        return self._generate_s_curve_in_memory(
+            "article", session_id, articles_by_year, growth_threshold, saturation_threshold, projection_end_year
+        )
 
     def generate_patent_yearly_volume(
         self,
@@ -554,11 +622,18 @@ class ReportService:
         fit_result: Optional[dict[str, Any]],
         projection: Optional[dict[str, list[float]]],
         document_type: str,
-        out_dir: Path,
-    ) -> Path:
+        out_dir: Optional[Path] = None,
+    ) -> Path | bytes:
         """Desenha o PNG da curva S: acumulado e taxa de crescimento como
         curvas lisas (sem o gráfico de barras por ano, que agora é gerado à
         parte por `_chart_yearly_volume` / `generate_patent_yearly_volume`).
+
+        `out_dir=None` desenha só em memória e devolve os bytes do PNG, sem
+        tocar em disco (ver generate_patent_s_curve) - usado quando o
+        chamador só quer exibir/baixar o gráfico na hora, sem manter um
+        arquivo persistido pra sessão. Com `out_dir`, salva em disco e
+        devolve o Path (comportamento original, usado por `_chart_s_curve`
+        dentro do report completo de `generate_session_report`).
 
         Cada curva é sólida do primeiro ano observado até o último (dado
         real) e tracejada dali em diante, na parte projetada por
@@ -689,13 +764,20 @@ class ReportService:
         ax1.set_title(f"Curva S e Evolução Temporal — {label}", color=_COLOR_TEXT, fontsize=13, loc="left")
         fig.subplots_adjust(left=0.09, right=0.78, top=0.9, bottom=0.12)
 
-        path = out_dir / f"{document_type}_s_curve.png"
         # bbox_inches="tight" - a legenda fica fora da área dos eixos (à
         # direita), então sem isso o savefig corta o texto na borda da
         # figura em vez de expandir o canvas pra acomodá-la.
-        fig.savefig(path, dpi=_DPI, facecolor="white", bbox_inches="tight")
+        if out_dir is not None:
+            path = out_dir / f"{document_type}_s_curve.png"
+            fig.savefig(path, dpi=_DPI, facecolor="white", bbox_inches="tight")
+            plt.close(fig)
+            return path
+
+        buffer = io.BytesIO()
+        fig.savefig(buffer, format="png", dpi=_DPI, facecolor="white", bbox_inches="tight")
         plt.close(fig)
-        return path
+        buffer.seek(0)
+        return buffer.getvalue()
 
     # ------------------------------------------------------------------
     # Rankings / distribuições (pandas + matplotlib)

@@ -140,6 +140,18 @@ export interface FinalQueryResult {
   aiUsage: AiUsage | null
 }
 
+// Assinatura do que determina o conteúdo da query final gerada (termos
+// marcados + tipo escolhido) - usada tanto por TermSampling.tsx (decidir se
+// "Gerar Query Final" pode reaproveitar a query já gerada, em vez de chamar
+// a IA de novo) quanto por sessionHydration.ts (reconstruir essa mesma
+// assinatura a partir de uma sessão salva, pro mesmo cache funcionar logo
+// após retomar a sessão). Ordena os termos porque a seleção (Set de toggles)
+// não tem ordem estável - duas seleções com os mesmos termos em ordem
+// diferente devem contar como a mesma assinatura.
+export function buildFinalQuerySelectionSignature(selectedTerms: string[], variant: FinalQueryVariant): string {
+  return JSON.stringify({ terms: [...selectedTerms].sort(), variant })
+}
+
 // Gera só a variante escolhida (specific/balanced/generic) da query final
 export async function generateFinalQuery(
   input: FormInput,
