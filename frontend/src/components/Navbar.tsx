@@ -5,9 +5,9 @@ import { useWorkflowStore } from '../stores/useWorkflowStore'
 import { TABS } from '../constants/tabs'
 
 const docTopics = [
-  { id: 'intro', title: 'Introduction', tab: TABS.DOCUMENTATION },
-  { id: 'guia', title: 'User Guide', tab: TABS.DOC_USER_GUIDE },
-  { id: 'api', title: 'API Reference', tab: TABS.DOC_API },
+  { id: 'intro', title: 'Introdução', tab: TABS.DOCUMENTATION },
+  { id: 'guia', title: 'Guia do Usuário', tab: TABS.DOC_USER_GUIDE },
+  { id: 'api', title: 'Referência da API', tab: TABS.DOC_API },
   { id: 'faq', title: 'FAQ', tab: TABS.DOC_FAQ },
 ]
 
@@ -81,7 +81,7 @@ export function Navbar() {
               onClick={handleDocClick}
               className={`flex items-center gap-2 transition-all ${isDocsOpen ? 'font-bold' : ''} hover:text-[#27e27a]`}
             >
-              Documentation
+              Documentação
               {isDocsOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
             </button>
 

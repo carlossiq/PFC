@@ -3,6 +3,8 @@ import { StepsBar } from "./Steps";
 import { ConfiguracoesTab } from "./ConfiguracoesTab";
 import { SearchPage } from "../pages/SearchPage";
 import { StatisticsPage } from "../pages/StatisticsPage";
+import { DocUserGuide } from "./DocUserGuide";
+import { DocFaq } from "./DocFaq";
 import { Step1 } from "./steps/Step1";
 import { Step3 } from "./steps/Step3";
 import { InitialResults } from "./steps/InitialResults";
@@ -28,10 +30,10 @@ const tabContents = {
   [TABS.STATISTICS]: { title: "Statistics", label: "Statistics" },
   [TABS.SEARCH]: { title: "Search", label: "Search" },
   [TABS.ABOUT]: { title: "About", label: "About" },
-  [TABS.DOCUMENTATION]: { title: "Documentation - Introduction", label: "Introduction" },
-  [TABS.DOC_USER_GUIDE]: { title: "Documentation - User Guide", label: "User Guide" },
-  [TABS.DOC_API]: { title: "Documentation - API Reference", label: "API Reference" },
-  [TABS.DOC_FAQ]: { title: "Documentation - FAQ", label: "FAQ" },
+  [TABS.DOCUMENTATION]: { title: "Documentação - Introdução", label: "Introdução" },
+  [TABS.DOC_USER_GUIDE]: { title: "Documentação - Guia do Usuário", label: "Guia do Usuário" },
+  [TABS.DOC_API]: { title: "Documentação - Referência da API", label: "Referência da API" },
+  [TABS.DOC_FAQ]: { title: "Documentação - FAQ", label: "FAQ" },
   [TABS.HELP]: { title: "Help", label: "Help" },
   [TABS.USER]: { title: "Profile", label: "Profile" },
 };
@@ -274,6 +276,10 @@ export function WorkflowPage() {
             <SearchPage />
           ) : tab === TABS.STATISTICS ? (
             <StatisticsPage />
+          ) : tab === TABS.DOC_USER_GUIDE ? (
+            <DocUserGuide />
+          ) : tab === TABS.DOC_FAQ ? (
+            <DocFaq />
           ) : (
             <>
               <h2 className="text-2xl font-bold mb-4">{currentTab.title}</h2>
