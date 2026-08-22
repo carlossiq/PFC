@@ -11,15 +11,18 @@ class GeneratedChart(BaseModel):
     `path` só vem preenchido pra gráficos salvos em disco (ver
     ReportService.generate_session_report/generate_patent_yearly_volume/
     generate_top10_heatmap) - servidos depois via GET
-    /report/{session_id}/chart/{filename}. `image_base64` é o caminho
-    "efêmero": o PNG vem embutido direto na resposta (ver
-    ReportService.generate_patent_s_curve), sem nada persistido em disco -
-    só um dos dois vem preenchido, nunca os dois.
+    /report/{session_id}/chart/{filename}. `image_base64` vem sempre
+    preenchido pras curvas S (ver ReportService.generate_patent_s_curve) -
+    o PNG vem embutido direto na resposta, então o cliente nunca depende de
+    arquivo em disco pra exibi-lo. `object_key` vem preenchido quando o
+    upload pro MinIO deu certo (ver SessionChart) - "melhor esforço": pode
+    vir vazio mesmo numa curva S se o storage estiver fora do ar.
     """
 
     filename: str
     path: Optional[str] = None
     image_base64: Optional[str] = None
+    object_key: Optional[str] = None
     chart: str
     document_type: str
 

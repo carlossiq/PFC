@@ -131,6 +131,13 @@ class Settings(BaseSettings):
     # Report Configuration
     report_output_dir: str = "gerados"
 
+    # MinIO Configuration (armazenamento dos gráficos gerados, ver ReportService/StoragePort)
+    minio_endpoint: str = "localhost:9000"
+    minio_access_key: str = "minioadmin"
+    minio_secret_key: str = "minioadmin"
+    minio_bucket: str = "session-charts"
+    minio_secure: bool = False
+
     # Fuzzy Matching de entidades (busca final OPS/Scopus)
     # Agrupa entidades que provavelmente são a mesma (variações de
     # grafia/pontuação/sufixo societário, ex: "Acme Corp" vs "ACME CORP."

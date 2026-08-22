@@ -145,6 +145,11 @@ class SessionProbeQuery(Base):
         back_populates="probe_query",
         cascade="all, delete-orphan",
     )
+    charts: Mapped[list["SessionChart"]] = relationship(
+        "SessionChart",
+        back_populates="probe_query",
+        cascade="all, delete-orphan",
+    )
 
 
 class SessionAiCall(Base):
@@ -317,3 +322,36 @@ class ProbeQueryTerm(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     probe_query: Mapped["SessionProbeQuery"] = relationship("SessionProbeQuery", back_populates="term_links")
+
+
+class SessionChart(Base):
+    """
+    PNG de report (curva S, e futuramente top entidades/distribuições)
+    gerado a partir dos dados de uma query final, com localização no MinIO
+    (`object_key`). Vinculada a `session_probe_query` (não direto a
+    `research_session`) porque o gráfico é derivado especificamente da
+    busca daquela query final - a chave única (probe_query_id, chart_type)
+    faz regenerar o mesmo gráfico sobrescrever a mesma linha/objeto, sem
+    acumular versões. Só é seguro depender de `probe_query_id` como FK
+    porque a troca de variante de uma query final já deleta a linha antiga
+    (ver persist_session_input) - sem isso, o gráfico ficaria órfão junto.
+    """
+
+    __tablename__ = "session_chart"
+    __table_args__ = (
+        UniqueConstraint("probe_query_id", "chart_type", name="uq_session_chart_probe_query_id_chart_type"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    probe_query_id: Mapped[int] = mapped_column(ForeignKey("session_probe_query.id"), nullable=False, index=True)
+    document_type: Mapped[str] = mapped_column(String(20), nullable=False)  # "patent" | "article"
+    chart_type: Mapped[str] = mapped_column(String(50), nullable=False)  # "s_curve", ...
+    object_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(50), nullable=False, default="image/png")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    probe_query: Mapped["SessionProbeQuery"] = relationship("SessionProbeQuery", back_populates="charts")

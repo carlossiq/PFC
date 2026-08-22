@@ -9,12 +9,13 @@ an already-saved session happens via PUT /research-session/{id} instead, which
 shares the same upsert logic (see session_persistence.py).
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm.attributes import set_committed_value
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.driving.http.dependencies import get_db_session
 from app.adapters.driving.http.session_persistence import persist_session_input
+from app.core.ports.outbound.storage_port import StoragePort
 from core.logging import get_logger
 from db.research_session_models import ResearchSession
 from schemas.response import SuccessResponse
@@ -25,9 +26,14 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/session-input", tags=["session-input"])
 
 
+def _storage(request: Request) -> StoragePort:
+    return request.app.state.container["services"]["storage"]
+
+
 @router.post("", response_model=SuccessResponse[SessionInputSaveResponse])
 async def finalize_session(
     payload: SessionInputSaveRequest,
+    request: Request,
     session: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[SessionInputSaveResponse]:
     """Cria a research_session e a cadeia de session_input (raiz + gerado) numa transação."""
@@ -46,7 +52,7 @@ async def finalize_session(
     set_committed_value(research_session, "probe_queries", [])
     set_committed_value(research_session, "ai_calls", [])
 
-    data = await persist_session_input(session, research_session, payload)
+    data = await persist_session_input(session, research_session, payload, _storage(request))
 
     logger.info(
         "session_finalized",

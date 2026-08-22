@@ -53,6 +53,15 @@ async def lifespan(app: FastAPI):
         logger.error("database_initialization_failed", error=str(exc))
         raise
 
+    # MinIO fora do ar não deve impedir o app de subir - a persistência dos
+    # gráficos gerados é melhor-esforço (ver ReportService), não um
+    # requisito pro resto do app funcionar.
+    try:
+        await app.state.container["services"]["storage"].ensure_bucket()
+        logger.info("minio_bucket_ready")
+    except Exception as exc:
+        logger.warning("minio_bucket_ensure_failed", error=str(exc))
+
     yield
 
     await shutdown_container(app.state.container)

@@ -17,6 +17,8 @@ from app.adapters.driving.http.session_probe_documents import (
     sync_probe_query_patents,
     sync_probe_query_terms,
 )
+from app.core.ports.outbound.storage_port import StoragePort
+from core.logging import get_logger
 from db.research_session_models import ResearchSession, SessionAiCall, SessionInput, SessionProbeQuery
 from schemas.session_input import (
     SessionAiCallInput,
@@ -29,6 +31,8 @@ from schemas.session_input import (
     SessionProbeQueryInput,
     SessionProbeQueryRow,
 )
+
+logger = get_logger(__name__)
 
 
 def apply_root_fields(row: SessionInput, root: SessionInputRoot) -> None:
@@ -68,10 +72,14 @@ async def persist_session_input(
     session: AsyncSession,
     research_session: ResearchSession,
     payload: SessionInputSaveRequest,
+    storage: StoragePort,
 ) -> SessionInputSaveResponse:
     """Upsert de root/generated/probe_queries em `research_session` (nova ou
     existente); espera `.inputs`/`.probe_queries` já carregados (vazios numa
-    sessão recém-criada)."""
+    sessão recém-criada), e `.probe_queries[].charts` também já carregado
+    (`selectinload`) se a sessão já existir - necessário pra deletar os
+    gráficos no MinIO de uma query final superada sem lazy-load assíncrono
+    (ver o loop de "Query final superada" abaixo)."""
     research_session.name = payload.name
     # completed_at só é setado na transição pra completed (ou se a sessão já
     # tiver sido finalizada antes e completed_at ainda não existir, ex: linha
@@ -137,9 +145,44 @@ async def persist_session_input(
             await sync_probe_query_articles(session, row, item.articles)
         if item.tipo is None and item.terms:
             await sync_probe_query_terms(session, row, [t.model_dump() for t in item.terms])
-    # Fontes/tipos que existiam no banco mas não vieram no payload são
-    # preservados - não há hoje um fluxo de "desselecionar" uma query já
-    # escolhida (nem de probe, nem de query final).
+
+    # Query final superada: se o payload traz um tipo novo pra uma fonte que
+    # já tinha outro tipo final persistido (ex.: usuário trocou de "balanced"
+    # pra "specific"), a linha antiga não serve pra mais nada - é deletada
+    # (cascade cuida de patent_links/article_links/term_links). Linhas de
+    # probe (tipo=None) e fontes/tipos que simplesmente não vieram no payload
+    # continuam preservadas como antes - não há fluxo de "desselecionar" pra
+    # esses casos, só pra variante de query final substituída.
+    incoming_final_tipo_by_fonte = {
+        item.fonte: item.tipo for item in payload.probe_queries if item.tipo is not None
+    }
+    for (fonte, tipo), row in list(existing_by_fonte_tipo.items()):
+        if tipo is None:
+            continue
+        incoming_tipo = incoming_final_tipo_by_fonte.get(fonte)
+        if incoming_tipo is not None and incoming_tipo != tipo:
+            # Antes de deletar a linha, apaga os objetos dela no MinIO -
+            # cascade="all, delete-orphan" em SessionProbeQuery.charts cuida
+            # da linha session_chart em si (Postgres), mas não alcança o
+            # storage externo, então sem isso o objeto ficaria "sem pai" lá.
+            # Falha de storage aqui não impede o resto do save (mesma
+            # filosofia de "melhor esforço" do upload em ReportService) -
+            # só fica um objeto órfão no MinIO pra limpar depois.
+            for chart in row.charts:
+                try:
+                    await storage.delete(chart.object_key)
+                except Exception as exc:
+                    logger.warning(
+                        "session_chart_storage_delete_failed",
+                        probe_query_id=row.id,
+                        object_key=chart.object_key,
+                        error=str(exc),
+                    )
+            # Removê-la da coleção basta - cascade="all, delete-orphan" em
+            # probe_queries já marca a linha órfã pra deleção no flush
+            # (delete() explícito aqui também colidia com esse cascade e
+            # quebrava o flush).
+            research_session.probe_queries.remove(row)
 
     # ai_calls é um log append-only (não upsert): o frontend só reenvia as
     # chamadas de IA medidas desde o último save, então cada item vira uma

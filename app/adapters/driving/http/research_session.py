@@ -4,7 +4,7 @@ Endpoint for searching/listing research sessions by their session_input theme.
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.adapters.driving.http.dependencies import get_db_session
 from app.adapters.driving.http.session_persistence import persist_session_input
 from app.adapters.driving.http.session_probe_documents import article_to_raw_item, patent_to_raw_item
+from app.core.ports.outbound.storage_port import StoragePort
 from core.logging import get_logger
 from db.research_session_models import (
     ProbeQueryArticle,
@@ -27,6 +28,10 @@ from schemas.session_input import SessionInputSaveRequest, SessionInputSaveRespo
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/research-session", tags=["research-session"])
+
+
+def _storage(request: Request) -> StoragePort:
+    return request.app.state.container["services"]["storage"]
 
 
 @router.get("", response_model=SuccessResponse[list[ResearchSessionSummary]])
@@ -114,6 +119,7 @@ async def get_session(
 async def update_session(
     session_id: int,
     payload: SessionInputSaveRequest,
+    request: Request,
     session: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[SessionInputSaveResponse]:
     """Atualiza uma sessão já salva (root/generated/probe_queries em upsert)
@@ -122,7 +128,10 @@ async def update_session(
     stmt = (
         select(ResearchSession)
         .where(ResearchSession.id == session_id)
-        .options(selectinload(ResearchSession.inputs), selectinload(ResearchSession.probe_queries))
+        .options(
+            selectinload(ResearchSession.inputs),
+            selectinload(ResearchSession.probe_queries).selectinload(SessionProbeQuery.charts),
+        )
     )
     result = await session.execute(stmt)
     research_session = result.scalar_one_or_none()
@@ -130,7 +139,7 @@ async def update_session(
     if research_session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    data = await persist_session_input(session, research_session, payload)
+    data = await persist_session_input(session, research_session, payload, _storage(request))
 
     logger.info("research_session_updated", session_id=session_id, completed=payload.completed)
 
@@ -140,21 +149,41 @@ async def update_session(
 @router.delete("/{session_id}", response_model=SuccessResponse[dict])
 async def delete_session(
     session_id: int,
+    request: Request,
     session: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[dict]:
     """Apaga a research_session e, em cascata (cascade='all, delete-orphan' nas
     relationships ResearchSession.inputs e ResearchSession.probe_queries), todas
-    as suas linhas de session_input e session_probe_query."""
+    as suas linhas de session_input e session_probe_query - inclusive
+    session_chart (via SessionProbeQuery.charts). O cascade só cuida do
+    Postgres, então os objetos correspondentes no MinIO são apagados
+    explicitamente antes, pra não deixar arquivo órfão lá."""
     stmt = (
         select(ResearchSession)
         .where(ResearchSession.id == session_id)
-        .options(selectinload(ResearchSession.inputs), selectinload(ResearchSession.probe_queries))
+        .options(
+            selectinload(ResearchSession.inputs),
+            selectinload(ResearchSession.probe_queries).selectinload(SessionProbeQuery.charts),
+        )
     )
     result = await session.execute(stmt)
     research_session = result.scalar_one_or_none()
 
     if research_session is None:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    storage = _storage(request)
+    for probe_query in research_session.probe_queries:
+        for chart in probe_query.charts:
+            try:
+                await storage.delete(chart.object_key)
+            except Exception as exc:
+                logger.warning(
+                    "session_chart_storage_delete_failed",
+                    probe_query_id=probe_query.id,
+                    object_key=chart.object_key,
+                    error=str(exc),
+                )
 
     await session.delete(research_session)
     await session.commit()

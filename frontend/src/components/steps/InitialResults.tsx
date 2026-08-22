@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useFormStore } from '../../stores/useFormStore'
-import { buildSaveSessionPayload, saveSession } from '../../services/sessionInput'
 import { ProbeResultsPanel } from '../ProbeResultsPanel'
 import { Button } from '../Button'
 import { SectionHeader } from '../SectionHeader'
@@ -14,42 +13,11 @@ interface InitialResultsProps {
 }
 
 export function InitialResults({ step, substep, onBack, onNext }: InitialResultsProps) {
-  const { step3PatentResults, step3ArticleResults, setSessionId, aiCallsInFlight } = useFormStore()
+  const { step3PatentResults, step3ArticleResults } = useFormStore()
 
   const [expandedPanel, setExpandedPanel] = useState<'patent' | 'article' | null>(null)
 
-  const [isFinalizing, setIsFinalizing] = useState(false)
-  const [finalizeResult, setFinalizeResult] = useState<string | null>(null)
-  const [finalizeError, setFinalizeError] = useState<string | null>(null)
-
   if (step !== STEPS.INITIAL_EXPLORATION || substep !== 0) return null
-
-  // Marca a sessão como concluída (completed=true). Os steps seguintes
-  // (Exploração Final, Geração do Relatório) ainda são placeholder
-  
-  async function handleFinalize() {
-    setIsFinalizing(true)
-    setFinalizeError(null)
-    setFinalizeResult(null)
-    try {
-      const formState = useFormStore.getState()
-      const payload = buildSaveSessionPayload(formState, true)
-      const result = await saveSession(formState.sessionId, formState.sessionName, payload)
-      setSessionId(result.session_id, result.session_public_id)
-      // Evita reenviar (e duplicar) as mesmas chamadas de IA num próximo save.
-      useFormStore.getState().clearAiCallLog()
-      setFinalizeResult(
-        `Sessão ${result.session_public_id} finalizada (session_id=${result.session_id}, root_input_id=${result.root.id}${
-          result.generated ? `, generated_input_id=${result.generated.id}, iterations=${result.generated.iterations}` : ''
-        })`
-      )
-    } catch (err) {
-      console.error('Falha ao finalizar sessão:', err)
-      setFinalizeError('Não foi possível finalizar a sessão. Tente novamente.')
-    } finally {
-      setIsFinalizing(false)
-    }
-  }
 
   return (
     <div className="w-full flex flex-col h-full overflow-y-auto">
@@ -75,22 +43,12 @@ export function InitialResults({ step, substep, onBack, onNext }: InitialResults
         />
       </div>
 
-      {finalizeResult && (
-        <p className="mb-4 text-sm text-[#0f9448] font-medium">{finalizeResult}</p>
-      )}
-      {finalizeError && (
-        <p className="mb-4 text-sm text-red-600 font-medium">{finalizeError}</p>
-      )}
-
       <div className="mt-2 pt-4 border-t border-gray-200 flex gap-4">
         <Button fullWidth variant="secondary" onClick={onBack}>
           Voltar
         </Button>
         <Button fullWidth onClick={onNext}>
           Próximo
-        </Button>
-        <Button fullWidth variant="accent" onClick={handleFinalize} disabled={isFinalizing || aiCallsInFlight > 0}>
-          {isFinalizing ? 'Finalizando...' : 'Finalizar Sessão'}
         </Button>
       </div>
     </div>

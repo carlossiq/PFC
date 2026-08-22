@@ -97,6 +97,22 @@ def build_container(settings: Settings) -> dict[str, Any]:
     _services_to_close.append(openalex_service)
 
     # ------------------------------------------------------------------
+    # Storage (MinIO) - armazenamento dos gráficos gerados pelo ReportService
+    # ------------------------------------------------------------------
+    from services.storage.minio_service import MinioService
+    from app.adapters.driven.storage.minio_adapter import MinioStorageAdapter
+
+    storage_service = MinioStorageAdapter(
+        MinioService(
+            endpoint=settings.minio_endpoint,
+            access_key=settings.minio_access_key,
+            secret_key=settings.minio_secret_key,
+            bucket=settings.minio_bucket,
+            secure=settings.minio_secure,
+        )
+    )
+
+    # ------------------------------------------------------------------
     # Pure core services (sem dependências externas)
     # ------------------------------------------------------------------
     from app.core.services.dedup_service import DedupService
@@ -111,7 +127,7 @@ def build_container(settings: Settings) -> dict[str, Any]:
         settings=settings,
         openalex=openalex_service,
     )
-    report_service = ReportService(output_dir=settings.report_output_dir)
+    report_service = ReportService(output_dir=settings.report_output_dir, storage=storage_service)
     inference_service = StatisticalInferenceService(
         chat_service=chat_service,
         embedding=embedding,
@@ -128,6 +144,7 @@ def build_container(settings: Settings) -> dict[str, Any]:
             "chat": chat_service,
             "report": report_service,
             "inference": inference_service,
+            "storage": storage_service,
         },
         "_settings": settings,
         "_services_to_close": _services_to_close,

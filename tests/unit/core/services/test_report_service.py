@@ -5,9 +5,36 @@ import pytest
 from app.core.services.report_service import ReportService
 
 
+class FakeStoragePort:
+    """StoragePort fake em memória - substitui o MinIO real nos testes."""
+
+    def __init__(self) -> None:
+        self.uploaded: dict[str, tuple[bytes, str]] = {}
+        self.fail_upload = False
+
+    async def upload(self, key: str, data: bytes, content_type: str) -> None:
+        if self.fail_upload:
+            raise RuntimeError("upload falhou (simulado)")
+        self.uploaded[key] = (data, content_type)
+
+    async def download(self, key: str) -> bytes:
+        return self.uploaded[key][0]
+
+    async def delete(self, key: str) -> None:
+        self.uploaded.pop(key, None)
+
+    async def ensure_bucket(self) -> None:
+        pass
+
+
 @pytest.fixture
-def svc(tmp_path):
-    return ReportService(output_dir=tmp_path)
+def storage():
+    return FakeStoragePort()
+
+
+@pytest.fixture
+def svc(tmp_path, storage):
+    return ReportService(output_dir=tmp_path, storage=storage)
 
 
 def _patents(n_years=6):
@@ -99,27 +126,35 @@ def test_article_s_curve_requires_at_least_two_distinct_years(svc):
     assert "article:s_curve" in result["skipped"]
 
 
-def test_generate_patent_s_curve_requires_at_least_two_distinct_years(svc):
-    result = svc.generate_patent_s_curve(session_id=5, patents_by_year={"2020": 5})
+@pytest.mark.asyncio
+async def test_generate_patent_s_curve_requires_at_least_two_distinct_years(svc):
+    result = await svc.generate_patent_s_curve(session_id=5, probe_query_id=50, patents_by_year={"2020": 5})
 
     assert result["chart"] is None
     assert result["fit"] is None
     assert "2 anos distintos" in result["skipped_reason"]
 
 
-def test_generate_patent_s_curve_from_yearly_counts(svc, tmp_path):
+@pytest.mark.asyncio
+async def test_generate_patent_s_curve_from_yearly_counts(svc, storage):
     patents_by_year = _patents_by_year_from(_patents())
 
-    result = svc.generate_patent_s_curve(session_id=6, patents_by_year=patents_by_year, projection_end_year=2035)
+    result = await svc.generate_patent_s_curve(
+        session_id=6, probe_query_id=60, patents_by_year=patents_by_year, projection_end_year=2035
+    )
 
     assert result["skipped_reason"] is None
     assert result["chart"]["document_type"] == "patent"
     assert result["chart"]["chart"] == "s_curve"
+    assert result["chart"]["image_base64"]
 
-    path = Path(result["chart"]["path"])
-    assert path.exists()
-    assert path.stat().st_size > 0
-    assert path.parent == tmp_path / "session_6"
+    # object_key vem preenchido (upload deu certo) e a chave é determinística
+    # (session_id + probe_query_id) - regenerar sobrescreveria o mesmo objeto.
+    object_key = result["chart"]["object_key"]
+    assert object_key == "sessions/6/probe_query_60/patent_s_curve.png"
+    uploaded_bytes, content_type = storage.uploaded[object_key]
+    assert content_type == "image/png"
+    assert len(uploaded_bytes) > 0
 
     fit = result["fit"]
     assert set(fit) == {
@@ -128,6 +163,20 @@ def test_generate_patent_s_curve_from_yearly_counts(svc, tmp_path):
     }
     assert fit["mp_year"] == fit["t0"]
     assert set(fit["fit_quality"]) == {"r_squared", "reliable", "warning"}
+
+
+@pytest.mark.asyncio
+async def test_generate_patent_s_curve_survives_storage_failure(tmp_path):
+    storage = FakeStoragePort()
+    storage.fail_upload = True
+    svc = ReportService(output_dir=tmp_path, storage=storage)
+    patents_by_year = _patents_by_year_from(_patents())
+
+    result = await svc.generate_patent_s_curve(session_id=7, probe_query_id=70, patents_by_year=patents_by_year)
+
+    assert result["skipped_reason"] is None
+    assert result["chart"]["image_base64"]
+    assert "object_key" not in result["chart"]
 
 
 def test_generate_patent_yearly_volume_requires_data(svc):

@@ -27,6 +27,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from matplotlib.patches import Rectangle  # noqa: E402
 
+from app.core.ports.outbound.storage_port import StoragePort  # noqa: E402
 from app.core.services.s_curve import (  # noqa: E402
     SCurveFitError,
     fit_s_curve,
@@ -72,9 +73,10 @@ _DPI_HEATMAP = 200
 class ReportService:
     """Gera os PNGs de report (curva S, top entidades, distribuições) para uma sessão."""
 
-    def __init__(self, output_dir: str | Path) -> None:
+    def __init__(self, output_dir: str | Path, storage: StoragePort) -> None:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self._storage = storage
 
     def resolve_chart_path(self, session_id: int, filename: str) -> Optional[Path]:
         """Resolve o caminho em disco de um PNG já gerado (por
@@ -283,10 +285,11 @@ class ReportService:
     # Curva S / evolução temporal (numpy + scipy)
     # ------------------------------------------------------------------
 
-    def _generate_s_curve_in_memory(
+    async def _generate_s_curve_in_memory(
         self,
         document_type: str,
         session_id: int,
+        probe_query_id: int,
         yearly_by_year: dict[str, int] | dict[int, int],
         growth_threshold: float,
         saturation_threshold: float,
@@ -299,16 +302,22 @@ class ReportService:
         devolve prontos pra fonte correspondente (OPS/Scopus) - nenhuma
         etapa aqui depende de documentos persistidos no banco.
 
-        O PNG é desenhado só em memória e devolvido como base64 (não é
-        salvo em disco) - o gráfico é "use e esqueça": se o usuário sair da
-        sessão sem baixar, ele se perde, sem deixar arquivo órfão em
-        `gerados/` (que antes causava lentidão/inconsistência por viver
-        dentro de uma pasta sincronizada pelo OneDrive).
+        O PNG é desenhado em memória e sempre devolvido como base64 (o
+        chamador nunca depende de um arquivo em disco); além disso, tenta
+        subir os bytes pro MinIO usando `probe_query_id` (a query final que
+        gerou esses dados - resolvida e garantida pelo chamador, ver
+        report_router.py) numa chave determinística, pra regenerar sempre
+        sobrescrever o mesmo objeto em vez de acumular versões. Falha de
+        upload (MinIO fora do ar, etc.) não impede o gráfico de ser
+        devolvido - só fica sem `object_key` no manifesto, e portanto sem
+        persistir dessa vez (ver decisão de design "melhor esforço" só pro
+        storage, não pro `probe_query_id` em si).
 
         Returns:
-            dict com "chart" (filename + image_base64, ou None se pulado),
-            "fit" (dict de `fit_s_curve`, ou None se pulado) e
-            "skipped_reason" (motivo textual se algo foi pulado, ou None).
+            dict com "chart" (filename + image_base64 [+ object_key se o
+            upload deu certo], ou None se pulado), "fit" (dict de
+            `fit_s_curve`, ou None se pulado) e "skipped_reason" (motivo
+            textual se algo foi pulado, ou None).
         """
         label = _DOCUMENT_LABELS[document_type].lower()
         yearly_counts = {int(year): int(count) for year, count in yearly_by_year.items()}
@@ -330,20 +339,35 @@ class ReportService:
         png_bytes = self._render_s_curve_chart(yearly_counts, fit_result, projection, document_type)
         image_base64 = base64.b64encode(png_bytes).decode("ascii")
 
+        chart: dict[str, Any] = {
+            "filename": f"{document_type}_s_curve.png",
+            "image_base64": image_base64,
+            "chart": "s_curve",
+            "document_type": document_type,
+        }
+
+        object_key = f"sessions/{session_id}/probe_query_{probe_query_id}/{document_type}_s_curve.png"
+        try:
+            await self._storage.upload(object_key, png_bytes, "image/png")
+            chart["object_key"] = object_key
+        except Exception as exc:
+            logger.warning(
+                f"{document_type}_s_curve_storage_upload_failed",
+                session_id=session_id,
+                probe_query_id=probe_query_id,
+                error=str(exc),
+            )
+
         return {
-            "chart": {
-                "filename": f"{document_type}_s_curve.png",
-                "image_base64": image_base64,
-                "chart": "s_curve",
-                "document_type": document_type,
-            },
+            "chart": chart,
             "fit": fit_result,
             "skipped_reason": None,
         }
 
-    def generate_patent_s_curve(
+    async def generate_patent_s_curve(
         self,
         session_id: int,
+        probe_query_id: int,
         patents_by_year: dict[str, int] | dict[int, int],
         growth_threshold: float = 0.10,
         saturation_threshold: float = 0.90,
@@ -352,17 +376,26 @@ class ReportService:
         """Ajusta e desenha a curva S (Fisher-Pry) de patentes a partir de
         uma contagem por ano já agregada e fornecida pelo chamador (ex.: o
         `patents_by_year` que `/chat/final/search` devolve para a fonte
-        OPS) - não depende de documentos persistidos no banco. Ver
+        OPS) - não depende de documentos persistidos no banco. `probe_query_id`
+        é a query final de `ops` da sessão (resolvida pelo chamador),
+        usada só pra montar a chave de armazenamento no MinIO. Ver
         `_generate_s_curve_in_memory` para a implementação e o formato do
         retorno.
         """
-        return self._generate_s_curve_in_memory(
-            "patent", session_id, patents_by_year, growth_threshold, saturation_threshold, projection_end_year
+        return await self._generate_s_curve_in_memory(
+            "patent",
+            session_id,
+            probe_query_id,
+            patents_by_year,
+            growth_threshold,
+            saturation_threshold,
+            projection_end_year,
         )
 
-    def generate_article_s_curve(
+    async def generate_article_s_curve(
         self,
         session_id: int,
+        probe_query_id: int,
         articles_by_year: dict[str, int] | dict[int, int],
         growth_threshold: float = 0.10,
         saturation_threshold: float = 0.90,
@@ -370,11 +403,18 @@ class ReportService:
     ) -> dict[str, Any]:
         """Equivalente a `generate_patent_s_curve`, pro lado artigos
         (Scopus) - a partir do `articles_by_year` que `/chat/final/search`
-        já devolve pronto pra essa fonte. Ver `_generate_s_curve_in_memory`
-        para a implementação e o formato do retorno.
+        já devolve pronto pra essa fonte. `probe_query_id` é a query final
+        de `scopus` da sessão. Ver `_generate_s_curve_in_memory` para a
+        implementação e o formato do retorno.
         """
-        return self._generate_s_curve_in_memory(
-            "article", session_id, articles_by_year, growth_threshold, saturation_threshold, projection_end_year
+        return await self._generate_s_curve_in_memory(
+            "article",
+            session_id,
+            probe_query_id,
+            articles_by_year,
+            growth_threshold,
+            saturation_threshold,
+            projection_end_year,
         )
 
     def generate_patent_yearly_volume(

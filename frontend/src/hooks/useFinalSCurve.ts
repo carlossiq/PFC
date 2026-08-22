@@ -21,10 +21,13 @@ function lastObservedYear(yearlyByYear: Record<string, number>): number {
 // patentsByYear/articlesByYear já devolvido pela busca final e mantém em
 // cache - não regera a cada re-render, só
 // quando o resultado da busca final muda de fato O PNG vem embutido em base64 na resposta
-// A rota de geração ainda exige que a sessão já exista no banco (ver
-// PatentSCurveRequest/ArticleSCurveRequest em schemas/report.py); se o
-// usuário ainda não salvou/finalizou nada, cria a sessão agora (mesmo
-// payload de "Salvar progresso") só pra obter o id.
+// Salva a sessão (mesmo payload de "Salvar progresso") sempre antes de
+// pedir o gráfico - não só quando ainda não existe sessionId - porque o
+// backend agora vincula o gráfico à linha de query final salva no banco
+// (ver SessionChart/session_probe_query), que precisa estar em dia. Isso é
+// seguro mesmo numa sessão já existente porque "Finalizar Sessão" tira o
+// usuário do wizard (ver OutrosSteps.tsx) - nunca dá pra chegar aqui com
+// uma sessão já concluída pra reabrir sem querer.
 export function useFinalSCurve(kind: SCurveKind, yearlyByYear: Record<string, number> | null) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -36,15 +39,7 @@ export function useFinalSCurve(kind: SCurveKind, yearlyByYear: Record<string, nu
   useAutoDismiss(downloadError, () => setDownloadError(null))
 
   const generatedForRef = useRef<string | null>(null)
-  // Contador de requisição (não um boolean `cancelled` capturado por
-  // closure) - em StrictMode (dev), o React dispara este efeito 2x de
-  // propósito (monta → limpa → monta de novo) pra pegar efeitos mal
-  // escritos. Um `cancelled` setado na função de limpeza da 1ª execução
-  // cancelaria PARA SEMPRE a única chamada que de fato rodou, enquanto a 2ª
-  // execução (a que fica) já veria `generatedForRef` preenchido e desistiria
-  // sem tentar de novo - travando o spinner pra sempre. Comparar contra o
-  // valor ATUAL do ref (não uma cópia congelada) evita isso. Mesmo padrão
-  // de requestIdRef em useProbeQuerySection.ts.
+  
   const requestIdRef = useRef(0)
   const hasData = !!yearlyByYear && Object.keys(yearlyByYear).length > 0
   const signature = hasData ? `${kind}:${JSON.stringify(yearlyByYear)}` : null
@@ -60,14 +55,11 @@ export function useFinalSCurve(kind: SCurveKind, yearlyByYear: Record<string, nu
 
     async function run() {
       try {
-        let sessionId = useFormStore.getState().sessionId
-        if (sessionId === null) {
-          const formState = useFormStore.getState()
-          const payload = buildSaveSessionPayload(formState, false)
-          const result = await saveSession(null, formState.sessionName, payload)
-          useFormStore.getState().setSessionId(result.session_id, result.session_public_id)
-          sessionId = result.session_id
-        }
+        const formState = useFormStore.getState()
+        const payload = buildSaveSessionPayload(formState, false)
+        const saveResult = await saveSession(formState.sessionId, formState.sessionName, payload)
+        useFormStore.getState().setSessionId(saveResult.session_id, saveResult.session_public_id)
+        const sessionId = saveResult.session_id
 
         const projectionEndYear = lastObservedYear(yearlyByYear!) + DEFAULT_PROJECTION_YEARS
         const result =

@@ -27,6 +27,7 @@ from db.research_session_models import (
     ProbeQueryArticle,
     ProbeQueryPatent,
     ResearchSession,
+    SessionChart,
     SessionProbeQuery,
 )
 from schemas.report import (
@@ -48,6 +49,57 @@ router = APIRouter(prefix="/report", tags=["report"])
 
 def _svc(request: Request) -> ReportService:
     return request.app.state.container["services"]["report"]
+
+
+async def _resolve_final_probe_query_id(session: AsyncSession, session_id: int, fonte: str) -> int:
+    """Resolve o id da linha de query final (tipo IS NOT NULL) de uma fonte
+    pra essa sessão - usado pra vincular um gráfico gerado à query que
+    produziu os dados (ver SessionChart). Levanta 422 se não achar: com o
+    salvamento garantido antes de pedir qualquer gráfico (ver
+    useFinalSCurve.ts) e uma sessão finalizada não podendo mais ser reaberta
+    (ver OutrosSteps.tsx), essa linha deveria sempre existir nesse ponto -
+    não achá-la indica uma inconsistência real, não um caminho normal."""
+    result = await session.execute(
+        select(SessionProbeQuery.id).where(
+            SessionProbeQuery.session_id == session_id,
+            SessionProbeQuery.fonte == fonte,
+            SessionProbeQuery.tipo.isnot(None),
+        )
+    )
+    probe_query_id = result.scalar_one_or_none()
+    if probe_query_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Sessão {session_id} ainda não tem uma query final salva para a fonte '{fonte}'.",
+        )
+    return probe_query_id
+
+
+async def _upsert_session_chart(
+    session: AsyncSession,
+    probe_query_id: int,
+    document_type: str,
+    chart_type: str,
+    object_key: str,
+    content_type: str = "image/png",
+) -> None:
+    """Grava (ou sobrescreve) a linha session_chart pra essa
+    (probe_query_id, chart_type) - mesmo padrão de upsert por chave natural
+    já usado em session_persistence.py."""
+    existing = await session.execute(
+        select(SessionChart).where(
+            SessionChart.probe_query_id == probe_query_id,
+            SessionChart.chart_type == chart_type,
+        )
+    )
+    row = existing.scalar_one_or_none()
+    if row is None:
+        row = SessionChart(probe_query_id=probe_query_id, chart_type=chart_type)
+        session.add(row)
+    row.document_type = document_type
+    row.object_key = object_key
+    row.content_type = content_type
+    await session.commit()
 
 
 def _patent_to_dict(patent: Patent) -> dict[str, Any]:
@@ -107,6 +159,8 @@ async def generate_session_graphics(
     if exists.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    ops_probe_query_id = await _resolve_final_probe_query_id(session, session_id, "ops")
+
     # IN (subquery) em vez de JOIN + .distinct() na linha inteira: Patent/Article
     # têm colunas JSON (applicants, cpc_codes, ...), e o tipo `json` do Postgres
     # não tem operador de igualdade - um SELECT DISTINCT sobre a linha completa
@@ -138,8 +192,9 @@ async def generate_session_graphics(
     )
 
     try:
-        patent_curve = svc.generate_patent_s_curve(
+        patent_curve = await svc.generate_patent_s_curve(
             session_id=session_id,
+            probe_query_id=ops_probe_query_id,
             patents_by_year=payload.patents_by_year,
             growth_threshold=payload.growth_threshold,
             saturation_threshold=payload.saturation_threshold,
@@ -150,6 +205,9 @@ async def generate_session_graphics(
 
     if patent_curve["chart"] is not None:
         result["charts"].append(patent_curve["chart"])
+        object_key = patent_curve["chart"].get("object_key")
+        if object_key:
+            await _upsert_session_chart(session, ops_probe_query_id, "patent", "s_curve", object_key)
     else:
         result["skipped"].append(f"patent:s_curve ({patent_curve['skipped_reason']})")
     result["patent_s_curve_fit"] = patent_curve["fit"]
@@ -183,17 +241,21 @@ async def generate_article_s_curve(
     os documentos de artigo da busca final nunca são persistidos no banco
     hoje (ver buildProbeQueryPayload no frontend), então essa parte do
     report sempre viria vazia - sem sentido pagar esse custo aqui. Igual à
-    curva S de patentes, o PNG é gerado só em memória (base64 na resposta),
-    nada fica salvo em disco.
+    curva S de patentes, o PNG é sempre devolvido em base64 na resposta;
+    também tenta subir pro MinIO e vincular à query final de `scopus` (ver
+    SessionChart), melhor-esforço - falha de storage não afeta a resposta.
     """
     exists = await session.execute(select(ResearchSession.id).where(ResearchSession.id == session_id))
     if exists.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    scopus_probe_query_id = await _resolve_final_probe_query_id(session, session_id, "scopus")
+
     svc = _svc(request)
     try:
-        result = svc.generate_article_s_curve(
+        result = await svc.generate_article_s_curve(
             session_id=session_id,
+            probe_query_id=scopus_probe_query_id,
             articles_by_year=payload.articles_by_year,
             growth_threshold=payload.growth_threshold,
             saturation_threshold=payload.saturation_threshold,
@@ -201,6 +263,11 @@ async def generate_article_s_curve(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if result["chart"] is not None:
+        object_key = result["chart"].get("object_key")
+        if object_key:
+            await _upsert_session_chart(session, scopus_probe_query_id, "article", "s_curve", object_key)
 
     logger.info(
         "report_article_s_curve_requested",
