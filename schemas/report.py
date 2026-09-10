@@ -2,29 +2,25 @@
 
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class GeneratedChart(BaseModel):
-    """Um PNG gerado pelo ReportService.
-
-    `path` só vem preenchido pra gráficos salvos em disco (ver
-    ReportService.generate_session_report/generate_patent_yearly_volume/
-    generate_top10_heatmap) - servidos depois via GET
-    /report/{session_id}/chart/{filename}. `image_base64` vem sempre
-    preenchido pras curvas S (ver ReportService.generate_patent_s_curve) -
-    o PNG vem embutido direto na resposta, então o cliente nunca depende de
-    arquivo em disco pra exibi-lo. `object_key` vem preenchido quando o
-    upload pro MinIO deu certo (ver SessionChart) - "melhor esforço": pode
-    vir vazio mesmo numa curva S se o storage estiver fora do ar.
+    """Um PNG gerado pelo ReportService - sempre desenhado em memória e
+    devolvido em `image_base64` (nada é salvo em disco). `object_key` vem
+    preenchido quando o upload pro MinIO deu certo (ver SessionChart) -
+    "melhor esforço": pode vir vazio mesmo numa curva S se o storage
+    estiver fora do ar. `projection_years` só vem preenchido pras curvas S
+    - quantos anos a parte tracejada projeta além do último ano observado
+    (ver PatentSCurveRequest/ArticleSCurveRequest).
     """
 
     filename: str
-    path: Optional[str] = None
     image_base64: Optional[str] = None
     object_key: Optional[str] = None
     chart: str
     document_type: str
+    projection_years: Optional[int] = None
 
 
 class PatentSCurveRequest(BaseModel):
@@ -41,7 +37,11 @@ class PatentSCurveRequest(BaseModel):
     patents_by_year: dict[str, int]
     growth_threshold: float = 0.10
     saturation_threshold: float = 0.90
-    projection_end_year: Optional[int] = None
+    # Quantidade de anos (não um ano absoluto) que a parte tracejada projeta
+    # além do último ano observado - editável na UI (default 5), persistido
+    # em SessionChart.projection_years pra reabrir/consultar sem regenerar
+    # mostrar o mesmo valor escolhido da última vez.
+    projection_years: int = Field(default=5, ge=1, le=50)
 
 
 class ArticleSCurveRequest(BaseModel):
@@ -54,7 +54,7 @@ class ArticleSCurveRequest(BaseModel):
     articles_by_year: dict[str, int]
     growth_threshold: float = 0.10
     saturation_threshold: float = 0.90
-    projection_end_year: Optional[int] = None
+    projection_years: int = Field(default=5, ge=1, le=50)
 
 
 class PatentYearlyVolumeRequest(BaseModel):
@@ -143,9 +143,18 @@ class ReportGraphicsResponse(BaseModel):
     """Manifesto dos gráficos gerados (ou pulados por falta de dado) para uma sessão."""
 
     session_id: int
-    output_dir: str
     patents_used: int
     articles_used: int
     charts: list[GeneratedChart] = []
     skipped: list[str] = []
     patent_s_curve_fit: Optional[SCurveFit] = None
+
+
+class ExistingChartResponse(BaseModel):
+    """Gráfico já persistido pra query final atual de uma fonte (ver
+    SessionChart), sem regenerar - `chart=None` quando a sessão ainda não
+    tem query final dessa fonte, nenhum gráfico desse tipo foi gerado ainda,
+    ou o download do storage falhou (melhor-esforço: o chamador cai pro
+    caminho de gerar de novo nesse caso)."""
+
+    chart: Optional[GeneratedChart] = None

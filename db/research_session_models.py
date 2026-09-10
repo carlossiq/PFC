@@ -348,6 +348,12 @@ class SessionChart(Base):
     chart_type: Mapped[str] = mapped_column(String(50), nullable=False)  # "s_curve", ...
     object_key: Mapped[str] = mapped_column(String(500), nullable=False)
     content_type: Mapped[str] = mapped_column(String(50), nullable=False, default="image/png")
+    # Quantos anos a parte projetada (tracejada) da curva S cobre além do
+    # último ano observado - só faz sentido pra chart_type="s_curve", null
+    # pros demais tipos. Guardado pra reabrir/consultar sem regenerar
+    # mostrar o mesmo valor que o usuário escolheu da última vez (ver
+    # useFinalSCurve.ts), não sempre o default de 5.
+    projection_years: Mapped[Optional[int]] = mapped_column(nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

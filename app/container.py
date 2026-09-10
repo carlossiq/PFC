@@ -127,7 +127,7 @@ def build_container(settings: Settings) -> dict[str, Any]:
         settings=settings,
         openalex=openalex_service,
     )
-    report_service = ReportService(output_dir=settings.report_output_dir, storage=storage_service)
+    report_service = ReportService(storage=storage_service)
     inference_service = StatisticalInferenceService(
         chat_service=chat_service,
         embedding=embedding,

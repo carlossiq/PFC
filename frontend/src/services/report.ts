@@ -9,6 +9,9 @@ export interface GeneratedChart {
   imageBase64: string
   chart: string
   documentType: string
+  // Só preenchido pras curvas S - quantos anos a parte tracejada projeta
+  // além do último ano observado (ver PatentSCurveRequest/ArticleSCurveRequest).
+  projectionYears: number | null
 }
 
 export interface SCurveFitQuality {
@@ -42,6 +45,7 @@ function mapChart(raw: {
   image_base64: string
   chart: string
   document_type: string
+  projection_years?: number | null
 } | undefined): GeneratedChart | null {
   if (!raw) return null
   return {
@@ -49,6 +53,7 @@ function mapChart(raw: {
     imageBase64: raw.image_base64,
     chart: raw.chart,
     documentType: raw.document_type,
+    projectionYears: raw.projection_years ?? null,
   }
 }
 
@@ -95,11 +100,11 @@ function mapFit(raw: {
 export async function generatePatentSCurve(
   sessionId: number,
   patentsByYear: Record<string, number>,
-  projectionEndYear?: number
+  projectionYears: number
 ): Promise<SCurveResult> {
   const { data } = await apiClient.post(`/report/${sessionId}/graphics`, {
     patents_by_year: patentsByYear,
-    projection_end_year: projectionEndYear ?? null,
+    projection_years: projectionYears,
   })
   if (!data.success) {
     throw new Error(data.message || 'Falha ao gerar a curva S de patentes.')
@@ -123,11 +128,11 @@ export async function generatePatentSCurve(
 export async function generateArticleSCurve(
   sessionId: number,
   articlesByYear: Record<string, number>,
-  projectionEndYear?: number
+  projectionYears: number
 ): Promise<SCurveResult> {
   const { data } = await apiClient.post(`/report/${sessionId}/article-s-curve`, {
     articles_by_year: articlesByYear,
-    projection_end_year: projectionEndYear ?? null,
+    projection_years: projectionYears,
   })
   if (!data.success) {
     throw new Error(data.message || 'Falha ao gerar a curva S de artigos.')
@@ -138,6 +143,27 @@ export async function generateArticleSCurve(
     chart: mapChart(result.chart),
     fit: mapFit(result.fit),
   }
+}
+
+// Busca um gráfico já persistido pra query final ATUAL de `fonte` (ver
+// SessionChart no backend), sem gerar/subir outro - null se a sessão ainda
+// não tem query final dessa fonte, nenhum gráfico desse tipo foi gerado
+// ainda, ou o download do storage falhou no backend (melhor-esforço).
+// Usado tanto por useFinalSCurve.ts (evita re-render/re-upload quando nada
+// mudou desde a última geração) quanto pelo card de sessão na busca (ver
+// SessionCard em Workflow.tsx), pra exibir uma curva S já gerada.
+export async function getExistingChart(
+  sessionId: number,
+  fonte: 'ops' | 'scopus',
+  chartType: string
+): Promise<GeneratedChart | null> {
+  const { data } = await apiClient.get(`/report/${sessionId}/existing-chart`, {
+    params: { fonte, chart_type: chartType },
+  })
+  if (!data.success) {
+    throw new Error(data.message || 'Falha ao buscar o gráfico já gerado.')
+  }
+  return mapChart(data.data.chart)
 }
 
 // Data URI pronta pro <img src> - o PNG já veio inteiro em base64 na

@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 from app.core.services.report_service import ReportService
@@ -33,8 +31,8 @@ def storage():
 
 
 @pytest.fixture
-def svc(tmp_path, storage):
-    return ReportService(output_dir=tmp_path, storage=storage)
+def svc(storage):
+    return ReportService(storage=storage)
 
 
 def _patents(n_years=6):
@@ -71,8 +69,11 @@ def _patents_by_year_from(patents):
     return counts
 
 
-def test_generate_session_report_creates_expected_charts(svc, tmp_path):
-    result = svc.generate_session_report(1, _patents(), _articles())
+@pytest.mark.asyncio
+async def test_generate_session_report_creates_expected_charts(svc, storage):
+    result = await svc.generate_session_report(
+        1, _patents(), _articles(), probe_query_ids={"patent": 10, "article": 20}
+    )
 
     assert result["patents_used"] == 12
     assert result["articles_used"] == 12
@@ -96,14 +97,18 @@ def test_generate_session_report_creates_expected_charts(svc, tmp_path):
     }
 
     for chart in result["charts"]:
-        path = Path(chart["path"])
-        assert path.exists()
-        assert path.stat().st_size > 0
-        assert path.parent == tmp_path / "session_1"
+        assert chart["image_base64"]
+        probe_query_id = 10 if chart["document_type"] == "patent" else 20
+        object_key = chart["object_key"]
+        assert object_key == f"sessions/1/probe_query_{probe_query_id}/{chart['document_type']}_{chart['chart']}.png"
+        uploaded_bytes, content_type = storage.uploaded[object_key]
+        assert content_type == "image/png"
+        assert len(uploaded_bytes) > 0
 
 
-def test_generate_session_report_skips_charts_without_data(svc):
-    result = svc.generate_session_report(2, patents=[], articles=[])
+@pytest.mark.asyncio
+async def test_generate_session_report_skips_charts_without_data(svc):
+    result = await svc.generate_session_report(2, patents=[], articles=[], probe_query_ids={})
 
     assert result["patents_used"] == 0
     assert result["articles_used"] == 0
@@ -111,17 +116,35 @@ def test_generate_session_report_skips_charts_without_data(svc):
     assert len(result["skipped"]) == 10
 
 
-def test_generate_session_report_partial_data_skips_only_missing_side(svc):
-    result = svc.generate_session_report(3, patents=_patents(), articles=[])
+@pytest.mark.asyncio
+async def test_generate_session_report_partial_data_skips_only_missing_side(svc):
+    result = await svc.generate_session_report(3, patents=_patents(), articles=[], probe_query_ids={"patent": 30})
 
     document_types = {c["document_type"] for c in result["charts"]}
     assert document_types == {"patent"}
     assert all(s.startswith("article:") for s in result["skipped"])
 
 
-def test_article_s_curve_requires_at_least_two_distinct_years(svc):
+@pytest.mark.asyncio
+async def test_generate_session_report_missing_probe_query_id_still_returns_image(svc, storage):
+    """Fonte ausente de `probe_query_ids` (ex.: sessão sem query final de
+    artigo) não impede o gráfico de ser gerado/devolvido - só fica sem
+    subir pro storage dessa vez (mesma filosofia best-effort do resto do
+    arquivo)."""
+    result = await svc.generate_session_report(4, patents=_patents(), articles=[], probe_query_ids={})
+
+    chart = next(c for c in result["charts"] if c["document_type"] == "patent")
+    assert chart["image_base64"]
+    assert "object_key" not in chart
+    assert storage.uploaded == {}
+
+
+@pytest.mark.asyncio
+async def test_article_s_curve_requires_at_least_two_distinct_years(svc):
     single_year_articles = [{"year": 2020, "authors": ["Doe, J."]} for _ in range(5)]
-    result = svc.generate_session_report(4, patents=[], articles=single_year_articles)
+    result = await svc.generate_session_report(
+        5, patents=[], articles=single_year_articles, probe_query_ids={"article": 50}
+    )
 
     assert "article:s_curve" in result["skipped"]
 
@@ -140,13 +163,14 @@ async def test_generate_patent_s_curve_from_yearly_counts(svc, storage):
     patents_by_year = _patents_by_year_from(_patents())
 
     result = await svc.generate_patent_s_curve(
-        session_id=6, probe_query_id=60, patents_by_year=patents_by_year, projection_end_year=2035
+        session_id=6, probe_query_id=60, patents_by_year=patents_by_year, projection_years=10
     )
 
     assert result["skipped_reason"] is None
     assert result["chart"]["document_type"] == "patent"
     assert result["chart"]["chart"] == "s_curve"
     assert result["chart"]["image_base64"]
+    assert result["chart"]["projection_years"] == 10
 
     # object_key vem preenchido (upload deu certo) e a chave é determinística
     # (session_id + probe_query_id) - regenerar sobrescreveria o mesmo objeto.
@@ -166,10 +190,10 @@ async def test_generate_patent_s_curve_from_yearly_counts(svc, storage):
 
 
 @pytest.mark.asyncio
-async def test_generate_patent_s_curve_survives_storage_failure(tmp_path):
+async def test_generate_patent_s_curve_survives_storage_failure():
     storage = FakeStoragePort()
     storage.fail_upload = True
-    svc = ReportService(output_dir=tmp_path, storage=storage)
+    svc = ReportService(storage=storage)
     patents_by_year = _patents_by_year_from(_patents())
 
     result = await svc.generate_patent_s_curve(session_id=7, probe_query_id=70, patents_by_year=patents_by_year)
@@ -179,36 +203,40 @@ async def test_generate_patent_s_curve_survives_storage_failure(tmp_path):
     assert "object_key" not in result["chart"]
 
 
-def test_generate_patent_yearly_volume_requires_data(svc):
-    result = svc.generate_patent_yearly_volume(session_id=7, patents_by_year={})
+@pytest.mark.asyncio
+async def test_generate_patent_yearly_volume_requires_data(svc):
+    result = await svc.generate_patent_yearly_volume(session_id=7, probe_query_id=70, patents_by_year={})
 
     assert result["chart"] is None
     assert "nenhum dado" in result["skipped_reason"]
 
 
-def test_generate_patent_yearly_volume_from_yearly_counts(svc, tmp_path):
+@pytest.mark.asyncio
+async def test_generate_patent_yearly_volume_from_yearly_counts(svc, storage):
     patents_by_year = _patents_by_year_from(_patents())
 
-    result = svc.generate_patent_yearly_volume(session_id=8, patents_by_year=patents_by_year)
+    result = await svc.generate_patent_yearly_volume(session_id=8, probe_query_id=80, patents_by_year=patents_by_year)
 
     assert result["skipped_reason"] is None
     assert result["chart"]["document_type"] == "patent"
     assert result["chart"]["chart"] == "yearly_volume"
+    assert result["chart"]["image_base64"]
 
-    path = Path(result["chart"]["path"])
-    assert path.exists()
-    assert path.stat().st_size > 0
-    assert path.parent == tmp_path / "session_8"
+    object_key = result["chart"]["object_key"]
+    assert object_key == "sessions/8/probe_query_80/patent_yearly_volume.png"
+    assert storage.uploaded[object_key][0]
 
 
-def test_generate_top10_heatmap_requires_data(svc):
-    result = svc.generate_top10_heatmap(session_id=9, top10={})
+@pytest.mark.asyncio
+async def test_generate_top10_heatmap_requires_data(svc):
+    result = await svc.generate_top10_heatmap(session_id=9, probe_query_id=90, top10={})
 
     assert result["chart"] is None
     assert "nenhum dado" in result["skipped_reason"]
 
 
-def test_generate_top10_heatmap_from_cpc_distribution(svc, tmp_path):
+@pytest.mark.asyncio
+async def test_generate_top10_heatmap_from_cpc_distribution(svc, storage):
     cpc = {
         "Y02E": 1447,
         "B32B": 60,
@@ -222,30 +250,42 @@ def test_generate_top10_heatmap_from_cpc_distribution(svc, tmp_path):
         "H02S": 376,
     }
 
-    result = svc.generate_top10_heatmap(
-        session_id=10, top10=cpc, title="Distribuição por CPC", document_type="patent"
+    result = await svc.generate_top10_heatmap(
+        session_id=10, probe_query_id=100, top10=cpc, title="Distribuição por CPC", document_type="patent"
     )
 
     assert result["skipped_reason"] is None
     assert result["chart"]["document_type"] == "patent"
     assert result["chart"]["chart"] == "top10_heatmap"
+    assert result["chart"]["image_base64"]
 
-    path = Path(result["chart"]["path"])
-    assert path.exists()
-    assert path.stat().st_size > 0
-    assert path.parent == tmp_path / "session_10"
+    object_key = result["chart"]["object_key"]
+    assert object_key == "sessions/10/probe_query_100/patent_top10_heatmap.png"
+    assert storage.uploaded[object_key][0]
 
 
-def test_generate_top10_heatmap_reused_for_articles_with_fewer_than_ten(svc, tmp_path):
+@pytest.mark.asyncio
+async def test_generate_top10_heatmap_reused_for_articles_with_fewer_than_ten(svc):
     field_of_study = {"AI": 40, "Robotics": 12, "Optics": 5}
 
-    result = svc.generate_top10_heatmap(
-        session_id=11, top10=field_of_study, title="Distribuição por Área de Estudo", document_type="article"
+    result = await svc.generate_top10_heatmap(
+        session_id=11,
+        probe_query_id=110,
+        top10=field_of_study,
+        title="Distribuição por Área de Estudo",
+        document_type="article",
     )
 
     assert result["skipped_reason"] is None
     assert result["chart"]["document_type"] == "article"
+    assert result["chart"]["image_base64"]
 
-    path = Path(result["chart"]["path"])
-    assert path.exists()
-    assert path.stat().st_size > 0
+
+@pytest.mark.asyncio
+async def test_download_chart_returns_uploaded_bytes(svc, storage):
+    patents_by_year = _patents_by_year_from(_patents())
+    generated = await svc.generate_patent_s_curve(session_id=12, probe_query_id=120, patents_by_year=patents_by_year)
+
+    downloaded = await svc.download_chart(generated["chart"]["object_key"])
+
+    assert len(downloaded) > 0

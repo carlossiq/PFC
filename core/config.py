@@ -128,9 +128,6 @@ class Settings(BaseSettings):
         -0.8
     )  # Penalidade para 3-grams com padrão ruim
 
-    # Report Configuration
-    report_output_dir: str = "gerados"
-
     # MinIO Configuration (armazenamento dos gráficos gerados, ver ReportService/StoragePort)
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "minioadmin"

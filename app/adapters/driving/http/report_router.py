@@ -11,10 +11,10 @@ session_persistence.py/session_probe_documents.py for how these get
 persisted when a session is saved/finalized).
 """
 
-from typing import Any
+import base64
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +33,8 @@ from db.research_session_models import (
 from schemas.report import (
     ArticleSCurveRequest,
     ArticleSCurveResponse,
+    ExistingChartResponse,
+    GeneratedChart,
     PatentSCurveRequest,
     PatentYearlyVolumeRequest,
     PatentYearlyVolumeResponse,
@@ -51,14 +53,21 @@ def _svc(request: Request) -> ReportService:
     return request.app.state.container["services"]["report"]
 
 
-async def _resolve_final_probe_query_id(session: AsyncSession, session_id: int, fonte: str) -> int:
+async def _resolve_final_probe_query_id(
+    session: AsyncSession, session_id: int, fonte: str, required: bool = True
+) -> Optional[int]:
     """Resolve o id da linha de query final (tipo IS NOT NULL) de uma fonte
     pra essa sessão - usado pra vincular um gráfico gerado à query que
-    produziu os dados (ver SessionChart). Levanta 422 se não achar: com o
-    salvamento garantido antes de pedir qualquer gráfico (ver
-    useFinalSCurve.ts) e uma sessão finalizada não podendo mais ser reaberta
-    (ver OutrosSteps.tsx), essa linha deveria sempre existir nesse ponto -
-    não achá-la indica uma inconsistência real, não um caminho normal."""
+    produziu os dados (ver SessionChart).
+
+    Com `required=True` (padrão) levanta 422 se não achar: com o salvamento
+    garantido antes de pedir qualquer gráfico (ver useFinalSCurve.ts) e uma
+    sessão finalizada não podendo mais ser reaberta (ver OutrosSteps.tsx),
+    essa linha deveria sempre existir nesse ponto - não achá-la indica uma
+    inconsistência real, não um caminho normal. Com `required=False` devolve
+    None em vez de levantar - usado onde a ausência é um caminho normal
+    (ex.: `scopus_probe_query_id` dentro de `/graphics`, ou a checagem de
+    `/existing-chart` numa sessão que ainda não tem query final)."""
     result = await session.execute(
         select(SessionProbeQuery.id).where(
             SessionProbeQuery.session_id == session_id,
@@ -67,7 +76,7 @@ async def _resolve_final_probe_query_id(session: AsyncSession, session_id: int, 
         )
     )
     probe_query_id = result.scalar_one_or_none()
-    if probe_query_id is None:
+    if probe_query_id is None and required:
         raise HTTPException(
             status_code=422,
             detail=f"Sessão {session_id} ainda não tem uma query final salva para a fonte '{fonte}'.",
@@ -82,10 +91,12 @@ async def _upsert_session_chart(
     chart_type: str,
     object_key: str,
     content_type: str = "image/png",
+    projection_years: Optional[int] = None,
 ) -> None:
     """Grava (ou sobrescreve) a linha session_chart pra essa
     (probe_query_id, chart_type) - mesmo padrão de upsert por chave natural
-    já usado em session_persistence.py."""
+    já usado em session_persistence.py. `projection_years` só é relevante
+    pra chart_type="s_curve" (None pros demais tipos)."""
     existing = await session.execute(
         select(SessionChart).where(
             SessionChart.probe_query_id == probe_query_id,
@@ -99,6 +110,7 @@ async def _upsert_session_chart(
     row.document_type = document_type
     row.object_key = object_key
     row.content_type = content_type
+    row.projection_years = projection_years
     await session.commit()
 
 
@@ -123,18 +135,61 @@ def _article_to_dict(article: Article) -> dict[str, Any]:
     }
 
 
-@router.get("/{session_id}/chart/{filename}")
-async def get_report_chart(session_id: int, filename: str, request: Request) -> FileResponse:
-    """Serve os bytes de um PNG já gerado por /graphics,
-    /patents-yearly-volume ou /top10-heatmap para essa sessão - essas rotas
-    só devolvem o manifesto (filename/path) do arquivo já salvo em disco
-    pelo ReportService; esta é quem entrega a imagem de fato, pro <img> do
-    frontend exibir e pro botão de download baixar.
+@router.get("/{session_id}/existing-chart", response_model=SuccessResponse[ExistingChartResponse])
+async def get_existing_chart(
+    session_id: int,
+    request: Request,
+    fonte: str = Query(..., pattern="^(ops|scopus)$"),
+    chart_type: str = Query(...),
+    session: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[ExistingChartResponse]:
+    """Devolve um gráfico já persistido pra query final ATUAL de `fonte`
+    (ver SessionChart), sem regenerar - usado pra evitar re-render/re-upload
+    quando nada mudou desde a última geração (a query final trocar de
+    variante já deleta a linha session_chart antiga, ver
+    session_persistence.py - "existe uma session_chart pro probe_query_id
+    atual" já significa "nada mudou"), e pra exibir a curva S de uma sessão
+    ao expandir seu card na busca por sessão.
+
+    Sempre `chart=None` (nunca 404/422) quando não há nada gerado ainda ou o
+    download falha - o chamador (useFinalSCurve.ts) cai pro caminho normal
+    de gerar de novo nesse caso.
     """
-    path = _svc(request).resolve_chart_path(session_id, filename)
-    if path is None:
-        raise HTTPException(status_code=404, detail="Chart not found")
-    return FileResponse(path, media_type="image/png")
+    probe_query_id = await _resolve_final_probe_query_id(session, session_id, fonte, required=False)
+    if probe_query_id is None:
+        return SuccessResponse(data=ExistingChartResponse(chart=None))
+
+    result = await session.execute(
+        select(SessionChart).where(
+            SessionChart.probe_query_id == probe_query_id,
+            SessionChart.chart_type == chart_type,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        return SuccessResponse(data=ExistingChartResponse(chart=None))
+
+    try:
+        png_bytes = await _svc(request).download_chart(row.object_key)
+    except Exception as exc:
+        logger.warning(
+            "existing_chart_download_failed",
+            session_id=session_id,
+            probe_query_id=probe_query_id,
+            object_key=row.object_key,
+            error=str(exc),
+        )
+        return SuccessResponse(data=ExistingChartResponse(chart=None))
+
+    chart = GeneratedChart(
+        filename=row.object_key.rsplit("/", 1)[-1],
+        image_base64=base64.b64encode(png_bytes).decode("ascii"),
+        object_key=row.object_key,
+        chart=row.chart_type,
+        document_type=row.document_type,
+        projection_years=row.projection_years,
+    )
+    return SuccessResponse(data=ExistingChartResponse(chart=chart))
 
 
 @router.post("/{session_id}/graphics", response_model=SuccessResponse[ReportGraphicsResponse])
@@ -160,6 +215,16 @@ async def generate_session_graphics(
         raise HTTPException(status_code=404, detail="Session not found")
 
     ops_probe_query_id = await _resolve_final_probe_query_id(session, session_id, "ops")
+    # best-effort: hoje os documentos de artigo da busca final nunca são
+    # persistidos no banco (ver docstring de generate_article_s_curve mais
+    # abaixo), então `articles` sempre vem vazio e nada de artigo chega a
+    # ser gerado/upado aqui - mas se isso mudar no futuro, não queremos
+    # quebrar a rota só porque a sessão não tem (ainda) uma query final de
+    # scopus.
+    scopus_probe_query_id = await _resolve_final_probe_query_id(session, session_id, "scopus", required=False)
+    probe_query_ids = {"patent": ops_probe_query_id}
+    if scopus_probe_query_id is not None:
+        probe_query_ids["article"] = scopus_probe_query_id
 
     # IN (subquery) em vez de JOIN + .distinct() na linha inteira: Patent/Article
     # têm colunas JSON (applicants, cpc_codes, ...), e o tipo `json` do Postgres
@@ -185,11 +250,17 @@ async def generate_session_graphics(
     articles = (await session.execute(article_stmt)).scalars().all()
 
     svc = _svc(request)
-    result = svc.generate_session_report(
+    result = await svc.generate_session_report(
         session_id=session_id,
         patents=[_patent_to_dict(p) for p in patents],
         articles=[_article_to_dict(a) for a in articles],
+        probe_query_ids=probe_query_ids,
     )
+    for chart in result["charts"]:
+        object_key = chart.get("object_key")
+        probe_query_id = probe_query_ids.get(chart["document_type"])
+        if object_key and probe_query_id is not None:
+            await _upsert_session_chart(session, probe_query_id, chart["document_type"], chart["chart"], object_key)
 
     try:
         patent_curve = await svc.generate_patent_s_curve(
@@ -198,7 +269,7 @@ async def generate_session_graphics(
             patents_by_year=payload.patents_by_year,
             growth_threshold=payload.growth_threshold,
             saturation_threshold=payload.saturation_threshold,
-            projection_end_year=payload.projection_end_year,
+            projection_years=payload.projection_years,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -207,7 +278,14 @@ async def generate_session_graphics(
         result["charts"].append(patent_curve["chart"])
         object_key = patent_curve["chart"].get("object_key")
         if object_key:
-            await _upsert_session_chart(session, ops_probe_query_id, "patent", "s_curve", object_key)
+            await _upsert_session_chart(
+                session,
+                ops_probe_query_id,
+                "patent",
+                "s_curve",
+                object_key,
+                projection_years=payload.projection_years,
+            )
     else:
         result["skipped"].append(f"patent:s_curve ({patent_curve['skipped_reason']})")
     result["patent_s_curve_fit"] = patent_curve["fit"]
@@ -259,7 +337,7 @@ async def generate_article_s_curve(
             articles_by_year=payload.articles_by_year,
             growth_threshold=payload.growth_threshold,
             saturation_threshold=payload.saturation_threshold,
-            projection_end_year=payload.projection_end_year,
+            projection_years=payload.projection_years,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -267,7 +345,14 @@ async def generate_article_s_curve(
     if result["chart"] is not None:
         object_key = result["chart"].get("object_key")
         if object_key:
-            await _upsert_session_chart(session, scopus_probe_query_id, "article", "s_curve", object_key)
+            await _upsert_session_chart(
+                session,
+                scopus_probe_query_id,
+                "article",
+                "s_curve",
+                object_key,
+                projection_years=payload.projection_years,
+            )
 
     logger.info(
         "report_article_s_curve_requested",
@@ -301,8 +386,16 @@ async def generate_patent_yearly_volume(
     if exists.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    ops_probe_query_id = await _resolve_final_probe_query_id(session, session_id, "ops")
+
     svc = _svc(request)
-    result = svc.generate_patent_yearly_volume(session_id=session_id, patents_by_year=payload.patents_by_year)
+    result = await svc.generate_patent_yearly_volume(
+        session_id=session_id, probe_query_id=ops_probe_query_id, patents_by_year=payload.patents_by_year
+    )
+
+    object_key = (result["chart"] or {}).get("object_key")
+    if object_key:
+        await _upsert_session_chart(session, ops_probe_query_id, "patent", "yearly_volume", object_key)
 
     logger.info(
         "report_patent_yearly_volume_requested",
@@ -336,13 +429,21 @@ async def generate_top10_heatmap(
     if exists.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    fonte = "ops" if payload.document_type == "patent" else "scopus"
+    probe_query_id = await _resolve_final_probe_query_id(session, session_id, fonte)
+
     svc = _svc(request)
-    result = svc.generate_top10_heatmap(
+    result = await svc.generate_top10_heatmap(
         session_id=session_id,
+        probe_query_id=probe_query_id,
         top10=payload.top10,
         title=payload.title,
         document_type=payload.document_type,
     )
+
+    object_key = (result["chart"] or {}).get("object_key")
+    if object_key:
+        await _upsert_session_chart(session, probe_query_id, payload.document_type, "top10_heatmap", object_key)
 
     logger.info(
         "report_top10_heatmap_requested",

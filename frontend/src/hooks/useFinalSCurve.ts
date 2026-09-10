@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { useFormStore } from '../stores/useFormStore'
 import { buildSaveSessionPayload, saveSession } from '../services/sessionInput'
-import { generatePatentSCurve, generateArticleSCurve, chartDataUrl, downloadReportChart } from '../services/report'
+import {
+  generatePatentSCurve,
+  generateArticleSCurve,
+  getExistingChart,
+  chartDataUrl,
+  downloadReportChart,
+} from '../services/report'
 import type { GeneratedChart, SCurveFit } from '../services/report'
 import { useAutoDismiss } from './useAutoDismiss'
 
@@ -10,12 +16,10 @@ export type SCurveKind = 'patent' | 'article'
 // Quantos anos projetar à frente do último ano observado, por padrão -
 // vira a parte tracejada do gráfico (ver project_s_curve em s_curve.py),
 // desenhada só quando a curva convergiu com confiança o suficiente pra
-// extrapolar.
+// extrapolar. Só o valor inicial antes de qualquer geração/consulta - o
+// usuário pode mudar (ver projectionYearsInput/applyProjectionYears
+// abaixo), e o valor escolhido fica salvo (SessionChart.projection_years).
 const DEFAULT_PROJECTION_YEARS = 5
-
-function lastObservedYear(yearlyByYear: Record<string, number>): number {
-  return Math.max(...Object.keys(yearlyByYear).map(Number))
-}
 
 // Gera a curva S a partir do
 // patentsByYear/articlesByYear já devolvido pela busca final e mantém em
@@ -34,15 +38,21 @@ export function useFinalSCurve(kind: SCurveKind, yearlyByYear: Record<string, nu
   const [chart, setChart] = useState<GeneratedChart | null>(null)
   const [fit, setFit] = useState<SCurveFit | null>(null)
   const [downloadError, setDownloadError] = useState<string | null>(null)
+  // O que o usuário está digitando no campo "Anos para projetar" - separado
+  // de `chart` de propósito: mudar esse número não regera nada sozinho, só
+  // quando o botão "Atualizar" chama applyProjectionYears (ver abaixo).
+  const [projectionYearsInput, setProjectionYearsInput] = useState(DEFAULT_PROJECTION_YEARS)
+  const [isApplyingProjection, setIsApplyingProjection] = useState(false)
 
   useAutoDismiss(error, () => setError(null))
   useAutoDismiss(downloadError, () => setDownloadError(null))
 
   const generatedForRef = useRef<string | null>(null)
-  
+
   const requestIdRef = useRef(0)
   const hasData = !!yearlyByYear && Object.keys(yearlyByYear).length > 0
   const signature = hasData ? `${kind}:${JSON.stringify(yearlyByYear)}` : null
+  const fonte = kind === 'patent' ? 'ops' : 'scopus'
 
   useEffect(() => {
     if (!signature || !yearlyByYear) return
@@ -61,14 +71,28 @@ export function useFinalSCurve(kind: SCurveKind, yearlyByYear: Record<string, nu
         useFormStore.getState().setSessionId(saveResult.session_id, saveResult.session_public_id)
         const sessionId = saveResult.session_id
 
-        const projectionEndYear = lastObservedYear(yearlyByYear!) + DEFAULT_PROJECTION_YEARS
+        // Se a query final dessa fonte já tem uma curva S salva (ver
+        // SessionChart no backend), mostra ela em vez de gerar/subir outra
+        // à toa - o save acima garante que essa checagem reflete o estado
+        // atual (trocar de variante já invalida/apaga o gráfico salvo, ver
+        // session_persistence.py).
+        const existing = await getExistingChart(sessionId, fonte, 's_curve')
+        if (requestIdRef.current !== requestId) return
+        if (existing) {
+          setChart(existing)
+          setFit(null)
+          setProjectionYearsInput(existing.projectionYears ?? DEFAULT_PROJECTION_YEARS)
+          return
+        }
+
         const result =
           kind === 'patent'
-            ? await generatePatentSCurve(sessionId, yearlyByYear!, projectionEndYear)
-            : await generateArticleSCurve(sessionId, yearlyByYear!, projectionEndYear)
+            ? await generatePatentSCurve(sessionId, yearlyByYear!, DEFAULT_PROJECTION_YEARS)
+            : await generateArticleSCurve(sessionId, yearlyByYear!, DEFAULT_PROJECTION_YEARS)
         if (requestIdRef.current !== requestId) return
         setChart(result.chart)
         setFit(result.fit)
+        setProjectionYearsInput(result.chart?.projectionYears ?? DEFAULT_PROJECTION_YEARS)
       } catch (err) {
         if (requestIdRef.current !== requestId) return
         console.error(`Falha ao gerar a curva S de ${kind === 'patent' ? 'patentes' : 'artigos'}:`, err)
@@ -80,7 +104,42 @@ export function useFinalSCurve(kind: SCurveKind, yearlyByYear: Record<string, nu
     }
 
     run()
-  }, [signature, yearlyByYear, kind])
+  }, [signature, yearlyByYear, kind, fonte])
+
+  // Regera a curva S com o valor de `projectionYearsInput` atual - chamado
+  // explicitamente pelo botão "Atualizar" (não pelo efeito automático
+  // acima), então ignora getExistingChart de propósito: aqui o usuário está
+  // pedindo uma mudança, não checando se já existe uma versão salva. O
+  // gráfico novo sobrescreve o mesmo objeto/linha de sempre (mesma chave
+  // determinística em ReportService._upload_chart), então fica salvo com o
+  // valor novo.
+  async function applyProjectionYears() {
+    if (!yearlyByYear) return
+    const sessionId = useFormStore.getState().sessionId
+    if (sessionId === null) return
+
+    const requestId = ++requestIdRef.current
+    setIsApplyingProjection(true)
+    setError(null)
+    try {
+      const result =
+        kind === 'patent'
+          ? await generatePatentSCurve(sessionId, yearlyByYear, projectionYearsInput)
+          : await generateArticleSCurve(sessionId, yearlyByYear, projectionYearsInput)
+      if (requestIdRef.current !== requestId) return
+      setChart(result.chart)
+      setFit(result.fit)
+    } catch (err) {
+      if (requestIdRef.current !== requestId) return
+      console.error(
+        `Falha ao atualizar a projeção da curva S de ${kind === 'patent' ? 'patentes' : 'artigos'}:`,
+        err
+      )
+      setError('Não foi possível atualizar a projeção. Tente novamente.')
+    } finally {
+      if (requestIdRef.current === requestId) setIsApplyingProjection(false)
+    }
+  }
 
   function handleDownload() {
     if (!chart) return
@@ -102,5 +161,9 @@ export function useFinalSCurve(kind: SCurveKind, yearlyByYear: Record<string, nu
     chartUrl: chart ? chartDataUrl(chart) : null,
     downloadError,
     handleDownload,
+    projectionYearsInput,
+    setProjectionYearsInput,
+    applyProjectionYears,
+    isApplyingProjection,
   }
 }
