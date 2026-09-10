@@ -61,9 +61,11 @@ export type FormStorePatch = Partial<
     | 'step4PatentSelectedVariant'
     | 'step4PatentQuery'
     | 'step4PatentGeneratedForSelection'
+    | 'step4PatentQueryIterations'
     | 'step4ArticleSelectedVariant'
     | 'step4ArticleQuery'
     | 'step4ArticleGeneratedForSelection'
+    | 'step4ArticleQueryIterations'
   >
 >
 

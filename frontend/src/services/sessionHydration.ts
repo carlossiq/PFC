@@ -121,7 +121,7 @@ export function mapSessionToFormStorePatch(session: ResearchSessionSummary): For
     step3Queries: toQueryOption(patentQuery),
     step3SelectedIndex: patentQuery ? 0 : null,
     step3GeneratedForIntake: patentQuery ? intakeSignature : null,
-    step3Iterations: patentQuery ? Math.max(0, patentQuery.iterations) : 0,
+    step3Iterations: patentQuery ? Math.max(0, patentQuery.iterations - 1) : 0,
     step3ArticleQueries: toQueryOption(articleQuery),
     step3ArticleSelectedIndex: articleQuery ? 0 : null,
     step3ArticleGeneratedForIntake: articleQuery ? intakeSignature : null,
@@ -150,10 +150,17 @@ export function mapSessionToFormStorePatch(session: ResearchSessionSummary): For
     step4PatentGeneratedForSelection: patentFinalQuery
       ? buildFinalQuerySelectionSignature(patentFinalSelectedTerms, patentFinalVariant)
       : null,
+    // Mesma lógica de step3Iterations acima: `iterations` salvo já é o
+    // valor de negócio (+1 aplicado por buildProbeQueryPayload ao salvar),
+    // então subtrai 1 pra voltar ao contador 0-based da store - senão o
+    // próximo "Gerar de novo" salva um valor inflado (mesmo bug corrigido
+    // ali, só que aqui a falta de hidratação zerava em vez de inflar).
+    step4PatentQueryIterations: patentFinalQuery ? Math.max(0, patentFinalQuery.iterations - 1) : 0,
     step4ArticleSelectedVariant: articleFinalVariant,
     step4ArticleQuery: toFinalQueryOption(articleFinalQuery),
     step4ArticleGeneratedForSelection: articleFinalQuery
       ? buildFinalQuerySelectionSignature(articleFinalSelectedTerms, articleFinalVariant)
       : null,
+    step4ArticleQueryIterations: articleFinalQuery ? Math.max(0, articleFinalQuery.iterations - 1) : 0,
   }
 }
