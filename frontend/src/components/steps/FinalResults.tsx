@@ -5,6 +5,7 @@ import type { SCurveKind } from '../../hooks/useFinalSCurve'
 import { Button } from '../Button'
 import { LoadingScreen } from '../LoadingScreen'
 import { SectionHeader } from '../SectionHeader'
+import { SCurveFitLegend } from '../SCurveFitLegend'
 import { STEPS } from '../../constants/steps'
 import { PANEL_ACCENT } from '../../constants/probePanelAccent'
 import type { OpsFinalAggregateResult, ScopusFinalAggregateResult } from '../../services/finalQuery'
@@ -13,12 +14,23 @@ import type { OpsFinalAggregateResult, ScopusFinalAggregateResult } from '../../
 // patentsByYear/articlesByYear que a busca final já devolve - gera
 // automaticamente assim que há resultado (ver useFinalSCurve), sem exigir
 // clique do usuário; "Baixar Gráfico" baixa o PNG já renderizado pelo
-// backend (ver ReportService._render_s_curve_chart).
+// backend (ver ReportService._render_s_curve_chart). "Anos para projetar"
+// deixa o usuário mudar quantos anos a parte tracejada cobre (default 5) -
+// clicar "Atualizar" regera e sobrescreve o gráfico salvo com o novo valor.
 function SCurveSection({ kind, yearlyByYear }: { kind: SCurveKind; yearlyByYear: Record<string, number> | null }) {
-  const { hasData, isLoading, error, chart, chartUrl, downloadError, handleDownload } = useFinalSCurve(
-    kind,
-    yearlyByYear
-  )
+  const {
+    hasData,
+    isLoading,
+    error,
+    chart,
+    chartUrl,
+    downloadError,
+    handleDownload,
+    projectionYearsInput,
+    setProjectionYearsInput,
+    applyProjectionYears,
+    isApplyingProjection,
+  } = useFinalSCurve(kind, yearlyByYear)
 
   if (!hasData) return null
 
@@ -38,19 +50,37 @@ function SCurveSection({ kind, yearlyByYear }: { kind: SCurveKind; yearlyByYear:
       )}
 
       {!isLoading && chart && chartUrl && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           <img
             src={chartUrl}
             alt={`Curva S de ${kind === 'patent' ? 'patentes' : 'artigos'}`}
             className="w-full rounded-md border border-gray-200"
           />
           {downloadError && <p className="text-sm text-red-600">{downloadError}</p>}
-          <Button size="sm" variant="secondary" onClick={handleDownload}>
-            <span className="inline-flex items-center gap-1.5">
-              <Download size={14} />
-              Baixar Gráfico
-            </span>
-          </Button>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <label className="inline-flex items-center gap-1.5 text-xs text-gray-600">
+                Anos para projetar
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={projectionYearsInput}
+                  onChange={(e) => setProjectionYearsInput(Number(e.target.value))}
+                  className="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900"
+                />
+              </label>
+              <Button size="sm" onClick={applyProjectionYears} disabled={isApplyingProjection}>
+                {isApplyingProjection ? 'Atualizando...' : 'Atualizar'}
+              </Button>
+            </div>
+            <Button size="sm" onClick={handleDownload}>
+              <span className="inline-flex items-center gap-1.5">
+                <Download size={14} />
+                Baixar Gráfico
+              </span>
+            </Button>
+          </div>
         </div>
       )}
     </div>
@@ -201,6 +231,13 @@ export function FinalResults({ step, substep, onBack, onNext }: FinalResultsProp
         <OpsFinalAggregatePanel title="Patentes (OPS)" results={step4PatentResults} />
         <ScopusFinalAggregatePanel title="Artigos (Scopus)" results={step4ArticleResults} />
       </div>
+
+      {((step4PatentResults?.resultsCount ?? 0) > 0 || (step4ArticleResults?.resultsCount ?? 0) > 0) && (
+        <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-4 mb-4">
+          <h5 className="text-xs font-semibold text-gray-600 mb-2">Curva S — Legenda</h5>
+          <SCurveFitLegend />
+        </div>
+      )}
 
       <div className="mt-2 pt-4 border-t border-gray-200 flex gap-4">
         <Button fullWidth variant="secondary" onClick={onBack}>
