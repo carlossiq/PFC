@@ -47,7 +47,7 @@ async def search_sessions(
     """
     stmt = select(ResearchSession).options(
         selectinload(ResearchSession.inputs),
-        selectinload(ResearchSession.probe_queries),
+        selectinload(ResearchSession.probe_queries).selectinload(SessionProbeQuery.charts),
         selectinload(ResearchSession.ai_calls),
     )
 
@@ -89,6 +89,7 @@ async def get_session(
             .selectinload(SessionProbeQuery.article_links)
             .selectinload(ProbeQueryArticle.article),
             selectinload(ResearchSession.probe_queries).selectinload(SessionProbeQuery.term_links),
+            selectinload(ResearchSession.probe_queries).selectinload(SessionProbeQuery.charts),
             selectinload(ResearchSession.ai_calls),
         )
     )

@@ -1,7 +1,8 @@
-import { useState } from 'react'
-import { Trash2, ChevronDown, Play } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Trash2, ChevronDown, Play, ImageOff } from 'lucide-react'
 import { selectableCardClass } from './CandidatePicker'
 import { FieldCard } from './FieldCard'
+import { LoadingScreen } from './LoadingScreen'
 import { PROBE_FIELDS_BY_API } from '../constants/probeFields'
 import { FINAL_QUERY_VARIANT_LABELS } from '../constants/finalQueryVariants'
 import {
@@ -11,6 +12,8 @@ import {
   type ResearchSessionSummary,
 } from '../services/researchSession'
 import type { SessionInputRow, SessionProbeQueryRow } from '../services/sessionInput'
+import { getExistingChart, chartDataUrl } from '../services/report'
+import { SCurveFitLegend } from './SCurveFitLegend'
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString('pt-BR')
@@ -118,7 +121,60 @@ function ProbeQueryFieldsBlock({ query, title }: { query: SessionProbeQueryRow; 
   )
 }
 
-type InputBlockType = 'root' | 'generated' | 'patentQuery' | 'articleQuery' | 'patentFinalQuery' | 'articleFinalQuery'
+// Mostra uma curva S já gerada/salva pra essa sessão (ver SessionChart no
+// backend) - busca sob demanda (só quando o bloco é expandido, ver
+// SessionCard abaixo), nunca gera uma nova (essa tela é só consulta).
+function SCurveChartBlock({ sessionId, fonte, label }: { sessionId: number; fonte: 'ops' | 'scopus'; label: string }) {
+  const [isLoading, setIsLoading] = useState(true)
+  const [chartUrl, setChartUrl] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    getExistingChart(sessionId, fonte, 's_curve')
+      .then((chart) => {
+        if (cancelled) return
+        if (chart) {
+          setChartUrl(chartDataUrl(chart))
+        } else {
+          setFailed(true)
+        }
+      })
+      .catch((err) => {
+        console.error('Falha ao buscar a curva S salva:', err)
+        if (!cancelled) setFailed(true)
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId, fonte])
+
+  if (isLoading) return <LoadingScreen message="Carregando gráfico..." />
+
+  if (failed || !chartUrl) {
+    return (
+      <p className="flex items-center gap-2 text-sm text-gray-500">
+        <ImageOff size={14} />
+        Não foi possível carregar o gráfico salvo.
+      </p>
+    )
+  }
+
+  return <img src={chartUrl} alt={label} className="w-full rounded-md border border-gray-200" />
+}
+
+type InputBlockType =
+  | 'root'
+  | 'generated'
+  | 'patentQuery'
+  | 'articleQuery'
+  | 'patentFinalQuery'
+  | 'articleFinalQuery'
+  | 'patentSCurve'
+  | 'articleSCurve'
 
 interface SessionCardProps {
   session: ResearchSessionSummary
@@ -143,6 +199,8 @@ export function SessionCard({
   const articleQuery = session.probe_queries.find((q) => q.fonte === 'scopus' && q.tipo === null)
   const patentFinalQuery = session.probe_queries.find((q) => q.fonte === 'ops' && q.tipo !== null)
   const articleFinalQuery = session.probe_queries.find((q) => q.fonte === 'scopus' && q.tipo !== null)
+  const hasPatentSCurve = patentFinalQuery?.charts.some((c) => c.chart_type === 's_curve') ?? false
+  const hasArticleSCurve = articleFinalQuery?.charts.some((c) => c.chart_type === 's_curve') ?? false
   const totalIterations = getSessionTotalIterations(session)
   const totalTokens = getSessionTotalTokens(session)
   const models = getSessionModels(session)
@@ -401,6 +459,59 @@ export function SessionCard({
                       />
                     )}
                   </div>
+                )}
+              </div>
+            )}
+
+            {(hasPatentSCurve || hasArticleSCurve) && (
+              <div className={(root || generated || patentQuery || articleQuery || patentFinalQuery || articleFinalQuery) ? 'mt-5 pt-5 border-t border-gray-100' : ''}>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                  Curva S
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {hasPatentSCurve && (
+                    <button
+                      type="button"
+                      onClick={() => toggleBlock('patentSCurve')}
+                      className={`${selectableCardClass(expandedBlocks.has('patentSCurve'))} flex items-center justify-between`}
+                    >
+                      <h4 className="font-semibold text-sm text-gray-900">Curva S de patentes</h4>
+                      <ChevronDown
+                        size={16}
+                        className={`shrink-0 text-gray-400 transition-transform duration-300 ${expandedBlocks.has('patentSCurve') ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                  )}
+                  {hasArticleSCurve && (
+                    <button
+                      type="button"
+                      onClick={() => toggleBlock('articleSCurve')}
+                      className={`${selectableCardClass(expandedBlocks.has('articleSCurve'))} flex items-center justify-between`}
+                    >
+                      <h4 className="font-semibold text-sm text-gray-900">Curva S de artigos</h4>
+                      <ChevronDown
+                        size={16}
+                        className={`shrink-0 text-gray-400 transition-transform duration-300 ${expandedBlocks.has('articleSCurve') ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                  )}
+                </div>
+
+                {(expandedBlocks.has('patentSCurve') || expandedBlocks.has('articleSCurve')) && (
+                  <>
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {expandedBlocks.has('patentSCurve') && (
+                        <SCurveChartBlock sessionId={session.id} fonte="ops" label="Curva S de patentes" />
+                      )}
+                      {expandedBlocks.has('articleSCurve') && (
+                        <SCurveChartBlock sessionId={session.id} fonte="scopus" label="Curva S de artigos" />
+                      )}
+                    </div>
+                    <div className="mt-4 rounded-lg border border-gray-200 bg-white shadow-sm p-4">
+                      <h5 className="text-xs font-semibold text-gray-600 mb-2">Curva S — Legenda</h5>
+                      <SCurveFitLegend />
+                    </div>
+                  </>
                 )}
               </div>
             )}

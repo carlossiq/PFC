@@ -132,6 +132,14 @@ export function buildProbeQueryPayload(
   }
 }
 
+// Espelha schemas/session_input.py:SessionChartRow - só o suficiente pra
+// saber que um gráfico já foi gerado pra essa query final (ver SessionCard
+// em Workflow.tsx); os bytes em si vêm de getExistingChart (report.ts).
+export interface SessionChartRowPayload {
+  document_type: string
+  chart_type: string
+}
+
 export interface SessionProbeQueryRow extends SessionProbeQueryPayload {
   id: number
   session_id: number
@@ -139,6 +147,9 @@ export interface SessionProbeQueryRow extends SessionProbeQueryPayload {
   // formato "cru" que o probe search devolveria - só vem populado por GET
   // /research-session/{id} (retomar sessão), usado por sessionHydration.ts.
   documents: Record<string, unknown>[]
+  // Gráficos já gerados/salvos pra essa query final - vem populado por GET
+  // /research-session e /research-session/{id}.
+  charts: SessionChartRowPayload[]
 }
 
 export interface SessionInputRow {

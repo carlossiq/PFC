@@ -121,6 +121,19 @@ class SessionAiCallRow(SessionAiCallInput):
         from_attributes = True
 
 
+class SessionChartRow(BaseModel):
+    """Representação persistida de uma linha session_chart - só o
+    suficiente pro frontend saber que um gráfico já foi gerado pra essa
+    query final (ver SessionCard em Workflow.tsx); os bytes em si vêm de
+    GET /report/{session_id}/existing-chart, não daqui."""
+
+    document_type: str
+    chart_type: str
+
+    class Config:
+        from_attributes = True
+
+
 class SessionProbeQueryRow(SessionProbeQueryInput):
     """Representação persistida de uma linha session_probe_query."""
 
@@ -132,6 +145,10 @@ class SessionProbeQueryRow(SessionProbeQueryInput):
     # patent_to_raw_item/article_to_raw_item) - só populado por GET
     # /research-session/{id} (retomar sessão), não faz parte do payload de save.
     documents: list[dict[str, Any]] = Field(default_factory=list)
+    # Gráficos já gerados/salvos pra essa query final (ver SessionChart) -
+    # populado por GET /research-session e /research-session/{id}, não faz
+    # parte do payload de save.
+    charts: list[SessionChartRow] = Field(default_factory=list)
 
     class Config:
         from_attributes = True

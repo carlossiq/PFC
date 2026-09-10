@@ -201,6 +201,13 @@ async def persist_session_input(
         await session.refresh(generated_row)
     for row in probe_query_rows:
         await session.refresh(row)
+        # `charts` faz parte de SessionProbeQueryRow (ver SessionCard no
+        # frontend) e é uma relationship ORM de verdade - sem carregá-la
+        # aqui, o model_validate abaixo tentaria lazy-load-lá num contexto
+        # async e quebraria (MissingGreenlet). `attribute_names` faz o
+        # refresh carregar essa relationship especificamente, sem re-buscar
+        # as colunas escalares de novo (já cobertas pelo refresh acima).
+        await session.refresh(row, attribute_names=["charts"])
     for row in ai_call_rows:
         await session.refresh(row)
 
