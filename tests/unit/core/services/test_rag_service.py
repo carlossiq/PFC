@@ -12,6 +12,7 @@ def vector_store():
     store.query = AsyncMock(return_value=[{"text": "result", "relevance_score": 0.9}])
     store.clear = AsyncMock(return_value=True)
     store.count = MagicMock(return_value=5)
+    store.delete_by_metadata = AsyncMock()
     return store
 
 
@@ -67,6 +68,35 @@ async def test_clear_collection_delegates_to_store(svc, vector_store):
     result = await svc.clear_collection()
     vector_store.clear.assert_called_once()
     assert result is True
+
+
+# ---- get_context_for_section ----
+
+
+@pytest.mark.asyncio
+async def test_get_context_for_section_forwards_filter_metadata(svc, vector_store):
+    await svc.get_context_for_section("Introdução", "contexto", top_k=3, filter_metadata={"session_id": "1"})
+    vector_store.query.assert_called_once_with(
+        query_text="Introdução: contexto",
+        top_k=3,
+        filter_metadata={"session_id": "1"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_context_for_section_defaults_filter_metadata_to_none(svc, vector_store):
+    await svc.get_context_for_section("Introdução", "contexto")
+    _, kwargs = vector_store.query.call_args
+    assert kwargs["filter_metadata"] is None
+
+
+# ---- clear_by_metadata ----
+
+
+@pytest.mark.asyncio
+async def test_clear_by_metadata_delegates_to_store(svc, vector_store):
+    await svc.clear_by_metadata({"session_id": "1"})
+    vector_store.delete_by_metadata.assert_called_once_with({"session_id": "1"})
 
 
 # ---- chunk_text ----

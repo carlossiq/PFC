@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   postgres:
@@ -57,9 +55,78 @@ services:
     networks:
       - pfc_network
 
+  # Ollama - LLM local pra testar o pipeline do relatório (RAG + geração de
+  # texto por seção) antes de apontar OLLAMA_BASE_URL pro endpoint da
+  # intranet em produção. Expõe API compatível com OpenAI em /v1 - mesmo
+  # adapter (app/adapters/driven/llm/openai_compatible_adapter.py) serve os
+  # dois ambientes, só trocando OLLAMA_BASE_URL/OLLAMA_API_KEY no .env.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: pfc_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - pfc_network
+    # Repasse de GPU NVIDIA (Docker Desktop + WSL2) - sem isso o Ollama cai
+    # pro CPU silenciosamente (log "discovering available GPUs..." sem achar
+    # nada), o que deixa a geração de texto bem mais lenta. Requer driver
+    # NVIDIA com suporte a CUDA-on-WSL no host Windows (qualquer driver
+    # razoavelmente recente já tem) - nada precisa ser instalado dentro do
+    # container além disso.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # ChromaDB - vector store do RAG (app/adapters/driven/storage/chroma_adapter.py).
+  # Container HTTP em vez de PersistentClient embutido: um client em processo
+  # escrevendo direto num arquivo SQLite local não é seguro se o backend um
+  # dia subir com mais de 1 worker (uvicorn --workers N) - múltiplos
+  # processos concorrentes corromperiam o mesmo arquivo. Como container, fica
+  # no mesmo padrão de rede dos demais serviços (postgres/minio/ollama).
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: pfc_chromadb
+    ports:
+      # 8001 no host (não 8000) - a porta padrão do backend (uvicorn,
+      # core/config.py:port) já é 8000, os dois processos não podem
+      # ligar na mesma porta. Porta interna do container continua 8000
+      # (default do ChromaDB, sem relação com a porta do backend).
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - pfc_network
+
+  # Compilador de LaTeX - serviço HTTP dedicado (POST /compile) que envolve
+  # um toolchain TeX Live, chamado só sob demanda por
+  # POST /report/{session_id}/compile-pdf (nunca automaticamente na
+  # montagem do .tex) - ver latex-compiler/. Base TeX Live "minimal" (não
+  # "full") + só os pacotes que config/prompts/report_latex_template.py usa
+  # de fato (instalados via tlmgr no build da imagem, ~357MB base + poucas
+  # dezenas de MB dos pacotes) - não tectonic, porque o alvo final é uma
+  # intranet restrita, sem acesso pra baixar pacotes em tempo de compilação
+  # (o tlmgr install roda só uma vez, no build, que precisa de internet;
+  # o container já pronto não precisa mais).
+  latex-compiler:
+    build:
+      context: ./latex-compiler
+    container_name: pfc_latex_compiler
+    ports:
+      - "8090:8090"
+    networks:
+      - pfc_network
+
 volumes:
   postgres_data:
   minio_data:
+  ollama_data:
+  chroma_data:
 
 networks:
   pfc_network:

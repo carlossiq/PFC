@@ -14,13 +14,15 @@ INSTRUÇÕES OBRIGATÓRIAS:
 4. NÃO crie referências ou fontes fictícias
 5. Use APENAS dados e contexto fornecidos
 6. Quando usar dados do contexto, cite a fonte entre parênteses: (Fonte: nome_da_fonte)
-7. Estruture com títulos e subtítulos claros
+7. NÃO inclua o título/cabeçalho da seção na resposta (ex.: não escreva "## Seção: X" ou
+   qualquer variação) - o título já é adicionado automaticamente pelo documento final.
+   Comece direto pelo primeiro parágrafo do conteúdo.
 8. Use linguagem ativa e precisa
 9. Se informação não estiver disponível, indique explicitamente: [Informação não disponível]
 10. Interprete gráficos e dados bibliométricos de forma objetiva
 
 FORMATO:
-- Parágrafos bem estruturados com 3-5 frases cada
+- Parágrafos bem estruturados com 3-5 frases cada, sem títulos/subtítulos próprios
 - Use bullets ou numeração quando apropriado
 - Inclua conclusões baseadas em evidências"""
 
@@ -75,9 +77,7 @@ def _finalidade_prompt(theme: str, data: dict) -> str:
     area = data.get("area_of_study", "")
     keywords = data.get("keywords", [])
 
-    return f"""## Seção: Finalidade
-
-Escreva a seção de Finalidade para um relatório de prospecção tecnológica sobre: {theme}
+    return f"""Escreva a seção de Finalidade para um relatório de prospecção tecnológica sobre: {theme}
 
 Dados:
 - Área de Estudo: {area}
@@ -98,9 +98,7 @@ def _referencias_prompt(data: dict) -> str:
 
     refs_text = "\n".join([f"- {ref}" for ref in refs]) if refs else "[Nenhuma referência fornecida]"
 
-    return f"""## Seção: Referências
-
-Resuma e contextualize as seguintes referências:
+    return f"""Resuma e contextualize as seguintes referências:
 
 {refs_text}
 
@@ -114,9 +112,7 @@ Escreva 1-2 parágrafos."""
 
 def _objetivo_prompt(theme: str, data: dict) -> str:
     """Prompt for Objetivo (Objective) section."""
-    return f"""## Seção: Objetivo
-
-Descreva o objetivo específico desta prospecção tecnológica.
+    return f"""Descreva o objetivo específico desta prospecção tecnológica.
 
 Tema: {theme}
 Área: {data.get('area_of_study', 'N/A')}
@@ -132,9 +128,7 @@ Escreva 2-3 parágrafos em português formal."""
 
 def _introducao_prompt(theme: str, context: str, data: dict) -> str:
     """Prompt for Introdução (Introduction) section."""
-    return f"""## Seção: Introdução
-
-Contexto Recuperado:
+    return f"""Contexto Recuperado:
 {context}
 
 Escreva a Introdução para um relatório de prospecção tecnológica sobre: {theme}
@@ -157,9 +151,7 @@ def _metodologia_prompt(theme: str, data: dict) -> str:
 
     apis_text = ", ".join(apis) if apis else "múltiplas fontes"
 
-    return f"""## Seção: Metodologia
-
-Tema: {theme}
+    return f"""Tema: {theme}
 Período: {period_start} a {period_end}
 Fontes: {apis_text}
 
@@ -186,9 +178,7 @@ def _informacoes_cientificas_prompt(context: str, data: dict) -> str:
     )
     fields_text = ", ".join(top_fields[:5]) if top_fields else "N/A"
 
-    return f"""## Seção: Informações Científicas
-
-Contexto:
+    return f"""Contexto:
 {context}
 
 Dados Disponíveis:
@@ -219,9 +209,7 @@ def _informacoes_tecnologicas_prompt(context: str, data: dict) -> str:
     )
     cpcs_text = ", ".join(top_cpcs[:5]) if top_cpcs else "N/A"
 
-    return f"""## Seção: Informações Tecnológicas
-
-Contexto:
+    return f"""Contexto:
 {context}
 
 Dados Disponíveis:
@@ -247,9 +235,7 @@ def _tendencias_ciclo_vida_prompt(context: str, data: dict) -> str:
     growth_rate = data.get("growth_rate", "não especificado")
     peak_year = data.get("peak_year", "não especificado")
 
-    return f"""## Seção: Tendências e Ciclo de Vida da Tecnologia
-
-Contexto:
+    return f"""Contexto:
 {context}
 
 Dados da Curva-S:
@@ -275,9 +261,7 @@ def _conclusao_prompt(theme: str, context: str, data: dict) -> str:
 
     findings_text = "\n".join([f"- {f}" for f in main_findings]) if main_findings else "Sem achados específicos"
 
-    return f"""## Seção: Conclusão
-
-Tema: {theme}
+    return f"""Tema: {theme}
 
 Contexto da Pesquisa:
 {context}
@@ -306,9 +290,7 @@ def _referencias_bibliograficas_prompt(data: dict) -> str:
     else:
         refs_formatted = "[Nenhuma referência disponível]"
 
-    return f"""## Seção: Referências Bibliográficas
-
-Organize e apresente as seguintes referências em formato de lista estruturada:
+    return f"""Organize e apresente as seguintes referências em formato de lista estruturada:
 
 {refs_formatted}
 

@@ -60,6 +60,17 @@ class ResearchSession(Base):
         back_populates="session",
         cascade="all, delete-orphan",
     )
+    report_sections: Mapped[list["SessionReportSection"]] = relationship(
+        "SessionReportSection",
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
+    report: Mapped[Optional["SessionReport"]] = relationship(
+        "SessionReport",
+        back_populates="session",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
 
 class SessionInput(Base):
@@ -361,3 +372,77 @@ class SessionChart(Base):
     )
 
     probe_query: Mapped["SessionProbeQuery"] = relationship("SessionProbeQuery", back_populates="charts")
+
+
+class SessionReportSection(Base):
+    """
+    Texto de uma seção do relatório REPTEC/AGITEC dessa sessão - só as 7
+    seções de IA (finalidade|objetivo|introducao|informacoes_cientificas|
+    informacoes_tecnologicas|tendencias_ciclo_vida|conclusao, ver
+    ReportWriterService.AI_SECTIONS) passam pelas duas etapas
+    (rag_context depois generated_text); Metodologia/Referências/Referências
+    Bibliográficas são fixas/locais e nunca geram linha aqui (ver
+    config/prompts/report_static_sections.py).
+
+    Persistência incremental por seção é o próprio pedido do usuário: uma
+    rota calcula/persiste o contexto de RAG, outra envia esse contexto pro
+    LLM e persiste o texto gerado - cada chamada carrega só o prompt daquela
+    seção (não o relatório inteiro), e o front sabe exatamente qual etapa
+    está em andamento. Upsert por (session_id, section_key) - regenerar uma
+    seção sobrescreve a linha, mesmo padrão de SessionChart.
+    """
+
+    __tablename__ = "session_report_section"
+    __table_args__ = (
+        UniqueConstraint("session_id", "section_key", name="uq_session_report_section_session_id_section_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("research_session.id"), nullable=False, index=True)
+    section_key: Mapped[str] = mapped_column(String(50), nullable=False)
+    rag_context: Mapped[Optional[str]] = mapped_column(Text)
+    generated_text: Mapped[Optional[str]] = mapped_column(Text)
+    # "rag_done" logo após a rota de RAG; "generated" depois que a rota de
+    # geração roda com sucesso - permite o front saber em que ponto cada
+    # seção está sem precisar inferir de rag_context/generated_text serem
+    # None ou não.
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="rag_done")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    session: Mapped["ResearchSession"] = relationship("ResearchSession", back_populates="report_sections")
+
+
+class SessionReport(Base):
+    """
+    Manifesto do relatório LaTeX montado pra essa sessão (uma linha por
+    sessão - upsert por session_id, sobrescreve numa nova montagem, mesmo
+    espírito "regenerar não acumula versões" de SessionChart).
+
+    `tex_object_key` é preenchido por POST /report/{session_id}/assemble
+    (nunca compila PDF - ver ReportLatexService.render_and_upload_tex).
+    `pdf_object_key` só é preenchido depois, por
+    POST /report/{session_id}/compile-pdf, chamado sob demanda pelo usuário
+    - `status="tex_ready"` até lá, mesmo que o .tex já exista.
+    """
+
+    __tablename__ = "session_report"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("research_session.id"), unique=True, nullable=False, index=True
+    )
+    tex_object_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    pdf_object_key: Mapped[Optional[str]] = mapped_column(String(500))
+    # "tex_ready" | "pdf_failed" | "complete"
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="tex_ready")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    session: Mapped["ResearchSession"] = relationship("ResearchSession", back_populates="report")

@@ -103,10 +103,12 @@ class RAGService:
         section_name: str,
         section_description: str,
         top_k: int = 5,
+        filter_metadata: Optional[dict[str, Any]] = None,
     ) -> str:
         results = await self.query(
             query_text=f"{section_name}: {section_description}",
             top_k=top_k,
+            filter_metadata=filter_metadata,
         )
         if not results:
             return ""
@@ -131,6 +133,14 @@ class RAGService:
         result = await self._store.clear()
         logger.info("collection_cleared success=%s", result)
         return result
+
+    async def clear_by_metadata(self, filter_metadata: dict[str, Any]) -> None:
+        """Remove só os chunks que casam com `filter_metadata` (ex.: de uma
+        `session_id` específica), sem afetar o resto da coleção - usado
+        antes de reindexar uma sessão (ver ReportWriterService), pra
+        regenerar o relatório não duplicar contexto no RAG."""
+        await self._store.delete_by_metadata(filter_metadata)
+        logger.info("collection_cleared_by_metadata filter=%s", filter_metadata)
 
     def get_stats(self) -> dict[str, Any]:
         try:

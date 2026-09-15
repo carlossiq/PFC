@@ -113,11 +113,55 @@ def build_container(settings: Settings) -> dict[str, Any]:
     )
 
     # ------------------------------------------------------------------
+    # Geração de texto do relatório (Ollama local / LLM da intranet,
+    # compatível com a API de chat completions da OpenAI) - usado por
+    # ReportWriterService pra redigir as seções de IA do relatório LaTeX.
+    # Sempre construído: o adapter só conecta na primeira chamada real
+    # (httpx.AsyncClient não conecta no __init__), então o endpoint estar
+    # fora do ar não impede o resto do app de subir - só a rota de geração
+    # daquela seção falha quando chamada.
+    # ------------------------------------------------------------------
+    from app.adapters.driven.llm.openai_compatible_adapter import OpenAICompatibleAdapter
+
+    text_generation_service = OpenAICompatibleAdapter(
+        base_url=settings.ollama_base_url,
+        model=settings.ollama_model,
+        api_key=settings.ollama_api_key,
+        timeout_seconds=settings.ollama_request_timeout_seconds,
+    )
+    _services_to_close.append(text_generation_service)
+
+    # ------------------------------------------------------------------
+    # RAG (ChromaDB) - contexto por seção do relatório (ReportWriterService).
+    # Best-effort: HttpClient conecta no __init__, então se o container
+    # `chromadb` não estiver no ar, `rag_service` fica None (log de aviso)
+    # em vez de derrubar a subida do app - mesmo espírito dos demais
+    # serviços opcionais acima (Lens/OPS/Scopus). Nesse caso só a rota de
+    # RAG por seção fica indisponível (503); o resto do app funciona normal.
+    # ------------------------------------------------------------------
+    from app.core.services.rag_service import RAGService
+    from app.adapters.driven.storage.chroma_adapter import ChromaVectorStoreAdapter
+
+    rag_service: Any = None
+    try:
+        vector_store = ChromaVectorStoreAdapter(
+            host=settings.chroma_host,
+            port=settings.chroma_port,
+            embedding=embedding,
+        )
+        rag_service = RAGService(vector_store)
+        logger.info("container_chromadb_connected host=%s port=%s", settings.chroma_host, settings.chroma_port)
+    except Exception as exc:
+        logger.warning("container_chromadb_unavailable error=%s", exc)
+
+    # ------------------------------------------------------------------
     # Pure core services (sem dependências externas)
     # ------------------------------------------------------------------
     from app.core.services.dedup_service import DedupService
     from app.core.services.chat_service import ChatService
     from app.core.services.report_service import ReportService
+    from app.core.services.report_writer_service import ReportWriterService
+    from app.core.services.report_latex_service import ReportLatexService
     from app.core.services.statistical_inference_service import StatisticalInferenceService
 
     chat_service = ChatService(
@@ -128,6 +172,16 @@ def build_container(settings: Settings) -> dict[str, Any]:
         openalex=openalex_service,
     )
     report_service = ReportService(storage=storage_service)
+    report_writer_service = ReportWriterService(
+        rag=rag_service,
+        text_generation=text_generation_service,
+        settings=settings,
+    )
+    report_latex_service = ReportLatexService(
+        storage=storage_service,
+        latex_compiler_url=settings.latex_compiler_url,
+    )
+    _services_to_close.append(report_latex_service)
     inference_service = StatisticalInferenceService(
         chat_service=chat_service,
         embedding=embedding,
@@ -143,8 +197,11 @@ def build_container(settings: Settings) -> dict[str, Any]:
             "dedup": DedupService(),
             "chat": chat_service,
             "report": report_service,
+            "report_writer": report_writer_service,
+            "report_latex": report_latex_service,
             "inference": inference_service,
             "storage": storage_service,
+            "text_generation": text_generation_service,
         },
         "_settings": settings,
         "_services_to_close": _services_to_close,

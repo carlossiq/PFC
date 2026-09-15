@@ -135,6 +135,30 @@ class Settings(BaseSettings):
     minio_bucket: str = "session-charts"
     minio_secure: bool = False
 
+    # Relatório LaTeX (RAG local + LLM compatível com OpenAI) - ver
+    # app/core/services/report_writer_service.py e
+    # app/adapters/driven/llm/openai_compatible_adapter.py. `ollama_base_url`
+    # aponta pro container Ollama local em dev (docker-compose.yml) ou pro
+    # endpoint da intranet em produção - troca é só configuração, o adapter
+    # é o mesmo nos dois casos (ambos expõem /v1/chat/completions). Segredos
+    # reais (API key da intranet) só em `.env`, nunca aqui/`.env.example`.
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_api_key: Optional[str] = None
+    ollama_model: str = "qwen2.5:3b-instruct"
+    ollama_request_timeout_seconds: int = 300
+
+    # ChromaDB (vector store do RAG) - roda como container HTTP (chromadb/chroma
+    # em docker-compose.yml), não embutido, pra ser seguro com múltiplos
+    # workers do backend (ver app/adapters/driven/storage/chroma_adapter.py).
+    chroma_host: str = "localhost"
+    chroma_port: int = 8001
+    rag_top_k_per_section: int = 5
+
+    # Compilação de PDF do relatório - serviço HTTP dedicado (texlive), só
+    # chamado sob demanda (POST /report/{session_id}/compile-pdf), nunca
+    # automaticamente na montagem do .tex.
+    latex_compiler_url: str = "http://localhost:8090"
+
     # Fuzzy Matching de entidades (busca final OPS/Scopus)
     # Agrupa entidades que provavelmente são a mesma (variações de
     # grafia/pontuação/sufixo societário, ex: "Acme Corp" vs "ACME CORP."

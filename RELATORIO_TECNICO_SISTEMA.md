@@ -104,7 +104,7 @@ O módulo de report segue uma versão mais modesta do mesmo princípio: `report_
 | Análise de complexidade | `app/core/services/query_complexity.py` | `QueryComplexityAnalyzer` — pontua a complexidade estrutural de uma query booleana (§6) |
 | Deduplicação | `app/core/services/dedup_service.py` | Gera `dedup_key` a partir de identificadores primários ou título+ano normalizado |
 | Geração de relatórios/gráficos | `app/core/services/report_service.py` | Curva S, top entidades, distribuições (§10) — implementação ativa, conectada à rota |
-| RAG (não conectado em produção) | `app/core/services/rag_service.py` | Lógica de chunking/RAG contra `VectorStorePort` — ver §13 |
+| RAG do relatório | `app/core/services/rag_service.py`, `report_writer_service.py` | Chunking/RAG contra `VectorStorePort` (adapter ChromaDB, §13) + orquestração das 7 seções de IA |
 | Extração de termos (NLP) | `services/nlp/term_extraction.py` | Pipeline completo de extração/pontuação de termos (§5) |
 | Embeddings | `services/nlp/embedding_service.py` | Geração de embeddings (`all-MiniLM-L6-v2`) para relevância de documentos |
 | Relevância documento-tema | `services/nlp/relevance_service.py` | Similaridade de cosseno entre embedding do tema e do documento |
@@ -118,7 +118,7 @@ O módulo de report segue uma versão mais modesta do mesmo princípio: `report_
 | Repositórios | `services/db/repositories.py` | Padrão *Repository* sobre as tabelas genéricas de documentos |
 | Persistência orquestrada | `services/db/persistence_service.py` | Relevância → dedup → normalização → persistência |
 | Normalização de metadados | `services/db/normalization_service.py` | Unifica payloads heterogêneos (OPS/Scopus/Lens) em schemas padronizados |
-| LLM local (não conectado) | `services/ollama_service.py` | Cliente completo para Ollama local — ver §13 |
+| LLM do relatório (local/intranet) | `app/adapters/driven/llm/openai_compatible_adapter.py` | `TextGenerationPort` compatível com OpenAI - serve Ollama local e o LLM da intranet, só trocando config (§13.3) |
 | Custo de tokens (código morto) | `services/token_cost_calculator.py` | Tabela de preços por modelo; **não é importado em nenhum lugar do app** |
 
 ---
@@ -474,6 +474,9 @@ Este é o schema **hoje efetivamente usado por toda a aplicação em produção*
 | `patent` / `article` | Documentos deduplicados globalmente por `dedup_key`, reutilizados entre sessões e entre estágio probe/final |
 | `probe_query_patent` / `probe_query_article` | Tabelas de associação N:N entre `session_probe_query` e `patent`/`article`, carregando `relevance_score` |
 | `probe_query_term` | Termos extraídos (§5), com `score`, `frequency`, `selected` — só populada para linhas de `tipo IS NULL` (extração de termos é etapa exclusiva do estágio probe) |
+| `session_chart` | Um PNG de report gerado (§10), com `object_key` (chave MinIO) — FK pra `session_probe_query`, unique `(probe_query_id, chart_type)` |
+| `session_report_section` | Texto de uma seção do relatório LaTeX (§13.1/13.2) — `rag_context`/`generated_text`/`status`, FK pra `research_session`, unique `(session_id, section_key)` |
+| `session_report` | Manifesto do `.tex`/PDF montado (§13.2) — `tex_object_key`/`pdf_object_key` (chaves MinIO), FK única pra `research_session` |
 
 ### 9.2 Reuso das tabelas "probe" para os dados "final" (via `tipo`/`parent_id`)
 
@@ -624,9 +627,9 @@ O módulo planejado consistiria em:
 
 ---
 
-## 12. 🔜 Planejado: Persistência de Imagens no MinIO
+## 12. ✅ Implementado: Persistência de Imagens no MinIO
 
-**Status: totalmente ausente.** Busca por "minio", "s3", "boto3" em todo o repositório não retornou nenhuma ocorrência; `requirements.txt` não lista `boto3` nem `minio`; `docker-compose.yml` só define `postgres` e `pgadmin`, nenhum serviço de armazenamento de objetos. Os PNGs gerados hoje (§10) ficam apenas em disco local do processo do backend.
+**Status: implementado desde então** (esta seção descrevia um gap real na época em que foi escrita - `docker-compose.yml` hoje já define o serviço `minio`, `requirements.txt` lista `minio>=7.2.0`, e `app/adapters/driven/storage/minio_adapter.py` + `SessionChart.object_key` (§9.1) são o caminho real de upload/persistência dos PNGs gerados por `ReportService`, ver §10). O texto abaixo (motivação e desenho híbrido local/institucional) continua válido como contexto de decisão.
 
 **O que é o MinIO**: um servidor de armazenamento de objetos open-source, compatível com a API S3 da AWS — ou seja, expõe o mesmo protocolo de "buckets" e "objetos" que o Amazon S3, mas pode rodar em infraestrutura própria (self-hosted), sem depender de nuvem pública. É código livre (Apache 2.0). O serviço que ele presta é: armazenar arquivos binários (aqui, os PNGs de gráficos, e futuramente talvez o PDF/LaTeX compilado do relatório) fora do banco relacional, endereçáveis por chave (`bucket/caminho/arquivo.png`), com controle de acesso e possibilidade de geração de URLs assinadas temporárias.
 
@@ -634,30 +637,69 @@ O módulo planejado consistiria em:
 
 ---
 
-## 13. 🔜 Planejado: Módulo de LLM Local com RAG (geração de relatório em LaTeX, padrão AGITEC)
+## 13. ✅ Implementado (backend): Relatório LaTeX via RAG local + LLM (padrão REPTEC/AGITEC)
 
-**Status: infraestrutura parcial existe, mas desconectada de qualquer fluxo de produção.**
+**Status: pipeline de backend implementado e testado (unitário); tela dedicada no frontend ainda 🔜 (continua placeholder em `OutrosSteps.tsx`, ver §3).**
 
-O que já existe hoje, mas não está em uso ativo:
-- `services/ollama_service.py`: cliente completo para **Ollama** (executor de LLM local, `http://localhost:11434`), com `generate_text()`, `generate_text_with_context()`, `generate_embedding()`/`generate_embeddings_batch()` (modelo padrão `nomic-embed-text`) e `health_check()`. Confirmado por busca no repositório: não é chamado por nenhuma rota ou serviço de produção.
-- `chromadb` está em `requirements.txt`, e há um `.chroma_db/chroma.sqlite3` local já populado — ChromaDB é o *vector store* planejado para os embeddings do RAG.
-- `services/rag_service.py` (versão legada) já une ChromaDB + `OllamaService`, mas o `ollama_service` armazenado nunca é chamado dentro da classe — a indexação usa a função de embedding *default* do ChromaDB, não os embeddings do Ollama; a integração está esboçada, mas incompleta.
-- `app/core/services/rag_service.py` (versão hexagonal, contra `VectorStorePort`) existe mas **não está registrado em `app/container.py`** — não há adaptador concreto de `VectorStorePort` instanciado hoje; o serviço só é exercitado em testes unitários.
-- `config/prompts/report_prompts.py` já referencia o estilo textual "REPTEC/AGITEC" (seções: Finalidade, Objetivo, Introdução, Metodologia, Informações Científicas/Tecnológicas, Tendências e Ciclo de Vida, Conclusão, Referências) — mas gera apenas texto em português via LLM remota, sem nenhuma menção a LaTeX, `.tex` ou compilação de documento.
-- O provedor de LLM efetivamente usado em produção hoje é **remoto e pago** (Anthropic/Gemini) — não há LLM local no caminho de execução real.
+A estrutura real do relatório (capa, sumário, 8 seções numeradas, bloco de assinaturas) foi extraída de um REPTEC real do AGITEC (`notes/REPTEC_001_2023_TETRA.pdf`, relatório 001/2023 sobre TETRA), não inventada. Ela deixou claro que nem toda seção deve passar por LLM:
 
-**O que é planejado**:
-1. **RAG local**: cálculo de embeddings feito localmente (via `OllamaService.generate_embedding` ou similar), indexados no ChromaDB já presente no repositório.
-2. Na hora de gerar o relatório, os trechos mais relevantes recuperados do RAG seriam passados **como texto puro dentro do prompt** (não via *function calling*/*tool use* — uma técnica de RAG "manual", concatenando o contexto recuperado diretamente na mensagem de usuário) para uma **LLM local** (Ollama local, com possibilidade de apontar futuramente para uma LLM hospedada pelo Exército, no mesmo espírito de infraestrutura híbrida planejado para o MinIO em §12).
-3. A LLM local geraria o relatório final já formatado no **padrão AGITEC** em **LaTeX** (não apenas texto simples, como hoje faz `report_prompts.py` para a LLM remota) — reaproveitando a estrutura de seções já esboçada no prompt REPTEC/AGITEC existente, mas mudando o formato de saída e o provedor de LLM (de remoto/pago para local/gratuito), justamente porque a geração final do relatório consome muito mais contexto (todos os gráficos, estatísticas, termos) do que as etapas anteriores, tornando o custo de LLM remota proibitivo para essa etapa específica.
+| Seção | Como é produzida |
+|---|---|
+| Capa, Sumário | Estáticas (template Jinja2 + `\tableofcontents` do LaTeX) |
+| 1 Finalidade, 3 Objetivo, 4 Introdução | **IA** (RAG + LLM) |
+| 2 Referências (DIEx/Ofício que originou o pedido) | Dado administrativo, inserido pelo usuário |
+| 5 Metodologia (5.1/5.2/5.3) | Texto-base **fixo/local**, quase idêntico em todo REPTEC - só interpola palavras-chave/período/bases desta pesquisa (`config/prompts/report_static_sections.py`); nunca passa por LLM |
+| 6 Resultados (6.1 Científicas / 6.2 Tecnológicas / 6.3 Ciclo de Vida) | **IA** (RAG + LLM), uma chamada por subseção - a mais importante, inclui os gráficos já gerados por `ReportService` (§10) embutidos no `.tex` |
+| 7 Conclusão | **IA** (RAG + LLM) |
+| 8 Referências Bibliográficas | **Fixa** (as mesmas obras citadas pelo texto-base da Metodologia) **+ adicionadas pelo usuário** - nunca gerada por LLM, pra não arriscar citação inventada (mesma regra já em `REPORT_SYSTEM_PROMPT`) |
+| Assinaturas (Elaborado/Revisado/Aprovado) | Nomes/postos default de config, sobrescrevíveis por requisição |
+
+Total: **7 seções de IA** (`finalidade`, `objetivo`, `introducao`, `informacoes_cientificas`, `informacoes_tecnologicas`, `tendencias_ciclo_vida`, `conclusao` - as chaves de `ReportWriterService.AI_SECTIONS`), das 10 originalmente esboçadas em `config/prompts/report_prompts.py` (`metodologia`, `referencias` e `referencias_bibliograficas` saíram do fluxo de LLM).
+
+### 13.1 Processo fatiado por seção, em duas rotas independentes
+
+Pedido de design explícito: cada seção de IA passa por **duas chamadas HTTP separadas**, não uma única rota que "gera o relatório inteiro":
+
+- `POST /report/{session_id}/sections/{section_key}/rag` - indexa (se ainda não indexado) título+resumo dos documentos da busca final dessa sessão no ChromaDB e recupera o contexto relevante pra aquela seção; persiste em `session_report_section.rag_context`. Não chama o LLM.
+- `POST /report/{session_id}/sections/{section_key}/generate` - exige que a rota de RAG já tenha rodado pra aquela seção (422 caso contrário); monta o prompt (`report_prompts.get_section_prompt`) com o contexto já persistido, chama o LLM, escapa caracteres especiais de LaTeX no resultado e persiste em `generated_text`.
+
+Motivação dupla: (1) o frontend sabe exatamente qual etapa está em andamento (loading granular por seção, não uma barra de progresso opaca), e (2) cada chamada ao LLM carrega só o prompt+contexto de **uma** seção, não o relatório inteiro - reduz a janela de tokens por chamada, relevante porque o LLM usado nessa etapa é um recurso compartilhado da intranet (§13.3).
+
+Seções fixas/locais têm rota própria, sem RAG/LLM: `POST /report/{session_id}/sections/static` (Metodologia + Referências Bibliográficas, a partir de `config/prompts/report_static_sections.py`).
+
+### 13.2 Montagem do `.tex` e compilação de PDF - duas rotas, PDF só sob demanda
+
+- `POST /report/{session_id}/assemble` - lê todas as seções já persistidas (IA + estáticas), baixa **só os PNGs que já existem no MinIO** (via `SessionChart` - nunca dispara geração de gráfico novo; gráficos ausentes entram em `charts_missing` na resposta, sem bloquear), renderiza o template Jinja2 (`config/prompts/report_latex_template.py`, delimitadores customizados `\VAR{}`/`\BLOCK{}` pra não colidir com `{}` do LaTeX) e sobe o `.tex` pro MinIO. **Nunca compila PDF.**
+- `POST /report/{session_id}/compile-pdf` - rota separada, só chamada quando o usuário decide compilar (nunca automaticamente); baixa o `.tex` + imagens do MinIO, chama um serviço HTTP dedicado (`latex-compiler/`, container próprio - base `texlive/texlive:latest-minimal`, ~357 MB, + só os pacotes que o template usa de fato, instalados via `tlmgr` no build da imagem; não `tectonic`, porque o alvo final é uma intranet restrita, sem acesso pra baixar pacotes em tempo de compilação - o build da imagem precisa de internet uma vez, o container pronto não) e sobe o PDF resultante. Falha de compilação não apaga o `.tex` já persistido.
+
+Persistência: `session_report_section` (uma linha por seção, upsert por `(session_id, section_key)` - `rag_context`/`generated_text`/`status`) e `session_report` (uma linha por sessão, upsert por `session_id` - `tex_object_key`/`pdf_object_key`/`status`), ambas via migração Alembic própria, mesmo padrão "regenerar sobrescreve, não acumula" de `SessionChart` (§9.1).
+
+### 13.3 LLM: adapter único, compatível com OpenAI, local ou intranet por configuração
+
+O LLM usado nessa etapa é operado pelo Exército numa intranet, gratuito mas remoto (`OLLAMA_BASE_URL`/`OLLAMA_API_KEY` apontando pra um proxy compatível com a API de chat completions da OpenAI, ex. LiteLLM, em `/v1/chat/completions`) - só texto (prompt + contexto já recuperado pelo RAG) sai pra esse endpoint, nunca vetores. `app/adapters/driven/llm/openai_compatible_adapter.py` implementa um novo port, `TextGenerationPort` (`app/core/ports/outbound/text_generation_port.py` - deliberadamente menor que `LLMPort`, que é voltado a JSON estruturado das etapas de refino de tema/query, §6-§8), usando só `httpx`.
+
+Como o Ollama local também expõe esse mesmo formato OpenAI-compatible em `/v1`, **o mesmo adapter serve os dois ambientes** - testar o pipeline inteiro localmente antes de apontar pro endpoint real da intranet é só trocar `OLLAMA_BASE_URL`/`OLLAMA_API_KEY` no `.env`, sem mudar código. Container `ollama` (imagem oficial, `docker-compose.yml`) cobre esse teste local. `services/ollama_service.py` (API nativa do Ollama, `/api/generate`) não foi reaproveitado propositalmente, por esse motivo.
+
+### 13.4 RAG: ChromaDB como container, embeddings reaproveitados do pipeline existente
+
+`app/adapters/driven/storage/chroma_adapter.py` implementa `VectorStorePort` (já existia como Protocol, sem adapter concreto) contra `chromadb.HttpClient` - **container** (`chromadb/chroma`, `docker-compose.yml`), não `PersistentClient` embutido em disco: um client em processo escrevendo direto num SQLite local não seria seguro se o backend um dia subir com mais de 1 worker (`uvicorn --workers N`), e como container fica no mesmo padrão de rede dos demais serviços (postgres/minio/ollama).
+
+Os embeddings usados pra indexar/consultar o RAG **reaproveitam o `EmbeddingPort` já existente** (sentence-transformers, o mesmo usado por KeyBERT na extração de termos, §5) via uma função de embedding customizada - não os embeddings do Ollama (`nomic-embed-text`), diferente do que o `services/rag_service.py` legado esboçava. Duas consequências: (1) corrige o bug do código legado, que nunca chamava os embeddings do Ollama de fato e usava o default do ChromaDB; (2) o RAG (indexação e busca) fica **100% independente de o LLM estar no ar** - só a geração de texto final depende do Ollama local/intranet.
+
+Corpus indexado por sessão: título + resumo (`abstract`) dos documentos (`Patent`/`Article`, §9.1) da busca final dessa sessão, isolados por `session_id` no metadata de cada chunk (coleção única `report_rag`, não uma coleção por sessão). `Patent.abstract`/`Article.abstract` já existem como colunas e já são preenchidos no fluxo real (`session_probe_documents.py`) - mas, como o payload de artigos da busca final normalmente chega vazio do frontend (`buildProbeQueryPayload` - ver comentário em `report_router.py::generate_article_s_curve`), o corpus de RAG hoje é majoritariamente de **patentes**; o código de indexação trata artigos ausentes normalmente, sem erro.
+
+### 13.5 O que ainda não existe
+- Tela "Geração do Relatório" no frontend - segue placeholder ("Conteúdo em construção") em `OutrosSteps.tsx`.
+- Correção do payload de artigos da busca final pra persistir abstracts de artigo de forma confiável (§13.4).
+- Qualquer verificação em produção contra o endpoint real da intranet - testado até aqui contra Ollama local (container) e testes unitários com fakes/mocks para `TextGenerationPort`/`VectorStorePort`.
 
 ---
 
-## 14. Persistência SQL: PostgreSQL — ✅ Implementado (papel de chaves MinIO ainda 🔜)
+## 14. ✅ Implementado: Persistência SQL: PostgreSQL (incl. chaves MinIO)
 
 O PostgreSQL **já está ativo hoje** como banco de produção (não é trabalho futuro) — `.env`/`.env.example` definem `DATABASE_URL=postgresql+asyncpg://...`, `docker-compose.yml` já sobe um serviço `postgres:16-alpine` (+ `pgadmin`), e `core/config.py` tem esse mesmo valor como default. O arquivo `app.db` (SQLite) presente na raiz do projeto é resíduo legado — o fallback para SQLite em `db/session.py` só ocorre se `DATABASE_URL` não estiver definida (usado nos testes automatizados, via `tests/conftest.py`).
 
-O que falta, especificamente, é a parte descrita em §12: hoje nenhuma coluna do schema ativo (§9.1) referencia uma chave de objeto MinIO/S3 — os únicos campos relacionados a artefatos gerados em qualquer schema do projeto são `latex_content` (texto puro, nunca preenchido no fluxo ativo) e `report_url` (string de URL livre) no schema legado (§9.4), nenhum deles estruturado como referência a bucket/objeto. Quando o MinIO for integrado, o modelo natural é adicionar, na tabela de artefatos de relatório (a ser criada, ou reaproveitando `session_probe_query`/uma nova tabela de "relatório da sessão"), uma coluna com a chave do objeto MinIO por gráfico/arquivo gerado, em vez de (ou além de) o caminho de arquivo local hoje devolvido por `ReportGraphicsResponse.charts[].path`.
+A parte antes descrita como faltante em §12 já existe: `SessionChart.object_key` (§9.1) guarda a chave do objeto MinIO de cada gráfico gerado por `ReportService`, e `SessionReport.tex_object_key`/`pdf_object_key` (§9.1, §13.2) fazem o mesmo pro `.tex`/PDF do relatório final - ambos String(500), referenciando `bucket/caminho` diretamente, sem URL livre. Os campos `latex_content`/`report_url` mencionados nas versões anteriores desta seção eram do schema legado (§9.4, `db/research_models.py`), que não é o caminho real.
 
 ---
 
@@ -691,16 +733,28 @@ O que falta, especificamente, é a parte descrita em §12: hoje nenhuma coluna d
 [Persistência PostgreSQL] research_session → session_input → session_probe_query
       │  (tipo=NULL para probe, tipo=variant para final) → patent/article (dedup global)
       ▼
-[ReportService] gráficos (curva S logística + top entidades + distribuições) → PNG em disco local
+[ReportService] gráficos (curva S logística + top entidades + distribuições) → PNG
+      │
+      ▼
+[MinIO] upload dos PNGs, chave salva no Postgres (SessionChart)
+      │
+      ▼  (por seção de IA - finalidade/objetivo/introdução/resultados x3/conclusão)
+[RAG local - ChromaDB + EmbeddingPort] POST .../sections/{key}/rag
+      │  indexa título+resumo da busca final (isolado por session_id), recupera contexto
+      ▼
+[LLM local/intranet - OpenAI-compatible] POST .../sections/{key}/generate
+      │  só texto (prompt + contexto já recuperado) sai pro LLM; nunca vetores
+      ▼
+[Seções fixas/locais] POST .../sections/static (Metodologia + Referências Bibliográficas)
+      │
+      ▼
+[Relatório LaTeX, padrão REPTEC/AGITEC] POST .../assemble → .tex editável no MinIO
+      │
+      ▼  🔜 (sob demanda do usuário, rota separada - nunca automático)
+[Compilação PDF] POST .../compile-pdf → latex-compiler (TeX Live) → PDF no MinIO
       │
       ▼  🔜 (planejado, não implementado)
-[MinIO] upload dos PNGs, chave salva no Postgres
-      │
-      ▼  🔜 (planejado, não implementado)
-[RAG local + Ollama] embeddings locais dos dados/gráficos → LLM local
-      │
-      ▼  🔜 (planejado, não implementado)
-[Relatório LaTeX, padrão AGITEC] documento final compilado
+[Tela "Geração do Relatório" no frontend]
 ```
 
 ---
