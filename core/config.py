@@ -145,7 +145,7 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_api_key: Optional[str] = None
     ollama_model: str = "qwen2.5:3b-instruct"
-    ollama_request_timeout_seconds: int = 300
+    ollama_request_timeout_seconds: int = 600
 
     # ChromaDB (vector store do RAG) - roda como container HTTP (chromadb/chroma
     # em docker-compose.yml), não embutido, pra ser seguro com múltiplos

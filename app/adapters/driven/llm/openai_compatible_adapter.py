@@ -57,6 +57,29 @@ class OpenAICompatibleAdapter:
         except httpx.ConnectError as exc:
             logger.error("text_generation_connect_error", base_url=self._base_url, error=str(exc))
             raise RuntimeError(f"Não foi possível conectar ao servidor de LLM em {self._base_url}.") from exc
+        except httpx.TimeoutException as exc:
+            logger.error(
+                "text_generation_timeout",
+                base_url=self._base_url,
+                model=self._model,
+                timeout_seconds=self._client.timeout.read,
+                error=str(exc) or exc.__class__.__name__,
+            )
+            raise RuntimeError(
+                f"Timeout após {self._client.timeout.read:.0f}s aguardando resposta de "
+                f"{self._base_url} (modelo {self._model}). Se o modelo não estava "
+                "carregado no servidor, o primeiro request pode demorar mais que o "
+                "timeout configurado (cold start) - tente novamente."
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            logger.error(
+                "text_generation_http_error",
+                base_url=self._base_url,
+                model=self._model,
+                status_code=exc.response.status_code,
+                response_body=exc.response.text,
+            )
+            raise
         except Exception as exc:
             logger.error("text_generation_failed", base_url=self._base_url, model=self._model, error=str(exc))
             raise
