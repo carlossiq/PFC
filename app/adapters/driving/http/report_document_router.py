@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.adapters.driving.http.dependencies import get_db_session
 from app.adapters.driving.http.report_router import _resolve_final_probe_query_id
 from app.core.services.report_writer_service import RAGUnavailableError, ReportWriterService, escape_latex
+from app.core.services.report_cover_image import REPORT_COVER_IMAGE_FILENAME, REPORT_COVER_IMAGE_OBJECT_KEY
 from config.prompts.report_static_sections import DEFAULT_BIBLIOGRAPHY, DEFAULT_SIGNATURES, render_metodologia
 from core.config import settings
 from core.logging import get_logger
@@ -47,9 +48,14 @@ from db.research_session_models import (
 from schemas.report_document import (
     AssembleRequest,
     AssembleResponse,
+    CompilePdfRequest,
     CompilePdfResponse,
-    LLMTestRequest,
-    LLMTestResponse,
+    ReportChartItem,
+    ReportChartsResponse,
+    ReportDocumentResponse,
+    ReportPdfResponse,
+    ReportSectionStatus,
+    SectionGenerateRequest,
     SectionGenerateResponse,
     SectionRagResponse,
     SignaturesInput,
@@ -65,6 +71,15 @@ router = APIRouter(prefix="/report", tags=["report-document"])
 _CHART_CAPTIONS: dict[tuple[str, str], str] = {
     ("patent", "s_curve"): "Curva S e Evolução Temporal — Patentes",
     ("article", "s_curve"): "Curva S e Evolução Temporal — Artigos",
+    # chart_type real gerado por useChartCreation.ts (generateTopEntitiesChart)
+    # - "top_applicants"/"top_authors" abaixo são de um pipeline mais antigo
+    # (ReportService.generate_session_report, POST /report/{id}/graphics),
+    # não usado pelo checklist atual; sem essas duas chaves, o caption caía
+    # no fallback (chart.chart_type cru, com "_") sem escape_latex - LaTeX
+    # trata "_" fora de modo matemático como início de subscrito e quebra a
+    # compilação (era exatamente esse o bug reportado).
+    ("patent", "top_depositants"): "Top Depositantes",
+    ("article", "top_institutions"): "Top Instituições",
     ("patent", "top_applicants"): "Top Depositantes",
     ("patent", "top_inventors"): "Top Inventores",
     ("article", "top_authors"): "Top Autores",
@@ -88,8 +103,44 @@ def _latex_svc(request: Request):
     return request.app.state.container["services"]["report_latex"]
 
 
-def _text_generation(request: Request):
-    return request.app.state.container["services"]["text_generation"]
+def _storage(request: Request):
+    return request.app.state.container["services"]["storage"]
+
+
+# fonte (SessionProbeQuery.fonte) -> nome de exibição da base de dados, pra
+# auto-preencher a Metodologia com a base REALMENTE usada nessa sessão (não
+# a que está ativa em Configurações > Busca agora, que pode ter mudado desde
+# então). lens_patent/lens_scholarly nunca aparecem como fonte de uma query
+# final hoje (Lens ainda não tem paridade de busca final com OPS/Scopus),
+# mas já ficam mapeados pra quando essa paridade existir.
+_FONTE_DATABASE_LABELS: dict[str, str] = {
+    "ops": "Espacenet (EPO/OPS)",
+    "scopus": "Scopus",
+    "lens_patent": "Lens.org",
+    "lens_scholarly": "Lens.org",
+}
+
+
+async def _cover_image_exists(storage) -> bool:
+    """StoragePort não tem `exists()` - só upload/download/delete (ver
+    app/core/ports/outbound/storage_port.py) - então checar existência é
+    tentar baixar e ver se estoura. A imagem de capa é pequena (padronizada
+    em PROCESS_COVER_IMAGE_TARGET_SIZE, ver report_cover_image.py), então o
+    custo de baixar só pra checar é desprezível."""
+    try:
+        await storage.download(REPORT_COVER_IMAGE_OBJECT_KEY)
+        return True
+    except Exception:
+        return False
+
+
+async def _detect_databases_used(session: AsyncSession, session_id: int) -> list[str]:
+    detected: list[str] = []
+    for fonte, label in _FONTE_DATABASE_LABELS.items():
+        probe_query_id = await _resolve_final_probe_query_id(session, session_id, fonte, required=False)
+        if probe_query_id is not None and label not in detected:
+            detected.append(label)
+    return detected
 
 
 async def _get_session_or_404(session: AsyncSession, session_id: int) -> ResearchSession:
@@ -189,17 +240,47 @@ def _build_report_data(
     }
 
 
-def _merge_signatures(payload: Optional[SignaturesInput]) -> dict[str, dict[str, str]]:
+def _apply_section_generate_overrides(data: dict[str, Any], payload: Optional[SectionGenerateRequest]) -> None:
+    """Sobrescreve campos de `data` (ver _build_report_data, quase sempre
+    0/vazio hoje) com as estatísticas agregadas que o front já tem em
+    memória - None/lista vazia em `payload` preserva o valor já calculado,
+    sem sobrescrever com "nada" por engano."""
+    if payload is None:
+        return
+    if payload.article_count is not None:
+        data["article_count"] = payload.article_count
+    if payload.top_journals:
+        data["top_journals"] = [{"journal": v} for v in payload.top_journals]
+    if payload.top_fields:
+        data["top_fields"] = payload.top_fields
+    if payload.patent_count is not None:
+        data["patent_count"] = payload.patent_count
+    if payload.top_applicants:
+        data["top_applicants"] = [{"name": v} for v in payload.top_applicants]
+    if payload.top_cpc_codes:
+        data["top_cpc_codes"] = payload.top_cpc_codes
+    if payload.s_curve_phase is not None:
+        data["s_curve_phase"] = payload.s_curve_phase
+    if payload.growth_rate is not None:
+        data["growth_rate"] = payload.growth_rate
+    if payload.peak_year is not None:
+        data["peak_year"] = payload.peak_year
+
+
+def _merge_signatures(payload: Optional[SignaturesInput]) -> dict[str, list[dict[str, str]]]:
     """Assinaturas: nomes/postos default de config
     (config/prompts/report_static_sections.py), sobrescrevíveis por
-    requisição - e mais tarde pelo front, sem mudar essa rota."""
-    merged = {k: dict(v) for k, v in DEFAULT_SIGNATURES.items()}
+    requisição - cada papel aceita 1+ assinantes (ver SignaturesInput)."""
+    merged = {k: [dict(block) for block in v] for k, v in DEFAULT_SIGNATURES.items()}
     if payload is None:
         return merged
     for field in ("elaborado_por", "revisado_por", "aprovado_por"):
-        block = getattr(payload, field)
-        if block is not None:
-            merged[field] = {"nome": escape_latex(block.nome), "posto_funcao": escape_latex(block.posto_funcao)}
+        blocks = getattr(payload, field)
+        if blocks:
+            merged[field] = [
+                {"nome": escape_latex(block.nome), "posto_funcao": escape_latex(block.posto_funcao)}
+                for block in blocks
+            ]
     return merged
 
 
@@ -225,28 +306,6 @@ async def _get_or_create_section_row(
         row = SessionReportSection(session_id=session_id, section_key=section_key)
         session.add(row)
     return row
-
-
-@router.post("/llm-test", response_model=SuccessResponse[LLMTestResponse])
-async def test_llm(payload: LLMTestRequest, request: Request) -> SuccessResponse[LLMTestResponse]:
-    """Sanity check manual do LLM configurado (OLLAMA_BASE_URL/OLLAMA_API_KEY/
-    OLLAMA_MODEL - Ollama local em dev ou endpoint da intranet em produção):
-    envia um prompt livre e devolve a resposta crua, sem sessão/RAG. Não
-    escreve nada no banco."""
-    text_generation = _text_generation(request)
-    try:
-        response_text = await text_generation.generate(payload.prompt, system=payload.system)
-    except Exception as exc:
-        logger.error("llm_test_failed base_url=%s model=%s error=%s", settings.ollama_base_url, settings.ollama_model, exc)
-        raise HTTPException(status_code=502, detail=f"Falha ao chamar o LLM: {exc}") from exc
-
-    return SuccessResponse(
-        data=LLMTestResponse(
-            base_url=settings.ollama_base_url,
-            model=settings.ollama_model,
-            response=response_text,
-        )
-    )
 
 
 @router.post(
@@ -295,11 +354,18 @@ async def generate_section_text(
     session_id: int,
     section_key: str,
     request: Request,
+    payload: Optional[SectionGenerateRequest] = None,
     session: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[SectionGenerateResponse]:
     """Gera o texto dessa seção via LLM, usando o contexto de RAG já
     persistido pela rota /rag (422 se ela ainda não rodou pra essa seção) -
-    carrega só o prompt dessa seção, não o relatório inteiro."""
+    carrega só o prompt dessa seção, não o relatório inteiro.
+
+    `payload`, quando vem preenchido, sobrescreve os campos de
+    `_build_report_data` com as estatísticas agregadas que o FRONT já tem em
+    memória (ver SectionGenerateRequest) - necessário porque
+    `_fetch_final_patents_and_articles` fica vazio na prática (os documentos
+    da busca final nunca são persistidos em patent/article, só os da probe)."""
     _validate_ai_section_key(section_key)
     await _get_session_or_404(session, session_id)
 
@@ -325,6 +391,7 @@ async def generate_section_text(
         [_patent_to_rag_dict(p) for p in patents],
         [_article_to_rag_dict(a) for a in articles],
     )
+    _apply_section_generate_overrides(data, payload)
 
     writer = _writer(request)
     try:
@@ -359,17 +426,31 @@ async def build_static_sections(
     await _get_session_or_404(session, session_id)
     theme_input = await _get_session_theme_input(session, session_id)
 
+    detected_databases = await _detect_databases_used(session, session_id)
+    all_databases = [*detected_databases, *(db for db in payload.databases if db not in detected_databases)]
+
     # escape_latex aqui pelo mesmo motivo de ReportWriterService.generate_section_text:
     # texto solto (mesmo fixo, como o boilerplate da Metodologia que contém "P&D") não
     # é LaTeX válido por si só - invariante do sistema: tudo em
     # session_report_section.generated_text já sai daqui pronto pra injetar no
     # template, nunca precisa ser escapado de novo em /assemble.
+    # SessionInput.year_from/year_to (root do Step1) fica quase sempre null -
+    # o ano é escolhido por query, não numa etapa global do wizard (ver
+    # mapInputToSessionInputRoot no front) - payload.period_start/end (o
+    # year_range da query final que o front já tem em mãos) tem prioridade
+    # quando vier preenchido.
+    period_start = payload.period_start if payload.period_start is not None else (
+        theme_input.year_from if theme_input else None
+    )
+    period_end = payload.period_end if payload.period_end is not None else (
+        theme_input.year_to if theme_input else None
+    )
     metodologia_text = escape_latex(
         render_metodologia(
             keywords=(theme_input.keywords if theme_input else None) or [],
-            period_start=theme_input.year_from if theme_input else None,
-            period_end=theme_input.year_to if theme_input else None,
-            databases=payload.databases,
+            period_start=period_start,
+            period_end=period_end,
+            databases=all_databases,
         )
     )
     bibliografia = [
@@ -390,21 +471,25 @@ async def build_static_sections(
             metodologia=metodologia_text,
             referencias_administrativas=payload.referencias_administrativas,
             referencias_bibliograficas=bibliografia,
+            databases_detected=detected_databases,
         )
     )
 
 
-@router.post("/{session_id}/assemble", response_model=SuccessResponse[AssembleResponse])
-async def assemble_report_tex(
+async def _assemble_document(
+    session: AsyncSession,
     session_id: int,
     payload: AssembleRequest,
     request: Request,
-    session: AsyncSession = Depends(get_db_session),
-) -> SuccessResponse[AssembleResponse]:
+) -> AssembleResponse:
     """Monta o .tex a partir de tudo já persistido (seções de IA +
     estáticas) e dos gráficos já salvos no MinIO (SessionChart) - nunca
-    dispara geração de gráfico novo nem compila PDF (ver /compile-pdf,
-    rota separada, só sob demanda)."""
+    dispara geração de gráfico novo nem compila PDF (ver /compile-pdf, rota
+    separada, só sob demanda). Persiste `payload` em
+    SessionReport.assemble_payload, pra POST /{session_id}/reassemble poder
+    remontar do zero (pegando correções de template/seções/gráficos/capa)
+    sem pedir esses dados de novo - ver docstring do endpoint /reassemble
+    pra por que isso importa (ponto de não-retorno do wizard)."""
     await _get_session_or_404(session, session_id)
 
     sections_result = await session.execute(
@@ -424,12 +509,36 @@ async def assemble_report_tex(
         .join(SessionProbeQuery, SessionProbeQuery.id == SessionChart.probe_query_id)
         .where(SessionProbeQuery.session_id == session_id, SessionProbeQuery.tipo.isnot(None))
     )
+    storage = _storage(request)
     charts_cientificas: list[dict[str, str]] = []
     charts_tecnologicas: list[dict[str, str]] = []
     charts_ciclo_vida: list[dict[str, str]] = []
     chart_object_keys: list[str] = []
     for chart in charts_result.scalars().all():
-        caption = _CHART_CAPTIONS.get((chart.document_type, chart.chart_type), chart.chart_type)
+        # Confere ANTES de referenciar no .tex - SessionChart.object_key
+        # pode apontar pra um objeto que não existe mais no MinIO (dados
+        # apagados/resetados fora de banda, por exemplo) - sem essa
+        # checagem, o `\includegraphics{...}` do bloco abaixo sobreviveria
+        # no documento apontando pra um arquivo que render_and_upload_tex
+        # nunca conseguiria copiar, e o pdflatex falharia com "File not
+        # found" na hora de compilar.
+        try:
+            await storage.download(chart.object_key)
+        except Exception as exc:
+            logger.warning(
+                "report_chart_unavailable_at_assemble",
+                session_id=session_id,
+                object_key=chart.object_key,
+                error=str(exc),
+            )
+            continue
+
+        # escape_latex mesmo pras legendas fixas do dict acima (nunca custam
+        # nada erradas) - principalmente pro fallback (chart.chart_type cru),
+        # que pode ter "_"/outros caracteres especiais de LaTeX se um
+        # chart_type novo for adicionado no futuro sem entrar em
+        # _CHART_CAPTIONS.
+        caption = escape_latex(_CHART_CAPTIONS.get((chart.document_type, chart.chart_type), chart.chart_type))
         entry = {"filename": chart.object_key.rsplit("/", 1)[-1], "caption": caption}
         chart_object_keys.append(chart.object_key)
         if chart.chart_type == "s_curve":
@@ -443,16 +552,39 @@ async def assemble_report_tex(
     # requisição (nunca passaram por session_report_section, diferente das
     # demais chaves abaixo, todas já pré-escapadas na hora de serem
     # persistidas) - escapar aqui, no único ponto onde entram no pipeline.
+    quadro_busca = None
+    if payload.quadro_busca is not None:
+        qb = payload.quadro_busca
+        if any((qb.patente_query, qb.patente_count is not None, qb.artigo_query, qb.artigo_count is not None)):
+            quadro_busca = {
+                "patente_query": escape_latex(qb.patente_query or "[não disponível]"),
+                "patente_count": qb.patente_count if qb.patente_count is not None else "[não disponível]",
+                "artigo_query": escape_latex(qb.artigo_query or "[não disponível]"),
+                "artigo_count": qb.artigo_count if qb.artigo_count is not None else "[não disponível]",
+            }
+
+    # Decide se o bloco da imagem de capa entra no .tex (estrutura, fixada
+    # aqui) - a montagem não roda de novo depois do ponto de não-retorno
+    # (ver ReportGeneration.tsx), então uma sessão montada ANTES de qualquer
+    # imagem ter sido configurada em Configurações > Geral nunca ganha o
+    # bloco de volta sozinha. Já o CONTEÚDO da imagem (que bytes realmente
+    # aparecem no PDF) é sempre resolvido de novo em cada recompilação (ver
+    # compile_report_pdf), então atualizar a imagem afeta toda sessão cujo
+    # .tex já referencia esse arquivo.
+    has_cover_image = await _cover_image_exists(storage)
+
     ref_biblio_text = _text("referencias_bibliograficas")
     context = {
         "numero": escape_latex(payload.numero),
         "ano": escape_latex(payload.ano),
         "tema": escape_latex(payload.tema),
+        "capa_imagem": REPORT_COVER_IMAGE_FILENAME if has_cover_image else None,
         "finalidade": _text("finalidade"),
         "objetivo": _text("objetivo"),
         "introducao": _text("introducao"),
         "referencias_administrativas": [escape_latex(ref) for ref in payload.referencias_administrativas],
         "metodologia": _text("metodologia"),
+        "quadro_busca": quadro_busca,
         "informacoes_cientificas": _text("informacoes_cientificas"),
         "informacoes_tecnologicas": _text("informacoes_tecnologicas"),
         "tendencias_ciclo_vida": _text("tendencias_ciclo_vida"),
@@ -467,15 +599,19 @@ async def assemble_report_tex(
     latex_svc = _latex_svc(request)
     result = await latex_svc.render_and_upload_tex(session_id, context, chart_object_keys)
 
+    assemble_payload = payload.model_dump(mode="json")
     report_result = await session.execute(select(SessionReport).where(SessionReport.session_id == session_id))
     report_row = report_result.scalar_one_or_none()
     if report_row is None:
-        report_row = SessionReport(session_id=session_id, tex_object_key=result["tex_object_key"])
+        report_row = SessionReport(
+            session_id=session_id, tex_object_key=result["tex_object_key"], assemble_payload=assemble_payload
+        )
         session.add(report_row)
     else:
         report_row.tex_object_key = result["tex_object_key"]
         report_row.status = "tex_ready"
         report_row.pdf_object_key = None
+        report_row.assemble_payload = assemble_payload
     await session.commit()
 
     logger.info(
@@ -484,25 +620,71 @@ async def assemble_report_tex(
         len(sections_missing),
         len(result["charts_missing"]),
     )
-    return SuccessResponse(
-        data=AssembleResponse(
-            tex_object_key=result["tex_object_key"],
-            tex_content=result["tex_content"],
-            sections_missing=sections_missing,
-            charts_missing=result["charts_missing"],
-        )
+    return AssembleResponse(
+        tex_object_key=result["tex_object_key"],
+        tex_content=result["tex_content"],
+        sections_missing=sections_missing,
+        charts_missing=result["charts_missing"],
     )
+
+
+@router.post("/{session_id}/assemble", response_model=SuccessResponse[AssembleResponse])
+async def assemble_report_tex(
+    session_id: int,
+    payload: AssembleRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[AssembleResponse]:
+    return SuccessResponse(data=await _assemble_document(session, session_id, payload, request))
+
+
+@router.post("/{session_id}/reassemble", response_model=SuccessResponse[AssembleResponse])
+async def reassemble_report_tex(
+    session_id: int,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[AssembleResponse]:
+    """Remonta o .tex do ZERO (mesma lógica de /assemble), reaproveitando os
+    dados da capa (número/ano/tema/referências administrativas/assinaturas/
+    quadro de busca) da última montagem bem-sucedida - existe pra recuperar
+    uma sessão já finalizada (ponto de não-retorno, ver ReportGeneration.tsx)
+    de um bug/ajuste no template ou nos dados (ex.: um gráfico que sumiu do
+    MinIO, uma correção de LaTeX) sem precisar reabrir o wizard de pesquisa
+    nem pedir esses dados de novo pro usuário. Sobrescreve qualquer edição
+    manual feita no `.tex` desde a última montagem - por isso é uma ação
+    explícita do usuário (botão "Remontar" na tela do documento), nunca
+    automática."""
+    await _get_session_or_404(session, session_id)
+
+    report_result = await session.execute(select(SessionReport).where(SessionReport.session_id == session_id))
+    report_row = report_result.scalar_one_or_none()
+    if report_row is None or not report_row.assemble_payload:
+        raise HTTPException(
+            status_code=422,
+            detail="Essa sessão ainda não tem uma montagem anterior pra reaproveitar - chame POST .../assemble primeiro.",
+        )
+
+    payload = AssembleRequest.model_validate(report_row.assemble_payload)
+    return SuccessResponse(data=await _assemble_document(session, session_id, payload, request))
 
 
 @router.post("/{session_id}/compile-pdf", response_model=SuccessResponse[CompilePdfResponse])
 async def compile_report_pdf(
     session_id: int,
     request: Request,
+    payload: Optional[CompilePdfRequest] = None,
     session: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[CompilePdfResponse]:
     """Compila o .tex já montado (/assemble) em PDF - só roda quando o
     usuário decide (nunca automaticamente). Falha de compilação não apaga
-    o .tex já persistido."""
+    o .tex já persistido.
+
+    `payload.tex_content`, quando vem preenchido, é a edição livre feita na
+    tela do documento (ver ReportDocumentEditor.tsx) - como essa edição só
+    existe no front até este ponto (nenhuma outra rota a persiste), ela
+    sobrescreve o `.tex` no storage ANTES de compilar, senão o backend
+    compilaria a última versão MONTADA (/assemble), ignorando o que o
+    usuário escreveu depois."""
     await _get_session_or_404(session, session_id)
 
     report_result = await session.execute(select(SessionReport).where(SessionReport.session_id == session_id))
@@ -512,15 +694,47 @@ async def compile_report_pdf(
             status_code=422, detail="Relatório ainda não montado - chame POST .../assemble primeiro."
         )
 
+    if payload is not None and payload.tex_content is not None:
+        await _storage(request).upload(
+            report_row.tex_object_key, payload.tex_content.encode("utf-8"), "text/x-tex"
+        )
+
     charts_result = await session.execute(
         select(SessionChart)
         .join(SessionProbeQuery, SessionProbeQuery.id == SessionChart.probe_query_id)
         .where(SessionProbeQuery.session_id == session_id, SessionProbeQuery.tipo.isnot(None))
     )
-    image_object_keys = [
-        f"sessions/{session_id}/report/{chart.object_key.rsplit('/', 1)[-1]}"
-        for chart in charts_result.scalars().all()
-    ]
+    storage = _storage(request)
+    image_object_keys: list[str] = []
+    for chart in charts_result.scalars().all():
+        candidate_key = f"sessions/{session_id}/report/{chart.object_key.rsplit('/', 1)[-1]}"
+        # Confere que o "recorte" da imagem pra essa sessão (feito em
+        # /assemble) realmente existe antes de mandar pro compilador -
+        # ReportLatexService.compile_pdf baixa cada chave sem try/except, um
+        # 404 aqui derrubaria a rota inteira em vez de devolver um "log" de
+        # falha organizado (ex.: gráfico pulado no /assemble por já estar
+        # ausente do MinIO na época, ver report_chart_unavailable_at_assemble).
+        try:
+            await storage.download(candidate_key)
+            image_object_keys.append(candidate_key)
+        except Exception as exc:
+            logger.warning(
+                "report_chart_snapshot_missing_at_compile",
+                session_id=session_id,
+                object_key=candidate_key,
+                error=str(exc),
+            )
+
+    # Sempre a versão MAIS RECENTE da imagem de capa (chave global, não por
+    # sessão) - diferente dos gráficos acima, que são fixados no momento do
+    # /assemble, a capa é resolvida de novo em toda recompilação, pra
+    # atualizar a imagem em Configurações > Geral valer pra qualquer sessão
+    # que recompilar depois (mesmo uma já montada há tempos). Se o .tex não
+    # referenciar o arquivo (sessão montada antes de existir capa
+    # configurada), ele só fica sem uso no diretório de compilação - o
+    # pdflatex não reclama de arquivo extra não referenciado.
+    if await _cover_image_exists(storage):
+        image_object_keys.append(REPORT_COVER_IMAGE_OBJECT_KEY)
 
     latex_svc = _latex_svc(request)
     result = await latex_svc.compile_pdf(session_id, report_row.tex_object_key, image_object_keys)
@@ -543,3 +757,108 @@ async def compile_report_pdf(
             pdf_base64=base64.b64encode(result["pdf_bytes"]).decode("ascii"),
         )
     )
+
+
+@router.get("/{session_id}/document", response_model=SuccessResponse[ReportDocumentResponse])
+async def get_report_document(
+    session_id: int,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[ReportDocumentResponse]:
+    """Estado atual do relatório dessa sessão - usado tanto pra retomar o
+    checklist de seções (front decide, pelas seções já `generated`, de onde
+    continuar) quanto pra reabrir uma sessão já finalizada direto na tela de
+    documento (`.tex` + PDF), sem refazer o wizard de pesquisa. `has_report=False`
+    (com o resto vazio) é o caminho normal pra sessão que nunca chamou
+    /assemble ainda - não é erro."""
+    await _get_session_or_404(session, session_id)
+
+    sections_result = await session.execute(
+        select(SessionReportSection).where(SessionReportSection.session_id == session_id)
+    )
+    sections = [
+        ReportSectionStatus(section_key=row.section_key, status=row.status, generated_text=row.generated_text)
+        for row in sections_result.scalars().all()
+    ]
+
+    report_result = await session.execute(select(SessionReport).where(SessionReport.session_id == session_id))
+    report_row = report_result.scalar_one_or_none()
+    if report_row is None:
+        return SuccessResponse(data=ReportDocumentResponse(has_report=False, sections=sections))
+
+    tex_content: Optional[str] = None
+    try:
+        tex_bytes = await _storage(request).download(report_row.tex_object_key)
+        tex_content = tex_bytes.decode("utf-8")
+    except Exception as exc:
+        logger.warning("report_document_tex_download_failed", session_id=session_id, error=str(exc))
+
+    return SuccessResponse(
+        data=ReportDocumentResponse(
+            has_report=True,
+            report_status=report_row.status,
+            tex_object_key=report_row.tex_object_key,
+            tex_content=tex_content,
+            pdf_available=report_row.pdf_object_key is not None,
+            sections=sections,
+        )
+    )
+
+
+@router.get("/{session_id}/pdf", response_model=SuccessResponse[ReportPdfResponse])
+async def get_report_pdf(
+    session_id: int,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[ReportPdfResponse]:
+    """Baixa o PDF já compilado (persistido por /compile-pdf) - usado pra
+    'Visualizar PDF' funcionar ao reabrir uma sessão sem precisar recompilar."""
+    await _get_session_or_404(session, session_id)
+
+    report_result = await session.execute(select(SessionReport).where(SessionReport.session_id == session_id))
+    report_row = report_result.scalar_one_or_none()
+    if report_row is None or report_row.pdf_object_key is None:
+        raise HTTPException(status_code=404, detail="Essa sessão ainda não tem um PDF compilado.")
+
+    pdf_bytes = await _storage(request).download(report_row.pdf_object_key)
+    return SuccessResponse(data=ReportPdfResponse(pdf_base64=base64.b64encode(pdf_bytes).decode("ascii")))
+
+
+@router.get("/{session_id}/charts", response_model=SuccessResponse[ReportChartsResponse])
+async def get_report_charts(
+    session_id: int,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[ReportChartsResponse]:
+    """Lista (com PNG em base64) todos os gráficos já gerados pra busca final
+    dessa sessão - alimenta o painel lateral de imagens da tela de edição do
+    `.tex`, pra o usuário ver o que está disponível pra referenciar/mover no
+    corpo do documento (mesma fonte que /assemble usa pra embutir os
+    gráficos por padrão, ver _CHART_CAPTIONS)."""
+    await _get_session_or_404(session, session_id)
+
+    charts_result = await session.execute(
+        select(SessionChart)
+        .join(SessionProbeQuery, SessionProbeQuery.id == SessionChart.probe_query_id)
+        .where(SessionProbeQuery.session_id == session_id, SessionProbeQuery.tipo.isnot(None))
+    )
+    storage = _storage(request)
+    items: list[ReportChartItem] = []
+    for chart in charts_result.scalars().all():
+        try:
+            png_bytes = await storage.download(chart.object_key)
+        except Exception as exc:
+            logger.warning("report_chart_download_failed", session_id=session_id, object_key=chart.object_key, error=str(exc))
+            continue
+        caption = _CHART_CAPTIONS.get((chart.document_type, chart.chart_type), chart.chart_type)
+        items.append(
+            ReportChartItem(
+                filename=chart.object_key.rsplit("/", 1)[-1],
+                image_base64=base64.b64encode(png_bytes).decode("ascii"),
+                chart_type=chart.chart_type,
+                document_type=chart.document_type,
+                caption=caption,
+            )
+        )
+
+    return SuccessResponse(data=ReportChartsResponse(charts=items))

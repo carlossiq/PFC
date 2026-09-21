@@ -29,9 +29,9 @@ const DEFAULT_PROJECTION_YEARS = 5
 // pedir o gráfico - não só quando ainda não existe sessionId - porque o
 // backend agora vincula o gráfico à linha de query final salva no banco
 // (ver SessionChart/session_probe_query), que precisa estar em dia. Isso é
-// seguro mesmo numa sessão já existente porque "Finalizar Sessão" tira o
-// usuário do wizard (ver OutrosSteps.tsx) - nunca dá pra chegar aqui com
-// uma sessão já concluída pra reabrir sem querer.
+// seguro mesmo numa sessão já existente porque montar o .tex (ver
+// ReportGeneration.tsx) já tira o usuário do wizard - nunca dá pra chegar
+// aqui com uma sessão já concluída pra reabrir sem querer.
 export function useFinalSCurve(kind: SCurveKind, yearlyByYear: Record<string, number> | null) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)

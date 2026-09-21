@@ -26,15 +26,46 @@ class SectionGenerateResponse(BaseModel):
     status: str
 
 
+class SectionGenerateRequest(BaseModel):
+    """Corpo (opcional) de POST /report/{session_id}/sections/{section_key}/generate -
+    estatísticas agregadas que o FRONT já tem em memória (step4PatentResults/
+    step4ArticleResults, ver useChartCreation.ts) pra alimentar os prompts de
+    'informacoes_cientificas'/'informacoes_tecnologicas'/'tendencias_ciclo_vida'
+    (ver report_prompts.py). Existem porque `_fetch_final_patents_and_articles`
+    (dados vindos do banco) fica vazio na prática - os documentos da busca
+    FINAL nunca são persistidos em patent/article, só os da probe (ver
+    buildProbeQueryPayload no front) - sem isso essas 3 seções sempre geram
+    texto genérico tipo "não há dados disponíveis", mesmo com resultados reais.
+    Todos os campos são opcionais e só sobrescrevem o que `_build_report_data`
+    calcularia (quase sempre 0/vazio hoje); omitir um campo preserva esse
+    default."""
+
+    article_count: Optional[int] = None
+    top_journals: list[str] = Field(default_factory=list)
+    top_fields: list[str] = Field(default_factory=list)
+    patent_count: Optional[int] = None
+    top_applicants: list[str] = Field(default_factory=list)
+    top_cpc_codes: list[str] = Field(default_factory=list)
+    s_curve_phase: Optional[str] = None
+    growth_rate: Optional[str] = None
+    peak_year: Optional[int] = None
+
+
 class SignatureBlock(BaseModel):
     nome: str = ""
     posto_funcao: str = ""
 
 
 class SignaturesInput(BaseModel):
-    elaborado_por: Optional[SignatureBlock] = None
-    revisado_por: Optional[SignatureBlock] = None
-    aprovado_por: Optional[SignatureBlock] = None
+    """Cada papel (elaborado/revisado/aprovado) aceita 1+ assinantes - o
+    front sempre manda pelo menos um item por papel (não deixa remover o
+    último, ver ReportGeneration.tsx), mas o backend não depende disso: uma
+    lista vazia aqui simplesmente não sobrescreve o default de
+    DEFAULT_SIGNATURES (ver _merge_signatures)."""
+
+    elaborado_por: list[SignatureBlock] = Field(default_factory=list)
+    revisado_por: list[SignatureBlock] = Field(default_factory=list)
+    aprovado_por: list[SignatureBlock] = Field(default_factory=list)
 
 
 class StaticSectionsRequest(BaseModel):
@@ -50,14 +81,42 @@ class StaticSectionsRequest(BaseModel):
         description="Ex.: 'DIEx Nº 115-A3/DCT de 6 de janeiro de 2023' - editado pelo usuário.",
     )
     referencias_bibliograficas_adicionais: list[str] = Field(default_factory=list)
-    databases: list[str] = Field(default_factory=list, description="Ex.: ['Lens.org', 'Scopus']")
+    databases: list[str] = Field(
+        default_factory=list,
+        description="Bases ADICIONAIS às auto-detectadas pela fonte real da busca final da sessão "
+        "(ver _detect_databases_used em report_document_router.py) - normalmente pode ficar vazio.",
+    )
     assinaturas: Optional[SignaturesInput] = None
+    period_start: Optional[int] = Field(
+        default=None,
+        description="Ano inicial efetivamente usado na busca (ver step4PatentQuery/ArticleQuery.year_range no "
+        "front) - sobrescreve SessionInput.year_from (quase sempre null hoje, o ano é escolhido por query, "
+        "não no Step1) quando informado.",
+    )
+    period_end: Optional[int] = None
 
 
 class StaticSectionsResponse(BaseModel):
     metodologia: str
     referencias_administrativas: list[str]
     referencias_bibliograficas: list[str]
+    databases_detected: list[str] = Field(
+        default_factory=list,
+        description="Bases de dados detectadas automaticamente a partir de SessionProbeQuery.fonte "
+        "(mais as que vieram em StaticSectionsRequest.databases) - exibido como info read-only no front.",
+    )
+
+
+class QuadroBuscaInput(BaseModel):
+    """Quadro de busca (query final + contagem) exibido na seção Resultados -
+    o front já tem esses dados em memória (step4PatentQuery/step4ArticleQuery
+    + step4*Results), por isso vem do corpo da requisição em vez de
+    reconstruído no backend."""
+
+    patente_query: Optional[str] = None
+    patente_count: Optional[int] = None
+    artigo_query: Optional[str] = None
+    artigo_count: Optional[int] = None
 
 
 class AssembleRequest(BaseModel):
@@ -70,6 +129,7 @@ class AssembleRequest(BaseModel):
     tema: str
     referencias_administrativas: list[str] = Field(default_factory=list)
     assinaturas: Optional[SignaturesInput] = None
+    quadro_busca: Optional[QuadroBuscaInput] = None
 
 
 class AssembleResponse(BaseModel):
@@ -82,6 +142,15 @@ class AssembleResponse(BaseModel):
     charts_missing: list[str] = []
 
 
+class CompilePdfRequest(BaseModel):
+    """Corpo (opcional) de POST /report/{session_id}/compile-pdf - quando
+    `tex_content` vem preenchido (edição livre feita na tela do documento),
+    sobrescreve o `.tex` persistido ANTES de compilar, já que o texto
+    editado no front nunca é salvo automaticamente em nenhuma outra rota."""
+
+    tex_content: Optional[str] = None
+
+
 class CompilePdfResponse(BaseModel):
     """Resultado de POST /report/{session_id}/compile-pdf - rota separada,
     só chamada quando o usuário decidir compilar."""
@@ -92,16 +161,41 @@ class CompilePdfResponse(BaseModel):
     log: Optional[str] = None
 
 
-class LLMTestRequest(BaseModel):
-    """Corpo de POST /report/llm-test - sanity check manual do LLM
-    configurado em OLLAMA_BASE_URL/OLLAMA_API_KEY/OLLAMA_MODEL (Ollama local
-    ou endpoint da intranet), sem sessão/RAG envolvidos."""
+class ReportSectionStatus(BaseModel):
+    """Status persistido de uma seção (ver SessionReportSection) - usado por
+    GET /{session_id}/document pra reconstruir o checklist ao retomar."""
 
-    prompt: str = Field(..., min_length=1, description="Texto livre enviado direto ao LLM")
-    system: Optional[str] = Field(default=None, description="System prompt opcional")
+    section_key: str
+    status: str
+    generated_text: Optional[str] = None
 
 
-class LLMTestResponse(BaseModel):
-    base_url: str
-    model: str
-    response: str
+class ReportDocumentResponse(BaseModel):
+    """Resultado de GET /report/{session_id}/document - estado atual do
+    relatório dessa sessão (se algum), usado tanto pra retomar o checklist
+    quanto pra reabrir uma sessão já finalizada direto na tela de documento.
+    `report_status`/`tex_content`/`pdf_available` vêm None/""/False quando a
+    sessão ainda não tem nenhum SessionReport (nunca passou por /assemble)."""
+
+    has_report: bool
+    report_status: Optional[str] = None
+    tex_object_key: Optional[str] = None
+    tex_content: Optional[str] = None
+    pdf_available: bool = False
+    sections: list[ReportSectionStatus] = Field(default_factory=list)
+
+
+class ReportChartItem(BaseModel):
+    filename: str
+    image_base64: str
+    chart_type: str
+    document_type: str
+    caption: str
+
+
+class ReportChartsResponse(BaseModel):
+    charts: list[ReportChartItem] = Field(default_factory=list)
+
+
+class ReportPdfResponse(BaseModel):
+    pdf_base64: str

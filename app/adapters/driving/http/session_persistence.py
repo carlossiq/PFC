@@ -9,7 +9,10 @@ already used throughout this session-centric flow.
 """
 
 from datetime import datetime
+from typing import Optional
 
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.driving.http.session_probe_documents import (
@@ -66,6 +69,85 @@ def apply_probe_query_fields(row: SessionProbeQuery, item: SessionProbeQueryInpu
     row.complexity_level = item.complexity_level
     row.iterations = item.iterations
     row.result_count = item.result_count
+
+
+_PROBE_QUERY_UNIQUE_CONSTRAINT = "uq_session_probe_query_session_fonte_tipo"
+
+
+async def _get_or_create_probe_query(
+    session: AsyncSession,
+    session_id: int,
+    item: SessionProbeQueryInput,
+    existing_by_fonte_tipo: dict[tuple[str, Optional[str]], SessionProbeQuery],
+) -> SessionProbeQuery:
+    """
+    Busca a linha (session_id, fonte, tipo) já carregada em
+    `existing_by_fonte_tipo` (lookup construído a partir de
+    research_session.probe_queries no início de persist_session_input); se
+    não existir, cria - protegido contra a corrida de duas requisições
+    concorrentes pra mesma sessão criando a mesma linha ao mesmo tempo
+    (gerava um IntegrityError bruto em uq_session_probe_query_session_fonte_tipo -
+    caso real observado quando o React 18 StrictMode disparava
+    useChartCreation.ts duas vezes; ver o fix lá também, que evita a
+    corrida na origem - isso aqui é a segunda camada de defesa, pra
+    qualquer outra causa de requisições concorrentes na mesma sessão).
+
+    Cria dentro de um SAVEPOINT (begin_nested): se a constraint única
+    disparar (a outra requisição venceu a corrida e commitou primeiro),
+    descarta só essa tentativa (rollback até o savepoint, não a transação
+    inteira) e busca no banco a linha que a outra requisição acabou de
+    criar, em vez de deixar o erro subir pro chamador.
+
+    Aplica apply_probe_query_fields ANTES do flush (não depois) pro caso de
+    linha nova - query_text é NOT NULL, então flushar só
+    session_id/fonte/tipo sem o resto dos campos violaria essa constraint
+    antes mesmo de chegar na de unicidade. O chamador aplica os campos de
+    novo depois (idempotente) pro caso "já existia"/"recuperado da corrida".
+    """
+    fonte, tipo = item.fonte, item.tipo
+    row = existing_by_fonte_tipo.get((fonte, tipo))
+    if row is not None:
+        return row
+
+    row = SessionProbeQuery(session_id=session_id, fonte=fonte, tipo=tipo)
+    apply_probe_query_fields(row, item)
+    try:
+        async with session.begin_nested():
+            session.add(row)
+            await session.flush()
+    except IntegrityError as exc:
+        # exc.orig aqui é o wrapper do dialect asyncpg do SQLAlchemy
+        # (AsyncAdapt_asyncpg_dbapi.IntegrityError), não a exceção asyncpg
+        # crua - não expõe `constraint_name` como atributo (só existiria na
+        # exceção original do asyncpg, um nível abaixo). `sqlstate` (código
+        # Postgres padrão, "23505" = unique_violation) e o texto da mensagem
+        # são o que sobra pra identificar a violação com segurança sem
+        # confundir com qualquer outra IntegrityError (ex: NOT NULL).
+        is_unique_violation = getattr(exc.orig, "sqlstate", None) == "23505"
+        if not is_unique_violation or _PROBE_QUERY_UNIQUE_CONSTRAINT not in str(exc.orig):
+            raise
+        # Nada de session.expunge(row) aqui - begin_nested() já expunge
+        # sozinho qualquer objeto novo adicionado dentro do bloco quando dá
+        # rollback pro savepoint (comportamento documentado do SQLAlchemy);
+        # chamar expunge() de novo bateria em "Instance ... is not present
+        # in this Session".
+        logger.warning(
+            "session_probe_query_race_recovered",
+            session_id=session_id,
+            fonte=fonte,
+            tipo=tipo,
+        )
+        result = await session.execute(
+            select(SessionProbeQuery).where(
+                SessionProbeQuery.session_id == session_id,
+                SessionProbeQuery.fonte == fonte,
+                SessionProbeQuery.tipo == tipo,
+            )
+        )
+        row = result.scalar_one()
+
+    existing_by_fonte_tipo[(fonte, tipo)] = row
+    return row
 
 
 async def persist_session_input(
@@ -126,10 +208,7 @@ async def persist_session_input(
     probe_row_by_fonte: dict[str, SessionProbeQuery] = {}
     sorted_items = sorted(payload.probe_queries, key=lambda item: item.tipo is not None)
     for item in sorted_items:
-        row = existing_by_fonte_tipo.get((item.fonte, item.tipo))
-        if row is None:
-            row = SessionProbeQuery(session_id=research_session.id, fonte=item.fonte, tipo=item.tipo)
-            session.add(row)
+        row = await _get_or_create_probe_query(session, research_session.id, item, existing_by_fonte_tipo)
         apply_probe_query_fields(row, item)
         if item.tipo is not None:
             parent = probe_row_by_fonte.get(item.fonte)

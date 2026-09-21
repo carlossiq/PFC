@@ -73,7 +73,7 @@ export function mapThemeToIntakePayload(theme: ThemeInput) {
 // Decide se o intake enviado à IA deve vir do tema selecionado/refinado no
 // Step2 (id !== 'input', ou seja, uma variação gerada por IA ou editada) ou
 // do input cru do Step1 (quando o usuário pula o refinamento, ex: "Gerar
-// Query"). Mesma lógica de decisão já usada em OutrosSteps.handleFinalize.
+// Query"). Mesma lógica de decisão já usada em ReportGeneration.handleConfirmAssemble.
 export function resolveIntakePayload(
   input: FormInput,
   step2SelectedTheme: (ThemeInput & { id: string }) | null

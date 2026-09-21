@@ -213,8 +213,9 @@ interface FinalResultsProps {
 
 // Resultados da busca final real, exibidos depois que o usuário escolhe e
 // confirma uma das 3 variantes de query em FinalExploration.tsx - mesmo
-// papel que InitialResults.tsx tem pra probe search. substep 0 é o único
-// substep de "Exploração Final" (SUBSTEPS.RESULTS_ANALYSIS, ver steps.ts).
+// papel que InitialResults.tsx tem pra probe search. substep 0 é
+// "Análise de Resultados" (SUBSTEPS.RESULTS_ANALYSIS); "Próximo" aqui leva
+// pro substep 1, "Criação de Gráficos" (ver ChartCreation.tsx).
 export function FinalResults({ step, substep, onBack, onNext }: FinalResultsProps) {
   const { step4PatentResults, step4ArticleResults } = useFormStore()
 

@@ -36,8 +36,15 @@ async def init_db() -> None:
             ResearchPhase,
             ResearchScholarlyDocument,
         )
+        from db.config_models import (
+            Base as ConfigBase,
+            AppSetting,
+            LLMCallSiteBinding,
+            LLMProviderConfig,
+            SearchApiSelection,
+        )
 
-        logger.info("database_init_starting", models_loaded=9)
+        logger.info("database_init_starting", models_loaded=13)
 
         # Usar engine já inicializado em db_session
         if db_session.engine is None:
@@ -55,17 +62,33 @@ async def init_db() -> None:
             logger.info("database_init_creating_research_tables")
             await conn.run_sync(ResearchBase.metadata.create_all)
 
+        # Criar tabelas de configuração editável (config_models.py) - mesmo
+        # padrão create_all de models.py/research_models.py (não Alembic),
+        # seguido de um seed idempotente a partir dos valores hoje em
+        # core/config.py (ver db/config_seed.py).
+        async with engine.begin() as conn:
+            logger.info("database_init_creating_config_tables")
+            await conn.run_sync(ConfigBase.metadata.create_all)
+
+        from db.config_seed import seed_all_config
+
+        async with db_session.async_session_maker() as session:
+            await seed_all_config(session)
+
         # research_session_models.py (research_session/session_input) é gerido
         # pelo Alembic, não pelo create_all daqui.
 
         logger.info(
             "database_init_completed",
-            models_count=len(ModelsBase.metadata.tables) + len(ResearchBase.metadata.tables),
+            models_count=len(ModelsBase.metadata.tables)
+            + len(ResearchBase.metadata.tables)
+            + len(ConfigBase.metadata.tables),
         )
 
         print("\n[OK] Database initialized successfully!")
         print(f"[OK] Created {len(ModelsBase.metadata.tables)} tables from models.py")
         print(f"[OK] Created {len(ResearchBase.metadata.tables)} tables from research_models.py")
+        print(f"[OK] Created {len(ConfigBase.metadata.tables)} tables from config_models.py")
 
     except Exception as exc:
         logger.error("database_init_error", error=str(exc))

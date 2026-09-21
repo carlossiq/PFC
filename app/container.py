@@ -8,19 +8,31 @@ from core.config import Settings
 logger = logging.getLogger(__name__)
 
 
-def build_container(settings: Settings) -> dict[str, Any]:
+async def build_container(settings: Settings) -> dict[str, Any]:
     """
     Instancia todos os singletons (app-scoped) e retorna o container.
 
     Lê credenciais de `settings`; usa Mock/skip quando credenciais estão ausentes
     para que o servidor suba sem erro em qualquer ambiente.
+
+    Assíncrono desde a migração de configuração pro banco
+    (PLANO_MIGRACAO_CONFIG_BANCO.md): precisa ler `search_api_selection`
+    antes de decidir qual adapter de patente/artigo montar. Por isso só pode
+    ser chamado de dentro do lifespan do FastAPI, depois de
+    `db_session.initialize()` + `init_db()` - nunca na importação do módulo
+    (era assim antes; ver app/main.py).
     """
     _services_to_close: list = []
 
     # ------------------------------------------------------------------
-    # LLM — seleção por settings.llm_provider
+    # LLM — resolver por call site (theme_candidates/probe_query/
+    # final_query/report_writing), configurável no banco (llm_provider_configs
+    # + llm_call_site_bindings) em vez de um único settings.llm_provider global.
     # ------------------------------------------------------------------
-    llm = _build_llm(settings)
+    from db.session import db_session
+    from app.core.services.llm_config_resolver import LLMConfigResolver
+
+    llm_resolver = LLMConfigResolver(session_factory=db_session.async_session_maker)
 
     # ------------------------------------------------------------------
     # Embedding
@@ -31,63 +43,98 @@ def build_container(settings: Settings) -> dict[str, Any]:
     embedding = EmbeddingAdapter(EmbeddingService(model_name=settings.llm_keybert_model))
 
     # ------------------------------------------------------------------
-    # Search adapters + query builder adapters (feature-flagged)
+    # Search adapters + query builder adapters - um único adapter por
+    # família (patent/scholarly), decidido por search_api_selection (banco)
+    # em vez dos antigos 5 booleans independentes (que permitiam OPS e Lens
+    # Patent registrados ao mesmo tempo - ver PLANO_MIGRACAO_CONFIG_BANCO.md
+    # § "search_api_selection"). Falta de credencial pro provider ativo =
+    # família inteira fica sem adapter (loga aviso), não cai pro outro
+    # provider da família silenciosamente.
     # ------------------------------------------------------------------
     patent_pairs: list[tuple[Any, Any]] = []
     scholarly_pairs: list[tuple[Any, Any]] = []
 
-    # Lens (token único para patent e scholarly)
-    if settings.lens_api_token and (settings.lens_patent_enabled or settings.lens_scholarly_enabled):
-        from services.search.lens_service import LensService
-        from app.adapters.driven.search.lens_patent_adapter import LensPatentAdapter
-        from app.adapters.driven.search.lens_scholarly_adapter import LensScholarlyAdapter
-        from app.adapters.driven.query_builders.lens_patent_query_builder_adapter import LensPatentQueryBuilderAdapter
-        from app.adapters.driven.query_builders.lens_scholarly_query_builder_adapter import LensScholarlyQueryBuilderAdapter
-
-        lens_service = LensService(api_token=settings.lens_api_token)
-        _services_to_close.append(lens_service)
-
-        if settings.lens_patent_enabled:
-            patent_pairs.append((LensPatentAdapter(lens_service), LensPatentQueryBuilderAdapter()))
-            logger.info("container_lens_patent_enabled")
-
-        if settings.lens_scholarly_enabled:
-            scholarly_pairs.append((LensScholarlyAdapter(lens_service), LensScholarlyQueryBuilderAdapter()))
-            logger.info("container_lens_scholarly_enabled")
-    else:
-        logger.warning("container_lens_skipped lens_api_token=%s", bool(settings.lens_api_token))
-
-    # OPS
-    if settings.ops_enabled and settings.ops_consumer_key and settings.ops_consumer_secret:
-        from services.search.ops_service import OPSService
-        from app.adapters.driven.search.ops_adapter import OPSAdapter
-        from app.adapters.driven.query_builders.ops_query_builder_adapter import OPSQueryBuilderAdapter
-
-        from services.search.ops_token_manager import ops_token_manager
-
-        ops_service = OPSService(
-            consumer_key=settings.ops_consumer_key,
-            consumer_secret=settings.ops_consumer_secret,
+    async with db_session.async_session_maker() as session:
+        from app.adapters.driven.persistence.config_repository_adapter import (
+            SearchApiSelectionRepositoryAdapter,
         )
-        _services_to_close.append(ops_service)
-        _services_to_close.append(ops_token_manager)
-        patent_pairs.append((OPSAdapter(ops_service), OPSQueryBuilderAdapter()))
-        logger.info("container_ops_enabled")
-    else:
-        logger.warning("container_ops_skipped ops_enabled=%s", settings.ops_enabled)
 
-    # Scopus
-    if settings.scopus_enabled and settings.scopus_api_key:
-        from services.search.scopus_service import ScopusService
-        from app.adapters.driven.search.scopus_adapter import ScopusAdapter
-        from app.adapters.driven.query_builders.scopus_query_builder_adapter import ScopusQueryBuilderAdapter
+        search_api_repo = SearchApiSelectionRepositoryAdapter(session)
+        patent_selection = await search_api_repo.get("patent")
+        scholarly_selection = await search_api_repo.get("scholarly")
 
-        scopus_service = ScopusService(api_key=settings.scopus_api_key)
-        _services_to_close.append(scopus_service)
-        scholarly_pairs.append((ScopusAdapter(scopus_service), ScopusQueryBuilderAdapter()))
-        logger.info("container_scopus_enabled")
+    patent_active = patent_selection.active_provider_code if patent_selection else "ops"
+    scholarly_active = scholarly_selection.active_provider_code if scholarly_selection else "scopus"
+
+    lens_service = None
+
+    def _get_lens_service():
+        nonlocal lens_service
+        if lens_service is None:
+            from services.search.lens_service import LensService
+
+            lens_service = LensService(api_token=settings.lens_api_token)
+            _services_to_close.append(lens_service)
+        return lens_service
+
+    if patent_active == "ops":
+        if settings.ops_consumer_key and settings.ops_consumer_secret:
+            from services.search.ops_service import OPSService
+            from app.adapters.driven.search.ops_adapter import OPSAdapter
+            from app.adapters.driven.query_builders.ops_query_builder_adapter import OPSQueryBuilderAdapter
+            from services.search.ops_token_manager import ops_token_manager
+
+            ops_service = OPSService(
+                consumer_key=settings.ops_consumer_key,
+                consumer_secret=settings.ops_consumer_secret,
+            )
+            _services_to_close.append(ops_service)
+            _services_to_close.append(ops_token_manager)
+            patent_pairs.append((OPSAdapter(ops_service), OPSQueryBuilderAdapter()))
+            logger.info("container_patent_api_active provider=ops")
+        else:
+            logger.warning("container_patent_api_skipped provider=ops reason=missing_credentials")
+    elif patent_active == "lens_patent":
+        if settings.lens_api_token:
+            from app.adapters.driven.search.lens_patent_adapter import LensPatentAdapter
+            from app.adapters.driven.query_builders.lens_patent_query_builder_adapter import (
+                LensPatentQueryBuilderAdapter,
+            )
+
+            patent_pairs.append((LensPatentAdapter(_get_lens_service()), LensPatentQueryBuilderAdapter()))
+            logger.info("container_patent_api_active provider=lens_patent")
+        else:
+            logger.warning("container_patent_api_skipped provider=lens_patent reason=missing_credentials")
     else:
-        logger.warning("container_scopus_skipped scopus_enabled=%s", settings.scopus_enabled)
+        logger.warning("container_patent_api_unknown provider=%s", patent_active)
+
+    if scholarly_active == "scopus":
+        if settings.scopus_api_key:
+            from services.search.scopus_service import ScopusService
+            from app.adapters.driven.search.scopus_adapter import ScopusAdapter
+            from app.adapters.driven.query_builders.scopus_query_builder_adapter import ScopusQueryBuilderAdapter
+
+            scopus_service = ScopusService(api_key=settings.scopus_api_key)
+            _services_to_close.append(scopus_service)
+            scholarly_pairs.append((ScopusAdapter(scopus_service), ScopusQueryBuilderAdapter()))
+            logger.info("container_scholarly_api_active provider=scopus")
+        else:
+            logger.warning("container_scholarly_api_skipped provider=scopus reason=missing_credentials")
+    elif scholarly_active == "lens_scholarly":
+        if settings.lens_api_token:
+            from app.adapters.driven.search.lens_scholarly_adapter import LensScholarlyAdapter
+            from app.adapters.driven.query_builders.lens_scholarly_query_builder_adapter import (
+                LensScholarlyQueryBuilderAdapter,
+            )
+
+            scholarly_pairs.append(
+                (LensScholarlyAdapter(_get_lens_service()), LensScholarlyQueryBuilderAdapter())
+            )
+            logger.info("container_scholarly_api_active provider=lens_scholarly")
+        else:
+            logger.warning("container_scholarly_api_skipped provider=lens_scholarly reason=missing_credentials")
+    else:
+        logger.warning("container_scholarly_api_unknown provider=%s", scholarly_active)
 
     # OpenAlex - complementa abstract que a Scopus Search API não devolve
     # pra essa API key (ver notes/pendencias.md). API pública, sem key.
@@ -111,25 +158,6 @@ def build_container(settings: Settings) -> dict[str, Any]:
             secure=settings.minio_secure,
         )
     )
-
-    # ------------------------------------------------------------------
-    # Geração de texto do relatório (Ollama local / LLM da intranet,
-    # compatível com a API de chat completions da OpenAI) - usado por
-    # ReportWriterService pra redigir as seções de IA do relatório LaTeX.
-    # Sempre construído: o adapter só conecta na primeira chamada real
-    # (httpx.AsyncClient não conecta no __init__), então o endpoint estar
-    # fora do ar não impede o resto do app de subir - só a rota de geração
-    # daquela seção falha quando chamada.
-    # ------------------------------------------------------------------
-    from app.adapters.driven.llm.openai_compatible_adapter import OpenAICompatibleAdapter
-
-    text_generation_service = OpenAICompatibleAdapter(
-        base_url=settings.ollama_base_url,
-        model=settings.ollama_model,
-        api_key=settings.ollama_api_key,
-        timeout_seconds=settings.ollama_request_timeout_seconds,
-    )
-    _services_to_close.append(text_generation_service)
 
     # ------------------------------------------------------------------
     # RAG (ChromaDB) - contexto por seção do relatório (ReportWriterService).
@@ -165,7 +193,7 @@ def build_container(settings: Settings) -> dict[str, Any]:
     from app.core.services.statistical_inference_service import StatisticalInferenceService
 
     chat_service = ChatService(
-        llm=llm,
+        llm_resolver=llm_resolver,
         patent_pairs=patent_pairs,
         scholarly_pairs=scholarly_pairs,
         settings=settings,
@@ -174,7 +202,7 @@ def build_container(settings: Settings) -> dict[str, Any]:
     report_service = ReportService(storage=storage_service)
     report_writer_service = ReportWriterService(
         rag=rag_service,
-        text_generation=text_generation_service,
+        llm_resolver=llm_resolver,
         settings=settings,
     )
     report_latex_service = ReportLatexService(
@@ -189,7 +217,7 @@ def build_container(settings: Settings) -> dict[str, Any]:
     )
 
     return {
-        "llm": llm,
+        "llm_resolver": llm_resolver,
         "embedding": embedding,
         "patent_pairs": patent_pairs,
         "scholarly_pairs": scholarly_pairs,
@@ -201,7 +229,6 @@ def build_container(settings: Settings) -> dict[str, Any]:
             "report_latex": report_latex_service,
             "inference": inference_service,
             "storage": storage_service,
-            "text_generation": text_generation_service,
         },
         "_settings": settings,
         "_services_to_close": _services_to_close,
@@ -218,38 +245,3 @@ async def shutdown_container(container: dict[str, Any]) -> None:
                            service=type(svc).__name__, error=str(exc))
 
 
-# ------------------------------------------------------------------
-# Helpers privados
-# ------------------------------------------------------------------
-
-def _build_llm(settings: Settings):
-    provider = (settings.llm_provider or "mock").lower()
-
-    if provider == "anthropic" and settings.llm_anthropic_api_key:
-        from services.llm.anthropic_service import AnthropicLLMService
-        from app.adapters.driven.llm.anthropic_adapter import AnthropicLLMAdapter
-
-        service = AnthropicLLMService(
-            api_key=settings.llm_anthropic_api_key,
-            model=settings.llm_anthropic_model,
-        )
-        logger.info("container_llm_provider=anthropic model=%s", settings.llm_anthropic_model)
-        return AnthropicLLMAdapter(service)
-
-    if provider == "gemini" and settings.llm_gemini_api_key:
-        from services.llm.gemini_service import GeminiLLMService
-        from app.adapters.driven.llm.gemini_adapter import GeminiLLMAdapter
-
-        service = GeminiLLMService(
-            api_key=settings.llm_gemini_api_key,
-            model=settings.llm_gemini_model,
-        )
-        logger.info("container_llm_provider=gemini model=%s", settings.llm_gemini_model)
-        return GeminiLLMAdapter(service)
-
-    from services.llm.mock_service import MockLLMService
-    from app.adapters.driven.llm.mock_adapter import MockLLMAdapter
-
-    logger.warning("container_llm_provider=mock (provider=%s, keys_present=%s)",
-                   provider, bool(settings.llm_anthropic_api_key or settings.llm_gemini_api_key))
-    return MockLLMAdapter(MockLLMService())

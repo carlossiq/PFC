@@ -109,8 +109,8 @@ class StatisticalInferenceService:
             "patents_by_year": None,
             "articles_by_year": None,
         }
-        response[category_field] = {"top10": bootstrap_category}
-        response[entity_field] = {"top10": bootstrap_entity}
+        response[category_field] = {"top10": bootstrap_category, "counts": category_counts}
+        response[entity_field] = {"top10": bootstrap_entity, "counts": entity_counts}
         response[year_field] = year_counts
         return response
 

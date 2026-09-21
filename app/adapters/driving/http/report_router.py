@@ -41,6 +41,10 @@ from schemas.report import (
     ReportGraphicsResponse,
     Top10HeatmapRequest,
     Top10HeatmapResponse,
+    TopEntitiesRequest,
+    TopEntitiesResponse,
+    YearlyVolumeRequest,
+    YearlyVolumeResponse,
 )
 from schemas.response import SuccessResponse
 
@@ -453,3 +457,97 @@ async def generate_top10_heatmap(
     )
 
     return SuccessResponse(data=Top10HeatmapResponse(**result))
+
+
+@router.post(
+    "/{session_id}/top-entities",
+    response_model=SuccessResponse[TopEntitiesResponse],
+)
+async def generate_top_entities(
+    session_id: int,
+    payload: TopEntitiesRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TopEntitiesResponse]:
+    """Gera o gráfico de barra horizontal top-K a partir de uma distribuição
+    nome->contagem já agregada pelo chamador (ex.: o campo `counts` de
+    `depositants`/`institutions` que `POST /inference/final-search`
+    devolve) - não depende de documentos persistidos no banco, mesmo
+    espírito de `/top10-heatmap`. `chart_type` vem no corpo porque mais de
+    uma distribuição desse formato pode existir pro mesmo `document_type`
+    (ver TopEntitiesRequest).
+    """
+    exists = await session.execute(select(ResearchSession.id).where(ResearchSession.id == session_id))
+    if exists.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    fonte = "ops" if payload.document_type == "patent" else "scopus"
+    probe_query_id = await _resolve_final_probe_query_id(session, session_id, fonte)
+
+    svc = _svc(request)
+    result = await svc.generate_top_entities_chart(
+        session_id=session_id,
+        probe_query_id=probe_query_id,
+        entity_counts=payload.entity_counts,
+        chart_type=payload.chart_type,
+        document_type=payload.document_type,
+        title=payload.title,
+        top_k=payload.top_k,
+    )
+
+    object_key = (result["chart"] or {}).get("object_key")
+    if object_key:
+        await _upsert_session_chart(session, probe_query_id, payload.document_type, payload.chart_type, object_key)
+
+    logger.info(
+        "report_top_entities_requested",
+        session_id=session_id,
+        document_type=payload.document_type,
+        chart_type=payload.chart_type,
+        chart_generated=result["chart"] is not None,
+    )
+
+    return SuccessResponse(data=TopEntitiesResponse(**result))
+
+
+@router.post(
+    "/{session_id}/yearly-volume",
+    response_model=SuccessResponse[YearlyVolumeResponse],
+)
+async def generate_yearly_volume(
+    session_id: int,
+    payload: YearlyVolumeRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[YearlyVolumeResponse]:
+    """Generaliza `/patents-yearly-volume` pra qualquer `document_type`
+    (patente OU artigo) - mesmo formato de dado (`yearly_counts`), resolvendo
+    `fonte`/`probe_query_id` do jeito que `/top10-heatmap` já faz.
+    """
+    exists = await session.execute(select(ResearchSession.id).where(ResearchSession.id == session_id))
+    if exists.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    fonte = "ops" if payload.document_type == "patent" else "scopus"
+    probe_query_id = await _resolve_final_probe_query_id(session, session_id, fonte)
+
+    svc = _svc(request)
+    result = await svc.generate_yearly_volume(
+        document_type=payload.document_type,
+        session_id=session_id,
+        probe_query_id=probe_query_id,
+        yearly_counts=payload.yearly_counts,
+    )
+
+    object_key = (result["chart"] or {}).get("object_key")
+    if object_key:
+        await _upsert_session_chart(session, probe_query_id, payload.document_type, "yearly_volume", object_key)
+
+    logger.info(
+        "report_yearly_volume_requested",
+        session_id=session_id,
+        document_type=payload.document_type,
+        chart_generated=result["chart"] is not None,
+    )
+
+    return SuccessResponse(data=YearlyVolumeResponse(**result))

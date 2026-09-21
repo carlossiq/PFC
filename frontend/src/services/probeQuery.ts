@@ -82,6 +82,20 @@ export async function rebuildProbeQuery(
   return data.data
 }
 
+// Valida uma query probe editada como texto livre (caixa única de edição em
+// Step3.tsx/ProbeQuerySectionView.tsx) — não reconstrói nada a partir de
+// campos estruturados, só computa complexidade/warnings pro texto digitado
+// (AND/OR/parênteses etc., igual pra patentes e artigos).
+export async function validateProbeQuery(query: string, api = 'ops'): Promise<QueryOptionResult> {
+  const { data } = await apiClient.post('/chat/probe/validate-query', { query }, { params: { api } })
+
+  if (!data.success) {
+    throw new Error(data.message || 'Falha ao validar query')
+  }
+
+  return data.data
+}
+
 export interface ProbeSearchResultItem {
   title: string
   //  autor do artigo (campo
@@ -251,13 +265,14 @@ export function buildProbeSearchResult(
 
 // Roda a busca real (OPS ou Scopus) com a query já montada no Step3 - é a
 // mesma query devolvida por generateProbeQueriesMulti/rebuildProbeQuery
-// (campo `query` de QueryOptionResult). O backend pede topK+5 como buffer
-// ao adapter mas não corta de volta pra topK, então resultsCount/items.length
-// pode vir até topK+5 - não assumir um teto exato de topK.
+// (campo `query` de QueryOptionResult). O backend pede topK+10 como buffer
+// ao adapter (ver ChatService.run_probe_search) mas não corta de volta pra
+// topK, então resultsCount/items.length pode vir até topK+10 - não assumir
+// um teto exato de topK.
 export async function runProbeSearch(
   query: { query: string } & Record<string, unknown>,
   api: ProbeApi,
-  topK = 10
+  topK = 20
 ): Promise<ProbeSearchResult> {
   const { data } = await apiClient.post('/chat/probe/search', query, { params: { api, top_k: topK } })
   if (!data.success) {

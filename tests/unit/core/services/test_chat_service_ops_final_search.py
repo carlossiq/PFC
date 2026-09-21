@@ -8,7 +8,7 @@ from core.config import Settings
 
 
 def _svc() -> ChatService:
-    return ChatService(llm=None, patent_pairs=[], scholarly_pairs=[], settings=Settings())
+    return ChatService(llm_resolver=None, patent_pairs=[], scholarly_pairs=[], settings=Settings())
 
 
 class FakeOpsAdapter:

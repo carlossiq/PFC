@@ -49,6 +49,7 @@ async def search_sessions(
         selectinload(ResearchSession.inputs),
         selectinload(ResearchSession.probe_queries).selectinload(SessionProbeQuery.charts),
         selectinload(ResearchSession.ai_calls),
+        selectinload(ResearchSession.report),
     )
 
     if theme and theme.strip():
@@ -91,6 +92,7 @@ async def get_session(
             selectinload(ResearchSession.probe_queries).selectinload(SessionProbeQuery.term_links),
             selectinload(ResearchSession.probe_queries).selectinload(SessionProbeQuery.charts),
             selectinload(ResearchSession.ai_calls),
+            selectinload(ResearchSession.report),
         )
     )
     result = await session.execute(stmt)

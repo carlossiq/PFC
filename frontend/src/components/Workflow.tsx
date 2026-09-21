@@ -11,7 +11,8 @@ import { InitialResults } from "./steps/InitialResults";
 import { TermSampling } from "./steps/TermSampling";
 import { FinalExploration } from "./steps/FinalExploration";
 import { FinalResults } from "./steps/FinalResults";
-import { OutrosSteps } from "./steps/OutrosSteps";
+import { ChartCreation } from "./steps/ChartCreation";
+import { ReportStep } from "./steps/ReportStep";
 import { SaveProgressButton } from "./SaveProgressButton";
 import { useWorkflowStore } from "../stores/useWorkflowStore";
 import { useProspectingStore } from "../stores/useProspectingStore";
@@ -263,11 +264,16 @@ export function WorkflowPage() {
                 onBack={handlePrevStep}
                 onNext={handleNext}
               />
-              <OutrosSteps
+              <ChartCreation
                 step={step}
                 substep={substep}
                 onBack={handlePrevStep}
                 onNext={handleNext}
+              />
+              <ReportStep
+                step={step}
+                substep={substep}
+                onBack={handlePrevStep}
               />
             </>
           ) : tab === TABS.SETTINGS ? (

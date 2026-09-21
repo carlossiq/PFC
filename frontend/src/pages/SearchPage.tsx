@@ -3,6 +3,7 @@ import { Modal } from '../components/Modal'
 import { SessionSearchFilter } from '../components/SessionSearchFilter'
 import { SessionCard } from '../components/SessionCard'
 import { SectionHeader } from '../components/SectionHeader'
+import { ReportDocumentEditor } from '../components/steps/ReportDocumentEditor'
 import { searchSessions, deleteSession, getSessionById, type ResearchSessionSummary } from '../services/researchSession'
 import { mapSessionToFormStorePatch } from '../services/sessionHydration'
 import { useFormStore } from '../stores/useFormStore'
@@ -31,6 +32,11 @@ export function SearchPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [resumingId, setResumingId] = useState<number | null>(null)
   const [resumeError, setResumeError] = useState<string | null>(null)
+  // Sessão já finalizada (com relatório montado) aberta pra visualização -
+  // renderiza o editor do documento no lugar da lista, sem hidratar o
+  // wizard inteiro (a sessão já está completed=true, não há "continuar
+  // pesquisa" a fazer, só ver/editar/recompilar o .tex).
+  const [viewingReportSessionId, setViewingReportSessionId] = useState<number | null>(null)
 
   const filteredSessions = sessions.filter((session) => {
     if (statusFilter === 'pending') return !session.completed
@@ -91,6 +97,17 @@ export function SearchPage() {
     return () => clearTimeout(timeoutId)
   }, [query])
 
+  if (viewingReportSessionId !== null) {
+    return (
+      <ReportDocumentEditor
+        sessionId={viewingReportSessionId}
+        initialTexContent={null}
+        standalone
+        onExit={() => setViewingReportSessionId(null)}
+      />
+    )
+  }
+
   return (
     <div className="w-full">
       <SectionHeader
@@ -131,6 +148,7 @@ export function SearchPage() {
                 setSessionPendingDelete(session)
               }}
               onContinueClick={() => handleContinue(session)}
+              onViewReportClick={() => setViewingReportSessionId(session.id)}
               isResuming={resumingId === session.id}
             />
           ))}

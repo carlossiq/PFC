@@ -439,6 +439,13 @@ class SessionReport(Base):
     pdf_object_key: Mapped[Optional[str]] = mapped_column(String(500))
     # "tex_ready" | "pdf_failed" | "complete"
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="tex_ready")
+    # Corpo de AssembleRequest usado na última montagem bem-sucedida (numero,
+    # ano, tema, referencias_administrativas, assinaturas, quadro_busca) -
+    # permite POST /report/{session_id}/reassemble remontar o .tex do zero
+    # (pegando correções no template/seções/gráficos/imagem de capa) sem
+    # pedir esses dados nem reabrir o wizard de pesquisa (que já não é mais
+    # possível depois do ponto de não-retorno, ver ReportGeneration.tsx).
+    assemble_payload: Mapped[Optional[dict]] = mapped_column(JSON)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

@@ -97,6 +97,52 @@ class Top10HeatmapResponse(BaseModel):
     skipped_reason: Optional[str] = None
 
 
+class TopEntitiesRequest(BaseModel):
+    """Corpo da requisição do gráfico de barra horizontal top-K de entidades.
+
+    `entity_counts` é um dict nome->contagem já agregado pelo chamador (ex.:
+    o campo `counts` de `depositants`/`institutions` que
+    `POST /inference/final-search` devolve) - não depende de documentos
+    persistidos no banco. `chart_type` é explícito (diferente de
+    `Top10HeatmapRequest`, que fixa "top10_heatmap") porque mais de uma
+    distribuição desse formato pode existir pro mesmo `document_type` (ex.:
+    "top depositantes" e o heatmap de CPC são ambos do lado patente) - sem
+    isso colidiriam na mesma chave de storage/SessionChart.
+    """
+
+    entity_counts: dict[str, int]
+    title: str = "Top 10"
+    document_type: str = "patent"
+    chart_type: str
+    top_k: int = Field(default=10, ge=1, le=50)
+
+
+class TopEntitiesResponse(BaseModel):
+    """Resultado da geração do gráfico de barra horizontal top-K."""
+
+    chart: Optional[GeneratedChart] = None
+    skipped_reason: Optional[str] = None
+
+
+class YearlyVolumeRequest(BaseModel):
+    """Corpo da requisição do gráfico de barras de documentos por ano.
+
+    Generaliza `PatentYearlyVolumeRequest` pra qualquer `document_type`
+    (patente OU artigo) - mesmo formato de dado (`yearly_counts`), só
+    passa a aceitar o lado artigo também.
+    """
+
+    document_type: str = "patent"
+    yearly_counts: dict[str, int]
+
+
+class YearlyVolumeResponse(BaseModel):
+    """Resultado da geração do gráfico de barras de documentos por ano."""
+
+    chart: Optional[GeneratedChart] = None
+    skipped_reason: Optional[str] = None
+
+
 class SCurveFitQuality(BaseModel):
     """Diagnóstico de confiabilidade do ajuste da curva logística."""
 

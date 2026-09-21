@@ -14,10 +14,10 @@ import { useAutoDismiss } from '../../hooks/useAutoDismiss'
 import { friendlyErrorMessage } from '../../hooks/useProbeQuerySection'
 
 const SCORE_TOOLTIP =
-  'Pontuação de relevância do termo (0 a 1), combinando ' +
-  'importância estatística (frequência do termo nos documentos) ' +
-  'e semântica (o quanto o termo captura o assunto do título/abstract ' +
-  ')'
+  'Pontuação de relevância do termo (RRF bruto, comparável só entre termos ' +
+  'desta mesma extração), combinando importância estatística (frequência ' +
+  'do termo nos documentos) e semântica (o quanto o termo captura o ' +
+  'assunto do título/abstract)'
 
 const VARIANT_SELECT_TOOLTIP =
   'Tipo da query final a gerar '+
@@ -140,7 +140,7 @@ function TermChecklist({
                     className="shrink-0"
                   />
                   <span className="flex-1 text-sm text-gray-900">{t.term}</span>
-                  <span className="text-xs font-mono text-gray-400 shrink-0">{t.score.toFixed(2)}</span>
+                  <span className="text-xs font-mono text-gray-400 shrink-0">{t.score.toFixed(4)}</span>
                 </label>
               </li>
             ))}

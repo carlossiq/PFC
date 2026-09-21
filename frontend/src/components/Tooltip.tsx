@@ -89,7 +89,7 @@ export function Tooltip({
               shadow-lg
               max-w-lg
               min-w-31
-              whitespace-normal
+              whitespace-pre-line
               pointer-events-none
               text-center
               

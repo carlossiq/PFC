@@ -77,12 +77,21 @@ class Top10Block(BaseModel):
     Top-10 de um campo (CPC, área de estudo, depositantes ou instituições),
     com a estabilidade de ranking (bootstrap) de cada entidade - fração das
     reamostragens em que ela permaneceu entre as 10 primeiras (0-1; quanto
-    mais perto de 1, mais confiável é a posição dela no ranking).
+    mais perto de 1, mais confiável é a posição dela no ranking) - e a
+    contagem bruta (enriquecida pelo loop de iterações, ver `_enrich_loop`
+    em statistical_inference_service.py) de todas as categorias/entidades
+    observadas, usada por quem for desenhar um gráfico com números reais
+    (a estabilidade sozinha não serve pra isso, é só um indicador de
+    confiança do ranking).
     """
 
     top10: dict[str, float] = Field(
         ...,
         description="Nome da entidade/categoria -> estabilidade de ranking (bootstrap, 0-1)",
+    )
+    counts: dict[str, int] = Field(
+        ...,
+        description="Nome da entidade/categoria -> contagem bruta enriquecida (todas as observadas, não só o top-10)",
     )
 
 
@@ -132,7 +141,10 @@ class StatisticalInferenceResponse(BaseModel):
                 "iterations_used": 2,
                 "elapsed_seconds": 8.4,
                 "stopped_reason": "saturated",
-                "area_of_study": {"top10": {"Medicine": 0.98, "Engineering": 0.81}},
+                "area_of_study": {
+                    "top10": {"Medicine": 0.98, "Engineering": 0.81},
+                    "counts": {"Medicine": 320, "Engineering": 210},
+                },
                 "institutions": {"top10": {"Aarhus Universitet": 0.65, "MIT": 0.9}},
                 "articles_by_year": {"2020": 500, "2021": 600},
             }

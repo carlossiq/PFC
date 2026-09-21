@@ -51,7 +51,7 @@ class DatabaseSession:
 
         self.engine = create_async_engine(
             db_url,
-            echo=settings.debug,
+            echo=settings.sql_echo,
             poolclass=pool_class,
             pool_pre_ping=pool_pre_ping,
             future=True,

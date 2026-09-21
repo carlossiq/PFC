@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Trash2, ChevronDown, Play, ImageOff } from 'lucide-react'
+import { Trash2, ChevronDown, Play, ImageOff, FileText } from 'lucide-react'
 import { selectableCardClass } from './CandidatePicker'
 import { FieldCard } from './FieldCard'
 import { LoadingScreen } from './LoadingScreen'
@@ -182,6 +182,7 @@ interface SessionCardProps {
   onToggle: () => void
   onDeleteClick: () => void
   onContinueClick: () => void
+  onViewReportClick: () => void
   isResuming?: boolean
 }
 
@@ -191,6 +192,7 @@ export function SessionCard({
   onToggle,
   onDeleteClick,
   onContinueClick,
+  onViewReportClick,
   isResuming = false,
 }: SessionCardProps) {
   const root = session.inputs.find((i) => i.parent_id === null)
@@ -285,6 +287,21 @@ export function SessionCard({
             title="Continuar pesquisa"
           >
             <Play size={18} />
+          </button>
+        )}
+
+        {session.completed && session.report && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onViewReportClick()
+            }}
+            className="shrink-0 p-2 rounded-lg text-gray-400 hover:text-[#0f9448] hover:bg-[#0f9448]/10 transition-colors"
+            aria-label="Ver Relatório"
+            title="Ver Relatório"
+          >
+            <FileText size={18} />
           </button>
         )}
 

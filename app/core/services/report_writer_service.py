@@ -14,6 +14,7 @@ evitar citação inventada por LLM.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Optional
 
 from config.prompts.report_prompts import REPORT_SYSTEM_PROMPT, get_section_prompt
@@ -78,15 +79,46 @@ def escape_latex(text: str) -> str:
     return "".join(_LATEX_ESCAPE_MAP.get(ch, ch) for ch in text)
 
 
+# REPORT_SYSTEM_PROMPT já instrui "não inclua título/cabeçalho da seção",
+# mas LLMs (principalmente modelos locais menores, ver Ollama) ignoram isso
+# com frequência e devolvem Markdown solto (cabeçalho "### Seção: X",
+# "**negrito**") - sem tratar, escape_latex escapa cada "#"/"*" ao pé da
+# letra e o PDF final mostra literalmente "\#\#\# Seção: X" ou "**texto**"
+# em vez de título nenhum/negrito de verdade.
+_MARKDOWN_HEADING_RE = re.compile(r"^#{1,6}[ \t]*.*$\n?", re.MULTILINE)
+_MARKDOWN_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _strip_markdown_headings(text: str) -> str:
+    """Remove linhas que são só um cabeçalho Markdown - roda ANTES de
+    escape_latex, enquanto o "#" ainda é um caractere literal (mais simples
+    de casar aqui do que depois de virar "\\#")."""
+    if not text:
+        return text
+    return _MARKDOWN_HEADING_RE.sub("", text).strip()
+
+
+def _convert_markdown_bold(escaped_text: str) -> str:
+    """Converte **negrito** (Markdown) pra `\\textbf{}` - roda DEPOIS de
+    escape_latex: "*" nunca é escapado (não está em _LATEX_ESCAPE_MAP),
+    sobrevive intacto até aqui, e o conteúdo entre os "**" já saiu
+    devidamente escapado como texto normal - inserir `\\textbf{}` ao redor
+    dele agora é seguro."""
+    return _MARKDOWN_BOLD_RE.sub(r"\\textbf{\1}", escaped_text)
+
+
 class RAGUnavailableError(RuntimeError):
     """Levantado quando o container ChromaDB não está acessível - ver
     app/container.py (rag_service fica None nesse caso)."""
 
 
 class ReportWriterService:
-    def __init__(self, rag: Any, text_generation: Any, settings: Settings) -> None:
+    def __init__(self, rag: Any, llm_resolver: Any, settings: Settings) -> None:
         self._rag = rag
-        self._text_generation = text_generation
+        # llm_resolver: LLMConfigResolver - resolve_text_generation("report_writing")
+        # substitui o text_generation fixo injetado no boot (ver
+        # PLANO_MIGRACAO_CONFIG_BANCO.md § 4.3).
+        self._llm_resolver = llm_resolver
         self._settings = settings
 
     @staticmethod
@@ -191,8 +223,11 @@ class ReportWriterService:
             context=rag_context,
             data=data,
         )
-        raw_text = await self._text_generation.generate(prompt, system=REPORT_SYSTEM_PROMPT)
-        return escape_latex(raw_text)
+        text_generation = await self._llm_resolver.resolve_text_generation("report_writing")
+        raw_text = await text_generation.generate(prompt, system=REPORT_SYSTEM_PROMPT)
+        cleaned_text = _strip_markdown_headings(raw_text)
+        escaped_text = escape_latex(cleaned_text)
+        return _convert_markdown_bold(escaped_text)
 
 
 def _title_abstract_text(document: dict[str, Any]) -> Optional[str]:

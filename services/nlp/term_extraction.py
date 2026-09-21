@@ -1,20 +1,22 @@
 """
 Extract and rank relevant terms from enriched search results.
 
-Uses spaCy for linguistically-informed n-gram extraction (noun_chunks).
-Combines KeyBERT (semantic relevance) and TF-IDF (statistical importance)
-to identify new terms not present in original search parameters.
+Uses spaCy + KeyphraseVectorizers (PatternRank: adjective*+noun+ grammar
+pattern) for candidate generation, BM25F for lexical/statistical scoring,
+KeyBERT for semantic scoring, and Reciprocal Rank Fusion (RRF, 2 stages) to
+combine channels and rank candidates. C-value replaces the old word-overlap
+subsumption filter for nested-term redundancy.
+
+Ver TESTE_EXTRACAO_TERMOS_BM25F_RRF.md para a comparação com o pipeline
+anterior (spaCy noun_chunks + TF-IDF + KeyBERT combinados linearmente).
 """
 
 import json
+import math
 import re
-import string
 from typing import Any, Optional
 from collections import Counter
 from pathlib import Path
-
-import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
 
 from core.logging import get_logger
 from core.config import settings
@@ -28,26 +30,49 @@ try:
 except ImportError:
     SPACY_AVAILABLE = False
     logger.warning(
-        "spacy_not_installed", message="Install spacy for better n-gram extraction"
+        "spacy_not_installed", message="Install spacy for candidate generation"
+    )
+
+try:
+    from keyphrase_vectorizers import KeyphraseCountVectorizer
+
+    KEYPHRASE_VECTORIZERS_AVAILABLE = True
+except ImportError:
+    KEYPHRASE_VECTORIZERS_AVAILABLE = False
+    logger.warning(
+        "keyphrase_vectorizers_not_installed",
+        message="Install keyphrase-vectorizers for candidate generation",
     )
 
 
 class TermExtractor:
     """Extract and rank relevant terms from search results."""
 
+    # Padrão gramatical do PatternRank: adjetivo(s) opcional(is) seguido de
+    # substantivo(s) - casa a frase nominal MAXIMAL, não janelas deslizantes.
+    _KEYPHRASE_POS_PATTERN = "<J.*>*<N.*>+"
+    # Teto de tamanho do candidato. KeyphraseCountVectorizer não tem parâmetro
+    # de tamanho máximo (verificado: sua assinatura não aceita max_words) -
+    # o corte é feito depois, sobre os candidatos já extraídos. 5 em vez do
+    # antigo teto rígido de 3: o pipeline anterior cortava modificadores
+    # importantes de frases nominais de 4+ palavras (ver relatório de teste,
+    # ex. "graphene oxide modified membrane" virava "oxide modified
+    # membrane"); 5 é uma folga generosa sem permitir frases patológicas.
+    _MAX_CANDIDATE_WORDS = 5
+
     def __init__(self, keybert_model: Optional[Any] = None):
         """
         Initialize term extractor.
 
-        Requires spaCy (en_core_web_sm) to be installed for linguistic analysis.
+        Requires spaCy (en_core_web_sm) e keyphrase-vectorizers para geração
+        de candidatos, e KeyBERT para o canal semântico.
 
         Args:
             keybert_model: Pre-loaded KeyBERT model. If None, will load default.
         """
         self.keybert = keybert_model
 
-        # Initialize boundary configs (will be loaded in _load_spacy_model)
-        self.ngram_boundary_tokens = set()
+        # Initialize POS pattern configs (loaded in _load_spacy_model)
         self.bad_pos_bigrams = []
         self.bad_pos_trigrams = []
         self.ngram_boundary_pos = set()
@@ -57,11 +82,8 @@ class TermExtractor:
         self.patent_structural_words = set()
         self.scholarly_structural_words = set()
 
-        # Load spaCy model (required)
+        # Load spaCy model + keyphrase vectorizer (required)
         self._load_spacy_model()
-
-        # Load n-gram boundary tokens
-        self._load_ngram_boundary_tokens()
 
         # Load quality filters
         self._load_quality_filter_config()
@@ -89,10 +111,11 @@ class TermExtractor:
                 self.keybert = None
 
     def _load_spacy_model(self) -> None:
-        """Load spaCy model for linguistic analysis."""
+        """Load spaCy model + PatternRank keyphrase vectorizer."""
         if not SPACY_AVAILABLE:
             logger.warning("spacy_not_available", message="spaCy not installed")
             self.nlp = None
+            self.keyphrase_vectorizer = None
             return
 
         try:
@@ -106,38 +129,29 @@ class TermExtractor:
             )
             self.nlp = None
 
-        # Load POS patterns config
+        # Load POS patterns config (bad bigram/trigram patterns)
         self._load_pos_patterns_config()
 
-    def _load_ngram_boundary_tokens(self) -> None:
-        """Load n-gram boundary tokens that split n-grams when encountered."""
-        try:
-            config_path = (
-                Path(__file__).parent.parent.parent
-                / "config"
-                / "ngram_boundary_tokens.json"
+        if self.nlp and KEYPHRASE_VECTORIZERS_AVAILABLE:
+            # Reusa o pipeline spaCy já carregado (mesmo custo de carga caro
+            # de antes) em vez de deixar o KeyphraseCountVectorizer carregar
+            # o seu próprio.
+            self.keyphrase_vectorizer = KeyphraseCountVectorizer(
+                spacy_pipeline=self.nlp,
+                pos_pattern=self._KEYPHRASE_POS_PATTERN,
+                stop_words=None,  # filtro de stopwords já feito em _apply_quality_filters
+                lowercase=True,
             )
-            with open(config_path, "r", encoding="utf-8") as f:
-                boundary_config = json.load(f)
-
-            self.ngram_boundary_tokens = set(
-                token.lower()
-                for token in boundary_config.get("ngram_boundary_tokens", [])
-            )
-
-            logger.info(
-                "ngram_boundary_tokens_loaded",
-                boundary_tokens=len(self.ngram_boundary_tokens),
-            )
-        except Exception as e:
-            logger.warning(
-                "ngram_boundary_tokens_load_failed",
-                error=str(e),
-            )
-            self.ngram_boundary_tokens = set()
+        else:
+            self.keyphrase_vectorizer = None
+            if not KEYPHRASE_VECTORIZERS_AVAILABLE:
+                logger.warning(
+                    "keyphrase_vectorizers_not_available",
+                    message="keyphrase-vectorizers not installed",
+                )
 
     def _load_pos_patterns_config(self) -> None:
-        """Load POS patterns (bad bigrams/trigrams) and boundary POS tags from config."""
+        """Load POS patterns (bad bigrams/trigrams) from config."""
         try:
             config_path = (
                 Path(__file__).parent.parent.parent / "config" / "pos_patterns.json"
@@ -157,16 +171,10 @@ class TermExtractor:
                 )
             ]
 
-            # Load boundary POS tags that split n-grams
-            self.ngram_boundary_pos = set(
-                pos_config.get("pos_patterns", {}).get("ngram_boundary_pos", [])
-            )
-
             logger.info(
                 "pos_patterns_config_loaded",
                 bad_bigrams=len(self.bad_pos_bigrams),
                 bad_trigrams=len(self.bad_pos_trigrams),
-                boundary_pos=len(self.ngram_boundary_pos),
             )
         except Exception as e:
             logger.warning(
@@ -175,7 +183,6 @@ class TermExtractor:
             )
             self.bad_pos_bigrams = []
             self.bad_pos_trigrams = []
-            self.ngram_boundary_pos = set()
 
     def _load_quality_filter_config(self) -> None:
         """Load string quality filter rules (boundary stopwords, structural words)."""
@@ -222,10 +229,6 @@ class TermExtractor:
         """
         Clean text: lowercase, remove URLs, normalize hyphens, extra spaces.
 
-        NOTE: Punctuation is NOT removed here - it's kept for spaCy to detect
-        boundary tokens (PUNCT POS tags). The n-gram boundary detector will
-        split n-grams at punctuation marks.
-
         Args:
             text: Raw text
 
@@ -246,180 +249,240 @@ class TermExtractor:
 
         return text
 
-    def _clean_pos_tags(self, tokens: list[str], pos_tags: list[str]) -> list[str]:
+    def _extract_candidates_patternrank(self, texts: list[str]) -> list[str]:
         """
-        Remove unwanted POS tags from beginning and end of token sequence.
-
-        Removes: DET, ADP, CCONJ, SCONJ, PART, PUNCT, SPACE
+        Generate term candidates via PatternRank (KeyphraseCountVectorizer):
+        matches the adjective*+noun+ grammar pattern across the whole text,
+        returning the MAXIMAL noun phrase (not 1-3 word sliding windows like
+        the previous spaCy noun_chunks pipeline).
 
         Args:
-            tokens: List of tokens
-            pos_tags: List of POS tags (same length as tokens)
+            texts: List of cleaned texts to analyze
 
         Returns:
-            Cleaned tokens (may be empty list)
+            List of unique candidate terms, order-preserved
         """
-        if not tokens:
+        if not self.keyphrase_vectorizer or not texts:
             return []
 
-        unwanted_pos = {"DET", "ADP", "CCONJ", "SCONJ", "PART", "PUNCT", "SPACE", "SYM"}
-
-        # Find first good token
-        start_idx = 0
-        for i, pos in enumerate(pos_tags):
-            if pos not in unwanted_pos:
-                start_idx = i
-                break
-        else:
-            return []  # All tokens are unwanted
-
-        # Find last good token
-        end_idx = len(tokens) - 1
-        for i in range(len(pos_tags) - 1, -1, -1):
-            if pos_tags[i] not in unwanted_pos:
-                end_idx = i
-                break
-
-        return tokens[start_idx : end_idx + 1]
-
-    def _extract_noun_chunks(self, text: str) -> list[str]:
-        """
-        Extract noun chunks from text using spaCy.
-
-        Returns cleaned chunks (with unwanted POS tags removed from start/end).
-
-        Args:
-            text: Text to analyze
-
-        Returns:
-            List of cleaned noun chunks
-        """
-        if not self.nlp:
-            return []
+        # KeyphraseCountVectorizer não detecta a fronteira entre um texto da
+        # lista e o próximo quando o texto não termina em pontuação de fim de
+        # frase (títulos, por exemplo, quase nunca têm ponto final). Sem essa
+        # fronteira, o padrão gramatical "vaza" de um texto pro seguinte e
+        # produz candidatos que não existem em NENHUM dos dois textos
+        # originais (ex.: "seawater desalination process membrane filtration
+        # device", concatenando o fim de um título com o início do próximo) -
+        # e reduz drasticamente a quantidade de candidatos extraídos
+        # (confirmado empiricamente: 5 títulos sem ponto final -> 5
+        # candidatos, vários deles cruzados; com ponto final -> 10
+        # candidatos, todos corretos). Garantir pontuação final por texto
+        # antes do fit() resolve isso.
+        #
+        # Mesmo problema DENTRO de um texto: vírgula/ponto-e-vírgula não são
+        # tratados como fronteira de frase pelo vetorizador (só reconhece
+        # .!?), então itens de uma lista separados por vírgula colam num
+        # candidato que não existe no texto original (ex.: "filtration,
+        # purification of water" -> candidato espúrio "filtration
+        # purification"). Convertendo pra ponto força a fronteira.
+        bounded_texts = [
+            text.replace(",", ".").replace(";", ".")
+            for text in texts
+        ]
+        bounded_texts = [
+            text if text.rstrip().endswith((".", "!", "?")) else f"{text}."
+            for text in bounded_texts
+        ]
 
         try:
-            doc = self.nlp(text)
-            chunks = []
-
-            for chunk in doc.noun_chunks:
-                # Get tokens and POS tags
-                tokens = [token.text.lower() for token in chunk]
-                pos_tags = [token.pos_ for token in chunk]
-
-                # Clean POS tags from start/end
-                cleaned = self._clean_pos_tags(tokens, pos_tags)
-
-                if cleaned and len(" ".join(cleaned)) > 2:  # Min length check
-                    chunks.append(" ".join(cleaned))
-
-            return chunks
+            self.keyphrase_vectorizer.fit(bounded_texts)
+            candidates = list(self.keyphrase_vectorizer.get_feature_names_out())
+        except ValueError:
+            # KeyphraseCountVectorizer raises ValueError when no candidate is
+            # found in the text (equivalent to the old unique_ngrams == [])
+            return []
         except Exception as e:
-            logger.warning(
-                "noun_chunk_extraction_failed",
-                error=str(e),
-            )
+            logger.warning("patternrank_extraction_failed", error=str(e))
             return []
 
-    def _extract_subngramas_from_chunk(self, chunk_text: str) -> list[str]:
-        """
-        Extract sub-n-grams (n=1-3) from a noun chunk with POS cleaning.
+        return [
+            candidate
+            for candidate in candidates
+            if 1 <= len(candidate.split()) <= self._MAX_CANDIDATE_WORDS
+        ]
 
-        Does not generate n-grams that:
-        - Traverse boundary tokens (defined in ngram_boundary_tokens)
-        - Contain boundary POS tags (ADP, CCONJ, SCONJ, PUNCT, SPACE)
-        - Cross punctuation marks at start/end
+    def _normalize_original_params(self, original_params: dict) -> set[str]:
+        """
+        Extract and normalize original search parameters.
 
         Args:
-            chunk_text: Cleaned noun chunk text
+            original_params: Original search parameters (theme, description, etc.)
 
         Returns:
-            List of cleaned sub-n-grams
+            Set of normalized terms from original params
         """
-        if not self.nlp:
-            tokens = chunk_text.split()
-            pos_tags = ["NOUN"] * len(tokens)
-        else:
-            try:
-                doc = self.nlp(chunk_text)
-                tokens = [token.text.lower() for token in doc]
-                pos_tags = [token.pos_ for token in doc]
-            except Exception:
-                tokens = chunk_text.split()
-                pos_tags = ["NOUN"] * len(tokens)
+        original_terms = set()
 
-        ngrams = []
-        max_n = min(3, len(tokens))
+        for key, value in original_params.items():
+            if isinstance(value, str):
+                cleaned = self._clean_text(value)
+                original_terms.update(cleaned.split())
+            elif isinstance(value, (list, tuple)):
+                for item in value:
+                    if isinstance(item, str):
+                        cleaned = self._clean_text(item)
+                        original_terms.update(cleaned.split())
 
-        # Find segments that don't cross boundary tokens/pos
-        segments = self._split_by_boundaries(tokens, pos_tags)
+        return original_terms
 
-        # Extract n-grams from each segment
-        for segment_tokens, segment_pos in segments:
-            segment_n = min(3, len(segment_tokens))
-
-            for n in range(1, segment_n + 1):
-                for i in range(len(segment_tokens) - n + 1):
-                    subngram_tokens = segment_tokens[i : i + n]
-                    subngram_pos = segment_pos[i : i + n]
-
-                    # Clean POS tags from edges
-                    cleaned_tokens = self._clean_pos_tags(subngram_tokens, subngram_pos)
-
-                    if cleaned_tokens and len(" ".join(cleaned_tokens)) > 2:
-                        ngrams.append(" ".join(cleaned_tokens))
-
-        return ngrams
-
-    def _split_by_boundaries(
-        self, tokens: list[str], pos_tags: list[str]
-    ) -> list[tuple[list[str], list[str]]]:
+    def _matches_bad_pos_pattern(self, term: str) -> bool:
         """
-        Split token sequence by boundary tokens and POS tags.
+        Check whether a bi/trigram's POS tag sequence matches a known "bad"
+        grammatical pattern (config/pos_patterns.json), e.g. ADV+VERB
+        ("efficiently removes") - a strong signal the phrase is a verb-like
+        fragment rather than a genuine noun-phrase term.
 
-        Returns list of (tokens, pos_tags) tuples for non-boundary segments.
-        Filters out punctuation tokens within segments.
-
-        Args:
-            tokens: List of tokens
-            pos_tags: List of POS tags
-
-        Returns:
-            List of (segment_tokens, segment_pos) tuples
+        Only applies to exactly 2 or 3-word terms (the only lengths with
+        configured patterns).
         """
-        segments = []
-        current_segment = []
-        current_pos = []
+        n_words = len(term.split())
+        if n_words not in (2, 3) or not self.nlp:
+            return False
 
-        for token, pos in zip(tokens, pos_tags):
-            # Check if this is a boundary token or POS tag
-            is_boundary = (
-                token in self.ngram_boundary_tokens or pos in self.ngram_boundary_pos
+        try:
+            doc = self.nlp(term)
+            pos_tags = tuple(token.pos_ for token in doc)
+        except Exception as e:
+            logger.warning("pos_pattern_check_failed", error=str(e), ngram=term)
+            return False
+
+        if n_words == 2:
+            return pos_tags in self.bad_pos_bigrams
+        return pos_tags in self.bad_pos_trigrams
+
+    def _structural_quality_score(self, term: str) -> float:
+        """
+        Structural quality signal for a candidate: n-gram size preference
+        (same weights as the old additive bonus/penalty) plus a penalty for
+        bad POS patterns. Used only to RANK candidates against each other via
+        RRF (§ extract_and_rank_terms) - not summed into any other score.
+        """
+        tokens = term.split()
+        n_words = len(tokens)
+
+        unigram_penalty = getattr(settings, "term_extraction_unigram_penalty", -0.4)
+        bigram_bonus = getattr(settings, "term_extraction_bigram_bonus", 0.0)
+        trigram_bonus = getattr(settings, "term_extraction_trigram_bonus", 0.25)
+
+        size_score = {1: unigram_penalty, 2: bigram_bonus}.get(n_words, trigram_bonus)
+
+        if self._matches_bad_pos_pattern(term):
+            bad_bigram_penalty = getattr(
+                settings, "term_extraction_bad_bigram_penalty", -0.8
             )
+            bad_trigram_penalty = getattr(
+                settings, "term_extraction_bad_trigram_penalty", -0.8
+            )
+            size_score += bad_bigram_penalty if n_words == 2 else bad_trigram_penalty
 
-            if is_boundary:
-                # End current segment if not empty
-                if current_segment:
-                    segments.append((current_segment, current_pos))
-                    current_segment = []
-                    current_pos = []
-            else:
-                # Add to current segment (skip pure punctuation tokens)
-                # Keep token if it contains alphanumeric chars (allow "don't" but not "-")
-                if any(c.isalnum() for c in token):
-                    current_segment.append(token)
-                    current_pos.append(pos)
+        return size_score
 
-        # Add final segment
-        if current_segment:
-            segments.append((current_segment, current_pos))
+    @staticmethod
+    def _rrf_fuse_two_rankings(
+        candidates: list[str],
+        score_a: dict[str, float],
+        score_b: dict[str, float],
+        k: int,
+    ) -> dict[str, float]:
+        """
+        Reciprocal Rank Fusion of two scored channels: RRF(t) = sum(1/(k+rank_i(t))).
+        Used both for BM25F x KeyBERT (-> salience_score) and salience x
+        structural quality (-> final_rrf_score).
+        """
+        rank_a = {
+            term: i + 1
+            for i, term in enumerate(
+                sorted(candidates, key=lambda t: score_a.get(t, 0.0), reverse=True)
+            )
+        }
+        rank_b = {
+            term: i + 1
+            for i, term in enumerate(
+                sorted(candidates, key=lambda t: score_b.get(t, 0.0), reverse=True)
+            )
+        }
+        return {
+            term: 1.0 / (k + rank_a[term]) + 1.0 / (k + rank_b[term])
+            for term in candidates
+        }
 
-        return segments if segments else [(tokens, pos_tags)]
+    def _compute_bm25f_scores(
+        self,
+        candidates: list[str],
+        documents: list[dict[str, str]],
+        title_weight: float,
+        abstract_weight: float,
+    ) -> dict[str, float]:
+        """
+        BM25F (field-weighted BM25) lexical score per candidate against the
+        in-memory corpus, replacing sklearn TfidfVectorizer's column-mean.
+        Each candidate is treated as a phrase; term frequency is the literal
+        substring occurrence count per field (equivalent to Lucene phrase
+        frequency without needing an inverted index for this small,
+        per-request corpus).
+
+        Args:
+            candidates: Candidate terms
+            documents: Per-document {"title": str, "abstract": str} pairs
+            title_weight / abstract_weight: Field weights (same settings used
+                before for the linear title/abstract combination)
+
+        Returns:
+            Dict mapping term -> aggregate BM25F score across the corpus
+        """
+        n_docs = len(documents)
+        if n_docs == 0 or not candidates:
+            return {}
+
+        k1 = getattr(settings, "term_extraction_bm25_k1", 1.2)
+        b = getattr(settings, "term_extraction_bm25_b", 0.75)
+
+        title_lens = [len(doc["title"].split()) for doc in documents]
+        abstract_lens = [len(doc["abstract"].split()) for doc in documents]
+        avg_title_len = (sum(title_lens) / n_docs) or 1.0
+        avg_abstract_len = (sum(abstract_lens) / n_docs) or 1.0
+
+        scores: dict[str, float] = {}
+
+        for term in candidates:
+            doc_pseudo_tfs = []
+
+            for doc, title_len, abstract_len in zip(documents, title_lens, abstract_lens):
+                tf_title = doc["title"].count(term)
+                tf_abstract = doc["abstract"].count(term)
+                if tf_title == 0 and tf_abstract == 0:
+                    continue
+
+                b_title = (1 - b) + b * (title_len / avg_title_len)
+                b_abstract = (1 - b) + b * (abstract_len / avg_abstract_len)
+                pseudo_tf = title_weight * (tf_title / b_title) + abstract_weight * (
+                    tf_abstract / b_abstract
+                )
+                doc_pseudo_tfs.append(pseudo_tf)
+
+            n_t = len(doc_pseudo_tfs)
+            if n_t == 0:
+                continue
+
+            idf = math.log(1 + (n_docs - n_t + 0.5) / (n_t + 0.5))
+            scores[term] = sum(tf / (k1 + tf) * idf for tf in doc_pseudo_tfs)
+
+        return scores
 
     def _extract_keybert_scores(
         self, texts: list[str], ngrams: list[str]
     ) -> dict[str, float]:
         """
-        Extract KeyBERT semantic relevance scores.
+        Extract KeyBERT semantic relevance scores (cosine similarity channel).
 
         First tries with candidates filter for exact matches, then falls back to
         extracting all keywords if few results are found.
@@ -490,249 +553,157 @@ class TermExtractor:
 
         return scores
 
-    def _extract_tfidf_scores(
-        self, texts: list[str], ngrams: list[str]
+    @staticmethod
+    def _is_contiguous_substring(shorter_words: list[str], longer_words: list[str]) -> bool:
+        """Check if shorter is a contiguous word-subsequence of longer."""
+        return " ".join(shorter_words) in " ".join(longer_words)
+
+    def _compute_c_values(
+        self, candidates: list[str], frequency: dict[str, int]
     ) -> dict[str, float]:
         """
-        Extract TF-IDF statistical importance scores.
+        Classic C-value (Frantzi & Ananiadou). Replaces the old word-overlap
+        subsumption filter (overlap_ratio >= 0.66). A candidate that only ever
+        occurs embedded inside longer candidates (no independent frequency)
+        gets a low/negative c_value and is dropped downstream.
 
-        For n-grams, if not in vocabulary, compute as average of component words.
-        Only returns scores for ngrams that actually appear in the texts.
-
-        Args:
-            texts: List of texts to analyze
-            ngrams: List of candidate terms
-
-        Returns:
-            Dict mapping term -> tfidf_score (0-1). Only includes ngrams found in texts.
-        """
-        scores = {}
-
-        if not texts:
-            return scores
-
-        try:
-            vectorizer = TfidfVectorizer(analyzer="word", lowercase=True)
-            tfidf_matrix = vectorizer.fit_transform(texts)
-            feature_names = set(vectorizer.get_feature_names_out())
-
-            # Only score ngrams that actually appear in these texts
-            for ngram in ngrams:
-                ngram_tokens = ngram.split()
-
-                # If ngram is in vocabulary, use direct score
-                if ngram in feature_names:
-                    idx = list(vectorizer.get_feature_names_out()).index(ngram)
-                    scores[ngram] = float(tfidf_matrix[:, idx].mean())
-                else:
-                    # For multi-word ngrams, only score if ALL tokens appear
-                    # (don't average partial matches across sources)
-                    if len(ngram_tokens) > 1 and all(
-                        token in feature_names for token in ngram_tokens
-                    ):
-                        component_scores = []
-                        for token in ngram_tokens:
-                            idx = list(vectorizer.get_feature_names_out()).index(token)
-                            component_scores.append(float(tfidf_matrix[:, idx].mean()))
-                        scores[ngram] = sum(component_scores) / len(component_scores)
-
-            # Normalize to 0-1
-            if scores:
-                max_score = max(scores.values())
-                if max_score > 0:
-                    scores = {k: v / max_score for k, v in scores.items()}
-
-        except Exception as e:
-            logger.warning(
-                "tfidf_extraction_failed",
-                error=str(e),
-            )
-
-        return scores
-
-    def _normalize_original_params(self, original_params: dict) -> set[str]:
-        """
-        Extract and normalize original search parameters.
+        Note: since PatternRank (unlike the old sliding-window generator)
+        already emits maximal noun phrases instead of every sub-window, far
+        fewer candidates are pure fragments of another to begin with - this
+        mostly catches near-duplicate phrasing across different documents
+        (e.g. "wireless charging" nested inside "electric vehicle wireless
+        charging pads").
 
         Args:
-            original_params: Original search parameters (theme, description, etc.)
+            candidates: Candidate terms
+            frequency: term -> raw occurrence count (ngram_frequency)
 
         Returns:
-            Set of normalized terms from original params
+            Dict mapping term -> c_value
         """
-        original_terms = set()
+        nested_in: dict[str, list[str]] = {term: [] for term in candidates}
+        by_length_desc = sorted(candidates, key=lambda t: len(t.split()), reverse=True)
 
-        for key, value in original_params.items():
-            if isinstance(value, str):
-                cleaned = self._clean_text(value)
-                original_terms.update(cleaned.split())
-            elif isinstance(value, (list, tuple)):
-                for item in value:
-                    if isinstance(item, str):
-                        cleaned = self._clean_text(item)
-                        original_terms.update(cleaned.split())
+        for longer in by_length_desc:
+            longer_words = longer.split()
+            for shorter in candidates:
+                if shorter == longer:
+                    continue
+                shorter_words = shorter.split()
+                if len(shorter_words) >= len(longer_words):
+                    continue
+                if self._is_contiguous_substring(shorter_words, longer_words):
+                    nested_in[shorter].append(longer)
 
-        return original_terms
+        c_values = {}
+        for term in candidates:
+            n_words = len(term.split())
+            f = frequency.get(term, 0)
+            longer_terms = nested_in[term]
 
-    def _get_score_adjustments(self, ngram: str) -> tuple[float, float]:
+            if not longer_terms:
+                c_values[term] = math.log2(max(n_words, 2)) * f
+            else:
+                freq_in_longer = sum(frequency.get(t, 0) for t in longer_terms)
+                c_values[term] = math.log2(max(n_words, 2)) * (
+                    f - freq_in_longer / len(longer_terms)
+                )
+
+        return c_values
+
+    def _deduplicate_nested_terms(self, ranked_terms: list[str]) -> list[str]:
         """
-        Calculate score adjustments (bonus and penalty) for an n-gram.
+        Drop a term when a term already kept (therefore ranked >= it, since
+        ranked_terms is sorted by score descending) contiguously contains it
+        as a nested phrase - keeps only the best-scored member of each
+        nested family (e.g. "composite ultrafiltration membrane" over
+        "ultrafiltration membrane" when the former ranks higher).
 
-        Returns: (bonus, penalty) where final_score = base_score + bonus + penalty
-
-        Size-based adjustments loaded from config:
-        - term_extraction_unigram_penalty
-        - term_extraction_bigram_bonus
-        - term_extraction_trigram_bonus
-
-        POS pattern penalties:
-        - term_extraction_bad_bigram_penalty
-        - term_extraction_bad_trigram_penalty
+        Only catches strict nesting (shorter is a contiguous word-subsequence
+        of an already-kept longer term, same definition as C-value's - see
+        _is_contiguous_substring); a partial overlap like "composite
+        membrane" inside "composite ultrafiltration membrane" (not
+        contiguous - "ultrafiltration" sits between them) is not nesting and
+        both survive independently.
 
         Args:
-            ngram: The n-gram to check
+            ranked_terms: Terms already sorted by score, descending.
 
         Returns:
-            Tuple of (bonus_adjustment, penalty_adjustment)
+            Same order, with dominated nested terms removed.
         """
-        tokens = ngram.split()
-        bonus = 0.0
-        penalty = 0.0
-
-        # Load configuration for n-gram size adjustments
-        unigram_penalty = getattr(settings, "term_extraction_unigram_penalty", -0.4)
-        bigram_bonus = getattr(settings, "term_extraction_bigram_bonus", 0.0)
-        trigram_bonus = getattr(settings, "term_extraction_trigram_bonus", 0.3)
-        bad_bigram_penalty = getattr(
-            settings, "term_extraction_bad_bigram_penalty", -0.8
-        )
-        bad_trigram_penalty = getattr(
-            settings, "term_extraction_bad_trigram_penalty", -0.8
-        )
-
-        # Apply n-gram size-based adjustments
-        n_words = len(tokens)
-        if n_words == 1:
-            penalty += unigram_penalty
-        elif n_words == 2:
-            bonus += bigram_bonus
-        elif n_words == 3:
-            bonus += trigram_bonus
-
-        # Apply POS pattern penalties using spaCy
-        try:
-            doc = self.nlp(ngram)
-            pos_tags = tuple(token.pos_ for token in doc)
-
-            # Check against bad bigram patterns
-            if n_words == 2 and pos_tags in self.bad_pos_bigrams:
-                penalty += bad_bigram_penalty
-            # Check against bad trigram patterns
-            elif n_words == 3 and pos_tags in self.bad_pos_trigrams:
-                penalty += bad_trigram_penalty
-
-        except Exception as e:
-            logger.warning(
-                "pos_pattern_check_failed",
-                error=str(e),
-                ngram=ngram,
-            )
-
-        return bonus, penalty
-
-    def _apply_subsumption_filter(
-        self,
-        ranked_terms: list[str],
-        overlap_threshold: float = 0.67,
-    ) -> list[str]:
-        """
-        Apply overlap filter: remove terms with >67% word overlap with already selected terms.
-
-        Uses overlap ratio: intersection / min(len(term_a), len(term_b))
-        This ensures diversity by eliminating terms that share majority of words.
-
-        Examples with threshold=0.67:
-        - "salt water" vs "water desalination": 1/2 = 0.50 → Keep (below threshold)
-        - "ultrafiltration membrane" vs "composite ultrafiltration membranes": 2/2 = 1.0 → Remove
-        - "desalination" vs "water desalination": 1/1 = 1.0 → Remove
-
-        Args:
-            ranked_terms: List of terms already sorted by score (descending)
-            overlap_threshold: Reject if overlap_ratio >= threshold (default 0.67)
-
-        Returns:
-            List of terms with high-overlap terms removed, preserving order and scores
-        """
-
-        def overlap_ratio(term_a: str, term_b: str) -> float:
-            """Calculate overlap ratio: shared words / min term length."""
-            words_a = set(term_a.lower().split())
-            words_b = set(term_b.lower().split())
-            if not words_a or not words_b:
-                return 0.0
-            intersection = len(words_a & words_b)
-            smaller = min(len(words_a), len(words_b))
-            return intersection / smaller if smaller > 0 else 0.0
-
-        selected = []
-
-        for candidate in ranked_terms:
-            # Check if this term overlaps too much with already selected terms
-            is_dominated = False
-            for selected_term in selected:
-                if overlap_ratio(candidate, selected_term) >= overlap_threshold:
-                    is_dominated = True
-                    logger.debug(
-                        "term_dominated_by_overlap",
-                        dominated_term=candidate,
-                        dominant_term=selected_term,
-                        overlap_ratio=round(overlap_ratio(candidate, selected_term), 3),
-                    )
-                    break
-
-            if not is_dominated:
-                selected.append(candidate)
-
-        return selected
+        kept: list[str] = []
+        for term in ranked_terms:
+            term_words = term.split()
+            if any(
+                len(term_words) < len(kept_term.split())
+                and self._is_contiguous_substring(term_words, kept_term.split())
+                for kept_term in kept
+            ):
+                continue
+            kept.append(term)
+        return kept
 
     def _apply_quality_filters(self, candidate_terms: list[str]) -> list[str]:
         """
-        Apply string quality filters to remove low-quality terms.
+        Apply string quality filters to clean up low-quality terms.
 
-        Removes terms that:
-        1. Start or end with boundary stopwords (a, an, the, of, etc.)
-        2. Contain patent structural words (wherein, comprising, said, etc.)
-        3. Contain scholarly structural words (proposed, analyzed, novel, etc.)
+        1. Trims boundary stopwords (a, an, the, of, etc.) off both ends,
+           repeatedly - a stopword can be exposed right after stripping the
+           one before it (e.g. "the good permeability" -> "good
+           permeability" -> "permeability") - instead of discarding the
+           whole candidate for having one at the edge.
+        2. Drops the term entirely if, after trimming, it still contains a
+           patent structural word (wherein, comprising, said, etc.) anywhere.
+        3. Drops the term entirely if, after trimming, it still contains a
+           scholarly structural word (proposed, analyzed, novel, etc.)
+           anywhere.
+
+        Trimming can collapse two different candidates onto the same string
+        (e.g. "good permeability" and "high permeability" both trim to
+        "permeability") - deduplicated here, first occurrence wins.
 
         Args:
             candidate_terms: List of terms to filter
 
         Returns:
-            List of terms that pass quality checks
+            List of terms (order-preserved, deduplicated) that pass quality
+            checks - some trimmed relative to the input.
         """
         filtered_terms = []
+        seen = set()
 
         for term in candidate_terms:
-            term_lower = term.lower()
-            words = term_lower.split()
+            words = term.split()
 
-            # Check boundary stopwords (start or end)
-            if words and (
-                words[0] in self.boundary_stopwords
-                or words[-1] in self.boundary_stopwords
-            ):
+            changed = True
+            while words and changed:
+                changed = False
+                if words[0].lower() in self.boundary_stopwords:
+                    words = words[1:]
+                    changed = True
+                if words and words[-1].lower() in self.boundary_stopwords:
+                    words = words[:-1]
+                    changed = True
+
+            if not words:
                 continue
 
-            # Check patent structural words (anywhere in term)
-            if any(word in self.patent_structural_words for word in words):
+            words_lower = [w.lower() for w in words]
+
+            # Check patent structural words (anywhere in the trimmed term)
+            if any(w in self.patent_structural_words for w in words_lower):
                 continue
 
-            # Check scholarly structural words (anywhere in term)
-            if any(word in self.scholarly_structural_words for word in words):
+            # Check scholarly structural words (anywhere in the trimmed term)
+            if any(w in self.scholarly_structural_words for w in words_lower):
                 continue
 
-            # Term passes all quality filters
-            filtered_terms.append(term)
+            trimmed_term = " ".join(words)
+            if trimmed_term in seen:
+                continue
+            seen.add(trimmed_term)
+            filtered_terms.append(trimmed_term)
 
         return filtered_terms
 
@@ -740,27 +711,33 @@ class TermExtractor:
         self,
         original_params: dict[str, Any],
         enriched_results: list[dict[str, Any]],
-        top_k: int = None,  # Deprecated: all terms above score threshold are returned
+        score_threshold: float | None = None,
     ) -> list[dict[str, Any]]:
         """
         Extract and rank relevant terms from enriched results.
 
         Process:
-        1. Extract title and abstract separately from each result
-        2. Clean and tokenize into n-grams with source tracking
-        3. Score with KeyBERT (semantic) and TF-IDF (statistical)
-        4. Normalize scores separately: KeyBERT and TF-IDF to 0-1 scale
-        5. Combine scores: 60% TF-IDF + 40% KeyBERT, weighted by source
-        6. Apply configurable weights: title (default 3.0) vs abstract (default 1.0)
-        7. Apply quality filters (stopwords, structural words)
-        8. Apply MMR ranking (relevance + diversity)
-        9. Apply subsumption filter (remove subset terms)
-        10. Apply score threshold filter (keep only scores >= threshold)
+        1. Extract title/abstract per document (biblio fallback), clean text
+        2. Generate candidates via PatternRank (KeyphraseVectorizers,
+           adjective*+noun+ grammar pattern) over the combined corpus
+        3. Track frequency and title/abstract presence per candidate
+        4. Filter out original search terms (unigrams only) and structural
+           boilerplate (patent/scholarly word lists)
+        5. Score candidates: BM25F (lexical, field-weighted title/abstract)
+           and KeyBERT (semantic) against the corpus
+        6. Fuse BM25F + KeyBERT ranks via RRF -> salience_score
+        7. Score structural quality (n-gram size + bad POS pattern)
+        8. Fuse salience + quality ranks via RRF -> final_rrf_score
+        9. Compute C-value per candidate (nested-term redundancy signal);
+           drop candidates whose c_value collapses to <= 0
+        10. Rank by final_rrf_score, apply score threshold, cap at
+            MAX_RETURNED_TERMS
 
         Args:
             original_params: Original search parameters
             enriched_results: Results with enriched biblio data
-            top_k: Deprecated, ignored. All terms above score threshold are returned.
+            score_threshold: Minimum final_rrf_score to keep a term. Defaults
+                to settings.term_extraction_score_threshold when omitted.
 
         Returns:
             List of terms with scores, ordered by relevance (filtered by score threshold)
@@ -770,16 +747,19 @@ class TermExtractor:
         # Normalize original parameters
         original_terms = self._normalize_original_params(original_params)
 
-        # Extract title and abstract weights from config
+        # Extract title and abstract weights from config (also used as BM25F field weights)
         title_weight = getattr(settings, "term_extraction_title_weight", 3.0)
         abstract_weight = getattr(settings, "term_extraction_abstract_weight", 1.0)
 
-        # Extract texts from results (separated by source)
-        title_texts = []
-        abstract_texts = []
-        text_to_result = {}
+        # Per-document {title, abstract} pairs, needed for field-weighted
+        # BM25F (unlike the old flat title_texts/abstract_texts lists, the
+        # two fields must stay aligned per document), plus the flat lists
+        # PatternRank/KeyBERT expect.
+        documents: list[dict[str, str]] = []
+        title_texts: list[str] = []
+        abstract_texts: list[str] = []
 
-        for idx, result in enumerate(enriched_results):
+        for result in enriched_results:
             # Try to extract from biblio structure first, then fallback to direct access
             biblio = result.get("biblio", {})
 
@@ -799,68 +779,23 @@ class TermExtractor:
             if not title and not abstract:
                 continue
 
-            # Process title separately (if non-empty)
-            if title:
-                cleaned_title = self._clean_text(title)
-                title_texts.append(cleaned_title)
-                text_to_result[cleaned_title] = {
-                    "source": "title",
-                    "publication_number": result.get("publication_number")
-                    or result.get("family_id"),
-                }
+            title_clean = self._clean_text(title) if title else ""
+            abstract_clean = self._clean_text(abstract) if abstract else ""
 
-            # Process abstract separately (if non-empty)
-            if abstract:
-                cleaned_abstract = self._clean_text(abstract)
-                abstract_texts.append(cleaned_abstract)
-                text_to_result[cleaned_abstract] = {
-                    "source": "abstract",
-                    "publication_number": result.get("publication_number")
-                    or result.get("family_id"),
-                }
+            documents.append({"title": title_clean, "abstract": abstract_clean})
+            if title_clean:
+                title_texts.append(title_clean)
+            if abstract_clean:
+                abstract_texts.append(abstract_clean)
 
-        # Combine all texts for unified n-gram extraction
         all_texts = title_texts + abstract_texts
         if not all_texts:
             return []
 
-        # Extract n-grams using spaCy noun_chunks (linguistically-informed)
-        all_ngrams = []
-        ngram_frequency = Counter()
-        ngram_sources = {}  # Track which sources each ngram comes from
-
-        # Process titles with spaCy noun_chunks
-        for text in title_texts:
-            # Extract noun chunks and convert to sub-n-grams
-            chunks = self._extract_noun_chunks(text)
-            ngrams = []
-            for chunk in chunks:
-                ngrams.extend(self._extract_subngramas_from_chunk(chunk))
-
-            all_ngrams.extend(ngrams)
-            ngram_frequency.update(ngrams)
-            for ngram in ngrams:
-                if ngram not in ngram_sources:
-                    ngram_sources[ngram] = {"title": 0, "abstract": 0}
-                ngram_sources[ngram]["title"] += 1
-
-        # Process abstracts with spaCy noun_chunks
-        for text in abstract_texts:
-            # Extract noun chunks and convert to sub-n-grams
-            chunks = self._extract_noun_chunks(text)
-            ngrams = []
-            for chunk in chunks:
-                ngrams.extend(self._extract_subngramas_from_chunk(chunk))
-
-            all_ngrams.extend(ngrams)
-            ngram_frequency.update(ngrams)
-            for ngram in ngrams:
-                if ngram not in ngram_sources:
-                    ngram_sources[ngram] = {"title": 0, "abstract": 0}
-                ngram_sources[ngram]["abstract"] += 1
-
-        # Remove duplicates
-        unique_ngrams = list(dict.fromkeys(all_ngrams))  # Preserve order, remove dupes
+        # Candidate generation: PatternRank (grammar-pattern maximal noun
+        # phrases) over the whole corpus, replacing spaCy noun_chunks + 1-3
+        # word sliding-window sub-n-grams.
+        unique_ngrams = self._extract_candidates_patternrank(all_texts)
 
         if not unique_ngrams:
             return []
@@ -871,88 +806,6 @@ class TermExtractor:
             title_documents=len(title_texts),
             abstract_documents=len(abstract_texts),
         )
-
-        # Extract KeyBERT scores separately for title and abstract
-        keybert_title_scores = (
-            self._extract_keybert_scores(title_texts, unique_ngrams)
-            if title_texts
-            else {}
-        )
-        keybert_abstract_scores = (
-            self._extract_keybert_scores(abstract_texts, unique_ngrams)
-            if abstract_texts
-            else {}
-        )
-
-        # Extract TF-IDF scores separately for title and abstract
-        tfidf_title_scores = (
-            self._extract_tfidf_scores(title_texts, unique_ngrams)
-            if title_texts
-            else {}
-        )
-        tfidf_abstract_scores = (
-            self._extract_tfidf_scores(abstract_texts, unique_ngrams)
-            if abstract_texts
-            else {}
-        )
-
-        # Normalize scores separately (0-1 scale) to avoid scale mismatch
-        # TF-IDF scores are already normalized in _extract_tfidf_scores
-        # KeyBERT scores need normalization to match TF-IDF scale
-        def normalize_scores(scores_dict: dict[str, float]) -> dict[str, float]:
-            """Normalize scores to 0-1 range."""
-            if not scores_dict:
-                return {}
-            max_score = max(scores_dict.values()) if scores_dict else 1.0
-            if max_score == 0:
-                return scores_dict
-            return {term: score / max_score for term, score in scores_dict.items()}
-
-        # Normalize KeyBERT scores separately for title and abstract
-        keybert_title_scores = normalize_scores(keybert_title_scores)
-        keybert_abstract_scores = normalize_scores(keybert_abstract_scores)
-
-        # Combine scores: 60% TF-IDF + 40% KeyBERT, weighted by source (title vs abstract)
-        w_tfidf = 0.6
-        w_keybert = 0.4
-
-        combined_scores = {}
-        score_adjustments = {}  # Store bonus/penalty for transparency
-
-        for ngram in unique_ngrams:
-            # Title contribution (combine normalized TF-IDF and KeyBERT)
-            title_keybert = keybert_title_scores.get(ngram, 0.0)
-            title_tfidf = tfidf_title_scores.get(ngram, 0.0)
-            title_combined = w_tfidf * title_tfidf + w_keybert * title_keybert
-
-            # Abstract contribution (combine normalized TF-IDF and KeyBERT)
-            abstract_keybert = keybert_abstract_scores.get(ngram, 0.0)
-            abstract_tfidf = tfidf_abstract_scores.get(ngram, 0.0)
-            abstract_combined = w_tfidf * abstract_tfidf + w_keybert * abstract_keybert
-
-            # Final score: apply weights during weighted average calculation
-            if title_combined > 0 and abstract_combined > 0:
-                # Present in both sources: weighted average
-                base_score = (
-                    title_combined * title_weight + abstract_combined * abstract_weight
-                ) / (title_weight + abstract_weight)
-            elif title_combined > 0:
-                # Only in title
-                base_score = title_combined
-            elif abstract_combined > 0:
-                # Only in abstract
-                base_score = abstract_combined
-            else:
-                # Not found in either
-                base_score = 0.0
-
-            # Apply score adjustments based on config rules
-            bonus, penalty = self._get_score_adjustments(ngram)
-            final_score = base_score + bonus + penalty
-            final_score = max(0, final_score)  # Don't allow negative scores
-
-            combined_scores[ngram] = final_score
-            score_adjustments[ngram] = (bonus, penalty)
 
         # Filter out original terms: remove only unigrams that match original_params
         # Keep n-grams (2+ words) even if they contain original terms
@@ -970,7 +823,13 @@ class TermExtractor:
             original_terms_removed=len(unique_ngrams) - len(filtered_ngrams),
         )
 
-        # Apply string quality filters (remove boilerplate/structural words)
+        # Apply string quality filters (trims boundary stopwords, drops terms
+        # with structural boilerplate anywhere - see _apply_quality_filters).
+        # Runs BEFORE frequency/source tracking below because trimming can
+        # change the term string (e.g. "good permeability" -> "permeability"),
+        # and possibly collapse two different candidates onto the same
+        # trimmed string (deduplicated inside _apply_quality_filters) - both
+        # cases would desync a frequency dict keyed by the pre-trim string.
         filtered_ngrams = self._apply_quality_filters(filtered_ngrams)
 
         logger.info(
@@ -978,75 +837,123 @@ class TermExtractor:
             remaining_terms=len(filtered_ngrams),
         )
 
-        # Unigram removal disabled: penalty (-0.4) + score threshold handles suppression naturally
-        # filtered_ngrams = [
-        #     term for term in filtered_ngrams
-        #     if len(term.split()) >= 2
-        # ]
+        if not filtered_ngrams:
+            return []
 
-        logger.info(
-            "term_extraction_unigrams_removed",
-            remaining_terms=len(filtered_ngrams),
+        # Frequency and source tracking (occurrence count via substring scan -
+        # candidates are full phrases now, not tokens from an indexed pass)
+        ngram_frequency: Counter = Counter()
+        ngram_sources: dict[str, dict[str, int]] = {
+            term: {"title": 0, "abstract": 0} for term in filtered_ngrams
+        }
+        for term in filtered_ngrams:
+            for text in title_texts:
+                count = text.count(term)
+                if count:
+                    ngram_frequency[term] += count
+                    ngram_sources[term]["title"] += 1
+            for text in abstract_texts:
+                count = text.count(term)
+                if count:
+                    ngram_frequency[term] += count
+                    ngram_sources[term]["abstract"] += 1
+
+        # Lexical channel: BM25F, field-weighted (title/abstract)
+        bm25f_scores = self._compute_bm25f_scores(
+            filtered_ngrams, documents, title_weight, abstract_weight
         )
 
-        # Load configuration for filtering
-        score_threshold = getattr(settings, "term_extraction_score_threshold", 0.6)
-        overlap_threshold = getattr(settings, "term_extraction_overlap_threshold", 0.67)
-
-        # Rank by pure score (without bonuses/penalties) - substitui o ranking
-        # MMR (removido: O(N^3) num loop guloso, inviável pra centenas de
-        # candidatos). _apply_subsumption_filter já espera receber a lista
-        # ordenada por score e faz a mesma deduplicação por sobreposição de
-        # palavras num único passe (O(N x |selected|)), preservando o
-        # objetivo (evitar termos redundantes no resultado final) sem o custo.
-        ranked_by_score = sorted(
-            filtered_ngrams, key=lambda term: combined_scores.get(term, 0.0), reverse=True
+        # Semantic channel: KeyBERT cosine similarity against the combined
+        # corpus text (same model/method as before - only how it feeds the
+        # final score changes, from a linear 0.6/0.4 blend to RRF)
+        semantic_scores = (
+            self._extract_keybert_scores(all_texts, filtered_ngrams)
+            if self.keybert
+            else {}
         )
 
-        logger.info(
-            "term_extraction_ranked_by_score",
-            candidates_ranked=len(ranked_by_score),
+        rrf_k = getattr(settings, "term_extraction_rrf_k", 60)
+
+        # 1st RRF stage: fuse lexical (BM25F) and semantic (KeyBERT) ranks
+        salience_scores = self._rrf_fuse_two_rankings(
+            filtered_ngrams, bm25f_scores, semantic_scores, k=rrf_k
         )
 
-        # Apply overlap filter: remove terms with high word overlap (>threshold)
-        after_overlap = self._apply_subsumption_filter(ranked_by_score, overlap_threshold)
+        # Structural quality: n-gram size preference + bad POS pattern penalty
+        quality_scores = {
+            term: self._structural_quality_score(term) for term in filtered_ngrams
+        }
 
-        logger.info(
-            "term_extraction_overlap_filtered",
-            terms_after_overlap=len(after_overlap),
+        # 2nd RRF stage: fuse salience and structural quality ranks -> final score
+        final_scores = self._rrf_fuse_two_rankings(
+            filtered_ngrams, salience_scores, quality_scores, k=rrf_k
         )
 
-        # Apply bonuses and penalties, then reorder by adjusted scores
-        adjusted_scores = {}
-        for term in after_overlap:
-            pure_score = combined_scores.get(term, 0)
-            bonus, penalty = score_adjustments.get(term, (0.0, 0.0))
-            adjusted_score = pure_score + bonus + penalty
-            adjusted_scores[term] = adjusted_score
+        # C-value: redundancy signal between nested candidate phrases
+        # (replaces the word-overlap subsumption filter)
+        c_values = self._compute_c_values(filtered_ngrams, ngram_frequency)
 
-        # Reorder by adjusted scores (descending)
-        ranked_terms = sorted(
-            after_overlap, key=lambda t: adjusted_scores.get(t, 0), reverse=True
-        )
-
-        logger.info(
-            "term_extraction_adjusted_and_reordered",
-            terms_reordered=len(ranked_terms),
-        )
-
-        # Apply final score threshold filtering (return only quality terms)
-        ranked_terms = [
+        min_frequency = getattr(settings, "term_extraction_cvalue_min_frequency", 1)
+        surviving_ngrams = [
             term
-            for term in ranked_terms
-            if adjusted_scores.get(term, 0) >= score_threshold
+            for term in filtered_ngrams
+            if ngram_frequency.get(term, 0) >= min_frequency
+            and c_values.get(term, 0.0) > 0
         ]
-        terms_filtered_by_score = len(after_overlap) - len(ranked_terms)
 
-        # Teto de termos devolvidos - score_threshold sozinho não limita
-        # quantidade (pode passar de 100+ termos numa amostra grande), o que
-        # vira uma checklist grande demais pro usuário revisar. ranked_terms
-        # já está ordenado por score decrescente, então isso mantém os N
-        # melhores.
+        logger.info(
+            "term_extraction_cvalue_filtered",
+            terms_after_cvalue=len(surviving_ngrams),
+        )
+
+        # Rank by final RRF score (descending)
+        ranked_terms = sorted(
+            surviving_ngrams, key=lambda t: final_scores.get(t, 0.0), reverse=True
+        )
+
+        # Drop a term when a higher-ranked term already kept contiguously
+        # contains it (e.g. "ultrafiltration membrane" when "composite
+        # ultrafiltration membrane" ranks higher and is already in the
+        # list) - keeps only the best-scored member of each nested family,
+        # instead of cluttering the checklist with near-duplicate nestings.
+        # Runs before the score threshold/cap below so a redundant nested
+        # variant doesn't spend threshold/cap budget that a genuinely new
+        # term could use.
+        ranked_terms = self._deduplicate_nested_terms(ranked_terms)
+
+        # Apply score threshold (recalibrated for the RRF scale - the old
+        # 0-1 threshold does not apply, see TESTE_EXTRACAO_TERMOS_BM25F_RRF.md)
+        if score_threshold is None:
+            score_threshold = settings.term_extraction_score_threshold
+
+        above_threshold = []
+        below_threshold = []
+        for term in ranked_terms:
+            if final_scores.get(term, 0.0) >= score_threshold:
+                above_threshold.append(term)
+            else:
+                below_threshold.append(term)
+        terms_filtered_by_score = len(below_threshold)
+
+        # final_rrf_score is RANK-relative within this batch (RRF, not an
+        # absolute quality scale) - its numeric range shifts with batch size
+        # and candidate-quality composition, so a fixed threshold can leave
+        # an entire batch below the cutoff (observed: a 315-candidate batch
+        # where even the #1-ranked term scored under 0.024, returning 0
+        # terms). Top up with the next best-ranked terms below the
+        # threshold rather than leaving the user with an empty checklist -
+        # above_threshold/below_threshold are both slices of the same
+        # score-sorted ranked_terms, so the concatenation stays sorted.
+        min_returned_terms = getattr(settings, "term_extraction_min_returned_terms", 10)
+        topped_up = 0
+        if len(above_threshold) < min_returned_terms:
+            needed = min_returned_terms - len(above_threshold)
+            topped_up = min(needed, len(below_threshold))
+            ranked_terms = above_threshold + below_threshold[:needed]
+        else:
+            ranked_terms = above_threshold
+
+        # Teto de termos devolvidos - inalterado (ver EXTRACAO_TERMOS_NGRAMAS.md §14)
         MAX_RETURNED_TERMS = 60
         terms_capped = len(ranked_terms) - min(len(ranked_terms), MAX_RETURNED_TERMS)
         ranked_terms = ranked_terms[:MAX_RETURNED_TERMS]
@@ -1055,16 +962,24 @@ class TermExtractor:
             "term_extraction_score_filtered",
             score_threshold=score_threshold,
             filtered_by_score=terms_filtered_by_score,
+            topped_up_below_threshold=topped_up,
             terms_capped=terms_capped,
             final_terms=len(ranked_terms),
         )
 
         # Build result objects with all scores
+
+        # `final_rrf_score` é o score exposto ao frontend, sem normalização -
+        # vive sempre num range matemático estreito (~0.018-0.033, soma de
+        # dois termos 1/(k+rank), k=60 - ver TESTE_EXTRACAO_TERMOS_BM25F_RRF.md).
+        # Já teve uma versão normalizada (min-max 0-1 dentro do lote) só pra
+        # exibição, mas foi removida - quem precisar de uma escala 0-1
+        # comparável (ex: os thresholds specific/balanced/generic de
+        # ChatService._terms_context_suffix) normaliza no próprio ponto de
+        # uso, sobre o lote que fizer sentido ali (ver esse método).
         result_terms = []
 
         for term in ranked_terms:
-            term_score = combined_scores.get(term, 0)
-
             sources = ngram_sources.get(term, {})
             source_list = []
             if sources.get("title", 0) > 0:
@@ -1072,40 +987,16 @@ class TermExtractor:
             if sources.get("abstract", 0) > 0:
                 source_list.append("abstract")
 
-            bonus, penalty = score_adjustments.get(term, (0.0, 0.0))
-            n_words = len(term.split())
-
             result_terms.append(
                 {
                     "term": term,
-                    "score": round(term_score, 3),
-                    "n_words": n_words,
-                    "keybert_score_title": (
-                        round(keybert_title_scores.get(term, 0), 3)
-                        if title_texts
-                        else None
-                    ),
-                    "keybert_score_abstract": (
-                        round(keybert_abstract_scores.get(term, 0), 3)
-                        if abstract_texts
-                        else None
-                    ),
-                    "tf_idf_score_title": (
-                        round(tfidf_title_scores.get(term, 0), 3)
-                        if title_texts
-                        else None
-                    ),
-                    "tf_idf_score_abstract": (
-                        round(tfidf_abstract_scores.get(term, 0), 3)
-                        if abstract_texts
-                        else None
-                    ),
+                    "salience_score": round(salience_scores.get(term, 0.0), 5),
+                    "quality_score": round(quality_scores.get(term, 0.0), 3),
+                    "final_rrf_score": round(final_scores.get(term, 0.0), 5),
+                    "c_value": round(c_values.get(term, 0.0), 3),
+                    "n_words": len(term.split()),
                     "frequency": ngram_frequency.get(term, 0),
                     "sources": source_list,
-                    "score_bonus": round(bonus, 3),
-                    "score_penalty": round(penalty, 3),
-                    "title_weight": title_weight,
-                    "abstract_weight": abstract_weight,
                 }
             )
 
@@ -1113,7 +1004,7 @@ class TermExtractor:
             "term_extraction_complete",
             total_unique_terms=len(unique_ngrams),
             after_quality_filter=len(filtered_ngrams),
-            after_overlap=len(after_overlap),
+            after_cvalue=len(surviving_ngrams),
             returned_count=len(result_terms),
             score_threshold=score_threshold,
             title_weight=title_weight,

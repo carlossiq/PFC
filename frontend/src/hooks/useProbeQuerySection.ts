@@ -1,13 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   generateProbeQueriesMulti,
-  rebuildProbeQuery,
+  validateProbeQuery,
 } from '../services/probeQuery'
-import type { QueryOptionResult, StructuredQueryFields } from '../services/probeQuery'
+import type { QueryOptionResult } from '../services/probeQuery'
 import { resolveIntakePayload } from '../services/refineTopic'
 import type { FormInput, ThemeInput } from '../services/refineTopic'
 import type { ProbeApi } from '../constants/probeFields'
-import { toCsv, parseCsv } from '../components/CandidatePicker'
 import { STEPS } from '../constants/steps'
 import { useFormStore } from '../stores/useFormStore'
 import { useAutoDismiss } from './useAutoDismiss'
@@ -54,7 +53,6 @@ interface UseProbeQuerySectionParams {
   step: number
   substep: number | null
   api: ProbeApi
-  fieldOrder: readonly string[]
   input: FormInput
   step2SelectedTheme: (ThemeInput & { id: string }) | null
   slice: ProbeQuerySlice
@@ -69,7 +67,6 @@ export function useProbeQuerySection({
   step,
   substep,
   api,
-  fieldOrder,
   input,
   step2SelectedTheme,
   slice,
@@ -166,7 +163,11 @@ export function useProbeQuerySection({
   }, [step, substep, generatedForIntake, currentIntakeSignature, queries])
 
   const [isEditing, setIsEditing] = useState(false)
-  const [editFields, setEditFields] = useState<Record<string, string>>({})
+  // Texto livre da query inteira (AND/OR/parênteses etc.) - substitui a
+  // edição por campos estruturados (title/abstract/ipc/...) separados, que
+  // obrigava a reconstruir a CQL via query builder e não permitia mexer na
+  // estrutura booleana em si.
+  const [editQueryText, setEditQueryText] = useState('')
 
   useEffect(() => {
     setIsEditing(false)
@@ -182,20 +183,7 @@ export function useProbeQuerySection({
   }
 
   function handleStartEdit() {
-    const fields: StructuredQueryFields = selected?.fields ?? {}
-    const next: Record<string, string> = {}
-    for (const f of fieldOrder) {
-      // Year geralmente vem vazio do LLM (nenhum dos prompts pede um ano
-      // específico) - a query já aplica o intervalo padrão de qualquer
-      // jeito (year_range), então pré-preenche o campo de edição com esse
-      // padrão em vez de deixar em branco, pra não parecer que "sumiu".
-      if (f === 'year' && (!fields.year || fields.year.length === 0) && selected?.year_range) {
-        next[f] = `${selected.year_range.from}, ${selected.year_range.to}`
-      } else {
-        next[f] = toCsv(fields[f])
-      }
-    }
-    setEditFields(next)
+    setEditQueryText(selected?.query?.query ?? '')
     setIsEditing(true)
   }
 
@@ -205,18 +193,27 @@ export function useProbeQuerySection({
 
   async function handleSaveEdit() {
     if (selectedIndex === null) return
-    const parsed: StructuredQueryFields = {}
-    for (const f of fieldOrder) parsed[f] = parseCsv(editFields[f] ?? '')
+    if (!editQueryText.trim()) {
+      setRebuildError('A query não pode ficar vazia.')
+      return
+    }
 
     setIsRebuilding(true)
     setRebuildError(null)
     try {
-      const result = await rebuildProbeQuery(parsed, api)
-      updateQueryAt(selectedIndex, result)
+      const result = await validateProbeQuery(editQueryText, api)
+      // `fields` some de propósito no patch: depois de uma edição livre do
+      // texto, o breakdown por campo (title/abstract/...) que existia antes
+      // não corresponde mais ao que está na query - updateQueryAt faz merge
+      // raso, então sem isso o card continuaria mostrando campos antigos e
+      // desatualizados junto do texto novo.
+      updateQueryAt(selectedIndex, { ...result, fields: undefined })
       setIsEditing(false)
     } catch (err) {
-      console.error(`Falha ao reconstruir query (${api}):`, err)
-      setRebuildError('Não foi possível reconstruir a query. Tente novamente.')
+      console.error(`Falha ao validar query (${api}):`, err)
+      setRebuildError(
+        friendlyErrorMessage(err instanceof Error ? err.message : undefined, 'Não foi possível salvar a query. Tente novamente.')
+      )
     } finally {
       setIsRebuilding(false)
     }
@@ -233,8 +230,8 @@ export function useProbeQuerySection({
     rebuildError,
     isBusy,
     isEditing,
-    editFields,
-    setEditFields,
+    editQueryText,
+    setEditQueryText,
     handleRetry,
     handleStartEdit,
     handleCancelEdit,

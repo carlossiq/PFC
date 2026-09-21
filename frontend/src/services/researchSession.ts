@@ -1,6 +1,16 @@
 import { apiClient } from './api'
 import type { SessionAiCallRow, SessionInputRow, SessionProbeQueryRow } from './sessionInput'
 
+// Espelha schemas/research_session.py:SessionReportSummary - null significa
+// "sessão nunca chamou POST /report/{id}/assemble", não erro (ver
+// ReportStep.tsx/SessionCard.tsx, que usam isso pra decidir entre mostrar
+// "Continuar pesquisa" ou "Ver Relatório").
+export interface SessionReportSummary {
+  status: string
+  has_pdf: boolean
+  updated_at: string
+}
+
 export interface ResearchSessionSummary {
   id: number
   public_id: string
@@ -11,6 +21,7 @@ export interface ResearchSessionSummary {
   inputs: SessionInputRow[]
   probe_queries: SessionProbeQueryRow[]
   ai_calls: SessionAiCallRow[]
+  report: SessionReportSummary | null
 }
 
 // Busca sessões pelo tema de qualquer um de seus session_input (raiz ou gerado

@@ -259,6 +259,35 @@ async def test_score_is_one_when_titles_available_with_constant_embeddings():
 
 
 @pytest.mark.asyncio
+async def test_run_exposes_raw_enriched_counts_alongside_stability():
+    # counts precisa trazer a contagem bruta (não só a estabilidade do
+    # bootstrap) - é o que POST /report/{id}/top-entities e /top10-heatmap
+    # consomem pra desenhar os gráficos com números reais (ver
+    # ReportService.generate_top_entities_chart/generate_top10_heatmap).
+    chat = FakeChatService(
+        responses=[
+            _ops_result(cpc={"A61B": 5, "A61C": 5, "A61D": 5, "A61E": 5, "A61F": 5, "A61G": 5}, depositants={"Globex": 5})
+        ]
+    )
+    svc = _svc(
+        chat_service=chat,
+        statistical_inference_saturation_threshold=0.9,
+        statistical_inference_f1_ratio_threshold=1.0,
+        statistical_inference_f2_min=0,
+    )
+
+    result = await svc.run(
+        "ops",
+        {"query": "x"},
+        _ops_result(cpc={"A61B": 1, "A61C": 1}, depositants={"Acme": 1}, patents_by_year={2020: 10, 2021: 20}),
+        "theme",
+    )
+
+    assert result["cpc"]["counts"] == {"A61B": 6, "A61C": 6, "A61D": 5, "A61E": 5, "A61F": 5, "A61G": 5}
+    assert result["depositants"]["counts"] == {"Acme": 1, "Globex": 5}
+
+
+@pytest.mark.asyncio
 async def test_score_is_zero_when_no_titles_available():
     svc = _svc(
         statistical_inference_saturation_threshold=0.0,

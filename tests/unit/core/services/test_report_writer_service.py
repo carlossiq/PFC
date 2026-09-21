@@ -51,6 +51,17 @@ class FakeTextGeneration:
         return self.response
 
 
+class FakeLLMResolver:
+    """Substitui LLMConfigResolver nos testes - resolve_text_generation
+    sempre devolve o mesmo FakeTextGeneration, independente do call_site."""
+
+    def __init__(self, text_generation: FakeTextGeneration) -> None:
+        self._text_generation = text_generation
+
+    async def resolve_text_generation(self, call_site: str) -> FakeTextGeneration:
+        return self._text_generation
+
+
 @pytest.fixture
 def settings() -> Settings:
     return Settings(rag_top_k_per_section=3)
@@ -67,8 +78,13 @@ def text_generation() -> FakeTextGeneration:
 
 
 @pytest.fixture
-def svc(rag, text_generation, settings) -> ReportWriterService:
-    return ReportWriterService(rag=rag, text_generation=text_generation, settings=settings)
+def llm_resolver(text_generation) -> FakeLLMResolver:
+    return FakeLLMResolver(text_generation)
+
+
+@pytest.fixture
+def svc(rag, llm_resolver, settings) -> ReportWriterService:
+    return ReportWriterService(rag=rag, llm_resolver=llm_resolver, settings=settings)
 
 
 # ---- escape_latex ----
@@ -117,7 +133,7 @@ async def test_ensure_session_indexed_skips_if_already_indexed(svc, rag):
 
 @pytest.mark.asyncio
 async def test_ensure_session_indexed_raises_when_rag_unavailable(text_generation, settings):
-    svc = ReportWriterService(rag=None, text_generation=text_generation, settings=settings)
+    svc = ReportWriterService(rag=None, llm_resolver=FakeLLMResolver(text_generation), settings=settings)
     with pytest.raises(RAGUnavailableError):
         await svc.ensure_session_indexed(1, [], [])
 

@@ -45,13 +45,16 @@ class ChatService:
 
     def __init__(
         self,
-        llm: Any,
+        llm_resolver: Any,
         patent_pairs: list[tuple[Any, Any]],
         scholarly_pairs: list[tuple[Any, Any]],
         settings: Settings,
         openalex: Any = None,
     ) -> None:
-        self.llm = llm
+        # llm_resolver: LLMConfigResolver (app/core/services/llm_config_resolver.py)
+        # - resolve(call_site) -> LLMPort, um handle por call site em vez de
+        # um self.llm único global (ver PLANO_MIGRACAO_CONFIG_BANCO.md § 2).
+        self.llm_resolver = llm_resolver
         self.patent_pairs = patent_pairs
         self.scholarly_pairs = scholarly_pairs
         self.settings = settings
@@ -311,7 +314,8 @@ class ChatService:
                 system_prompt += self._simplification_suffix(complexity, attempt)
 
             try:
-                llm_response, usage = await self.llm.process_intake(llm_request, system_prompt)
+                llm = await self.llm_resolver.resolve("probe_query")
+                llm_response, usage = await llm.process_intake(llm_request, system_prompt)
                 usages.append(usage)
                 query = qb.build_query(
                     strategy=llm_response,
@@ -434,10 +438,17 @@ class ChatService:
         }
 
     async def get_current_provider(self) -> dict[str, Any]:
+        # Endpoint legado (pré-migração de config pro banco) - "o provider"
+        # deixou de ser um conceito global único desde que cada call site
+        # (theme_candidates/probe_query/final_query/report_writing) resolve
+        # o seu independentemente (ver GET /config/llm/call-sites pra ver
+        # todos de uma vez). Mantido só pra não quebrar quem ainda chama
+        # /chat/current-provider - representa o call site "probe_query".
+        llm = await self.llm_resolver.resolve("probe_query")
         return {
             "success": True,
-            "provider": self.llm.provider_name,
-            "available": self.llm.is_available(),
+            "provider": llm.provider_name,
+            "available": llm.is_available(),
         }
 
     async def get_system_prompt(self) -> dict[str, Any]:
@@ -573,7 +584,8 @@ class ChatService:
 
         usage: Optional[LLMUsage] = None
         try:
-            raw, usage = await self.llm.call_raw_json(system_prompt, user_input)
+            llm = await self.llm_resolver.resolve("theme_candidates")
+            raw, usage = await llm.call_raw_json(system_prompt, user_input)
         except LLMJSONParseError as exc:
             candidates = self._salvage_candidates(exc.raw_response)
             if not candidates:
@@ -643,7 +655,8 @@ class ChatService:
         system_prompt = PromptLoader.load_prompt("specify_topic_system_prompt.txt")
 
         try:
-            raw, usage = await self.llm.call_raw_json(system_prompt, user_input)
+            llm = await self.llm_resolver.resolve("theme_candidates")
+            raw, usage = await llm.call_raw_json(system_prompt, user_input)
         except Exception as exc:
             logger.error("specify_topic_llm_error", error=str(exc))
             return {
@@ -792,6 +805,81 @@ class ChatService:
     async def rebuild_final_query(self, fields: dict[str, list[str]], api: str = "ops") -> dict[str, Any]:
         return await self._rebuild_query(fields, api, "final")
 
+    @staticmethod
+    def _extract_year_range_from_query(query: str, api: str) -> Optional[dict[str, int]]:
+        """
+        Extrai year_from/year_to de uma cláusula de data já presente no texto
+        da query - inverso de _ops_replace_date_clause/
+        _scopus_replace_date_clause (mesmos padrões regex). Sem isso,
+        run_final_search SEMPRE reescreve a cláusula de data usando o
+        year_from/year_to recebido como parâmetro separado da rota (nunca lê
+        a data de dentro da query), e esse parâmetro vinha do year_range
+        devolvido aqui - se year_range ignorasse a data que o usuário
+        acabou de digitar na caixa de texto livre e devolvesse sempre o
+        padrão de settings, a busca final rodaria com a data errada mesmo
+        a UI mostrando a query "salva" com a data certa (busca #1 encontrada
+        pelo usuário: "a data não está salvando").
+
+        Retorna None se a query não tiver uma cláusula de data reconhecível
+        - nesse caso quem chama cai pro padrão de settings.
+        """
+        if api == "ops":
+            match = re.search(r'\(pd within "(\d{4})\d{4} (\d{4})\d{4}"\)', query)
+            if match:
+                return {"from": int(match.group(1)), "to": int(match.group(2))}
+        elif api == "scopus":
+            match = re.search(r"\(PUBYEAR > (\d+) AND PUBYEAR < (\d+)\)", query)
+            if match:
+                return {"from": int(match.group(1)) + 1, "to": int(match.group(2)) - 1}
+        return None
+
+    async def _validate_query(self, query: str, api: str) -> dict[str, Any]:
+        """
+        Valida uma query editada como texto livre (AND/OR/parênteses etc.,
+        direto na caixa única do frontend) - usado tanto pela edição de query
+        probe quanto final (search_mode não importa aqui: ao contrário de
+        _rebuild_query, não reconstruímos nada a partir de campos
+        estruturados nem chamamos um query builder - o texto digitado já É a
+        query, só computamos complexidade/warnings pra exibir). `fields` fica
+        de fora do resultado de propósito: depois de uma edição livre não há
+        mais correspondência 1:1 com campos estruturados, então o frontend
+        limpa o breakdown por campo ao salvar (ver useProbeQuerySection.ts /
+        useFinalQuerySection.ts).
+
+        `year_range`: se a query já tiver uma cláusula de data reconhecível
+        (ver _extract_year_range_from_query), usa ela - preserva uma data
+        editada manualmente pelo usuário em vez de sobrescrever com o padrão
+        de settings. Sem cláusula reconhecível, cai pro padrão de sempre.
+        """
+        query = (query or "").strip()
+        if not query:
+            return {"success": False, "error": "A query não pode ficar vazia."}
+
+        try:
+            default_year_from = getattr(self.settings, "search_year_from", 2015)
+            default_year_to = getattr(self.settings, "search_year_to", 2026)
+            year_range = self._extract_year_range_from_query(query, api) or {
+                "from": default_year_from,
+                "to": default_year_to,
+            }
+            complexity = self._complexity_from_query(query)
+            return {
+                "success": True,
+                "api": api,
+                "query": {"query": query},
+                "complexity": complexity,
+                "year_range": year_range,
+            }
+        except Exception as exc:
+            logger.error("validate_query_error", api=api, error=str(exc))
+            return {"success": False, "error": str(exc)}
+
+    async def validate_probe_query(self, query: str, api: str = "ops") -> dict[str, Any]:
+        return await self._validate_query(query, api)
+
+    async def validate_final_query(self, query: str, api: str = "ops") -> dict[str, Any]:
+        return await self._validate_query(query, api)
+
     _VARIANT_INSTRUCTIONS: dict[str, str] = {
         "specific": (
             "Build a FOCUSED, HIGH-PRECISION query. "
@@ -824,13 +912,31 @@ class ChatService:
         variant: str,
         api: str,
     ) -> str:
+        # extracted_terms traz final_rrf_score bruto (sem normalização - ver
+        # TermExtractor.extract_and_rank_terms), num range matemático estreito
+        # (~0.018-0.033), então os thresholds 0.4/0.3/0.2 abaixo só fazem
+        # sentido aplicados sobre uma normalização min-max 0-1 - feita aqui,
+        # localmente, sobre o lote selecionado (extracted_terms), não mais
+        # pré-computada pelo extractor.
         thresholds = {"specific": 0.4, "balanced": 0.3, "generic": 0.2}
         threshold = thresholds.get(variant, 0.3)
-        terms = [t for t in extracted_terms if t.get("score", 0) > threshold]
+
+        raw_scores = [t.get("final_rrf_score", 0.0) for t in extracted_terms]
+        score_min = min(raw_scores) if raw_scores else 0.0
+        score_range = (max(raw_scores) - score_min) if raw_scores else 0.0
+
+        def _normalized_score(raw: float) -> float:
+            if score_range <= 0:
+                return 1.0 if raw_scores else 0.0
+            return (raw - score_min) / score_range
+
+        terms = [t for t in extracted_terms if _normalized_score(t.get("final_rrf_score", 0.0)) > threshold]
 
         terms_str = (
             "\n".join(
-                f"- {t.get('term', '')} (score: {t.get('score', 0):.3f}, freq: {t.get('frequency', 0)})"
+                f"- {t.get('term', '')} "
+                f"(score: {_normalized_score(t.get('final_rrf_score', 0.0)):.3f}, "
+                f"freq: {t.get('frequency', 0)})"
                 for t in terms[:20]
             )
             if terms
@@ -875,7 +981,8 @@ class ChatService:
             if attempt > 1:
                 system_prompt += self._simplification_suffix(complexity, attempt)
 
-            llm_response, usage = await self.llm.process_intake(llm_request, system_prompt)
+            llm = await self.llm_resolver.resolve("final_query")
+            llm_response, usage = await llm.process_intake(llm_request, system_prompt)
             usages.append(usage)
 
             query = qb.build_query(
@@ -1813,7 +1920,7 @@ class ChatService:
         self,
         items: list[dict[str, Any]],
         original_params: Optional[dict[str, Any]] = None,
-        top_k: int = 20,
+        score_threshold: Optional[float] = None,
     ) -> dict[str, Any]:
         from services.nlp.term_extraction import get_term_extractor
 
@@ -1845,7 +1952,7 @@ class ChatService:
             terms = extractor.extract_and_rank_terms(
                 original_params=original_params or {},
                 enriched_results=enriched,
-                top_k=top_k,
+                score_threshold=score_threshold,
             )
             duration_ms = (time.perf_counter() - start) * 1000
             return {

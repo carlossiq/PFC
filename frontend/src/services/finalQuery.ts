@@ -20,12 +20,14 @@ export function extractAbstract(item: Record<string, unknown>, api: ProbeApi): s
   return typeof raw === 'string' ? raw : ''
 }
 
-// Quantos documentos (dos até 20 buscados na probe) de fato entram na
-// extração de termos - o custo do ranking de termos cresce muito mais rápido
-// que o nº de documentos (ver TermExtractor no backend), então analisar todos
-// os buscados é desnecessariamente caro. 15 mantém uma amostra generosa sem
-// pagar esse custo.
-const ANALYSIS_SAMPLE_SIZE = 15
+// Quantos documentos (dos até 30 buscados na probe, ver runProbeSearch) de
+// fato entram na extração de termos - o custo do ranking de termos cresce
+// mais rápido que o nº de documentos (ver TermExtractor no backend: BM25F é
+// O(candidatos × docs), C-value é O(candidatos²)), então analisar um volume
+// muito maior que isso ficaria caro. 30 dobra a amostra anterior (15) - testado
+// empiricamente em ~13-15 docs a ~3s de processamento NLP puro, folga
+// razoável antes de precisar reavaliar o custo de novo.
+const ANALYSIS_SAMPLE_SIZE = 30
 
 function hasTitleAndAbstract(item: Record<string, unknown>, api: ProbeApi): boolean {
   const title = api === 'ops' ? item['invention_title'] : item['dc:title']
@@ -101,6 +103,11 @@ export function toTermItems(
   }))
 }
 
+// `score` é o final_rrf_score bruto devolvido pelo backend (soma de dois
+// termos RRF 1/(k+rank), k=60) - sem normalização, vive sempre num range
+// matemático estreito (~0.018-0.033, ver TESTE_EXTRACAO_TERMOS_BM25F_RRF.md).
+// Não é comparável a uma escala 0-1 "de verdade", mas É comparável entre
+// termos de uma mesma extração (mesmo lote).
 export interface ExtractedTerm {
   term: string
   score: number
@@ -113,24 +120,27 @@ export interface ExtractTermsResult {
 }
 
 // Roda a extração de termos (spaCy + KeyBERT + TF-IDF, processamento NLP
-// local - não é uma chamada de IA, sem tokens de LLM)
+// local - não é uma chamada de IA, sem tokens de LLM). `scoreThreshold`
+// (final_rrf_score mínimo, escala RRF ~0.018-0.033) é opcional - omitido,
+// o backend usa settings.term_extraction_score_threshold.
 export async function extractTerms(
   items: { title: string; abstract: string }[],
   originalParams: Record<string, unknown> = {},
-  topK = 20
+  scoreThreshold?: number
 ): Promise<ExtractTermsResult> {
   const { data } = await apiClient.post(
     '/chat/extract-terms',
     { items, original_params: originalParams },
-    { params: { top_k: topK } }
+    { params: scoreThreshold !== undefined ? { score_threshold: scoreThreshold } : {} }
   )
 
   if (!data.success) {
     throw new Error(data.data?.error || data.message || 'Falha ao extrair termos.')
   }
 
+  const rawTerms: { term: string; final_rrf_score: number; frequency: number }[] = data.data.terms ?? []
   return {
-    terms: data.data.terms ?? [],
+    terms: rawTerms.map((t) => ({ term: t.term, score: t.final_rrf_score, frequency: t.frequency })),
     aiUsage: data.data?.ai_usage ?? null,
   }
 }
@@ -186,6 +196,20 @@ export async function rebuildFinalQuery(
 
   if (!data.success) {
     throw new Error(data.message || 'Falha ao reconstruir query')
+  }
+
+  return data.data
+}
+
+// Valida uma query final editada como texto livre (a caixa única de edição
+// em FinalExploration.tsx) - não reconstrói nada a partir de campos
+// estruturados, só computa complexidade/warnings pro texto que o usuário
+// digitou (AND/OR/parênteses etc., igual pra patentes e artigos).
+export async function validateFinalQuery(query: string, api: ProbeApi = 'ops'): Promise<QueryOptionResult> {
+  const { data } = await apiClient.post('/chat/final/validate-query', { query }, { params: { api } })
+
+  if (!data.success) {
+    throw new Error(data.message || 'Falha ao validar query')
   }
 
   return data.data

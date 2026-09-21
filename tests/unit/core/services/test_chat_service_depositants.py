@@ -6,7 +6,7 @@ from core.config import Settings
 
 def _svc(threshold: float = 90.0) -> ChatService:
     settings = Settings(depositant_fuzzy_match_threshold=threshold)
-    return ChatService(llm=None, patent_pairs=[], scholarly_pairs=[], settings=settings)
+    return ChatService(llm_resolver=None, patent_pairs=[], scholarly_pairs=[], settings=settings)
 
 
 def test_fuzzy_group_depositants_merges_near_duplicates():

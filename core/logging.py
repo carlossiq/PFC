@@ -12,12 +12,35 @@ import structlog
 from core.config import settings
 
 
+# Bibliotecas de terceiros que logam em INFO por padrão e não agregam nada
+# pertinente ao dia a dia (uma linha por request HTTP interno, por query SQL
+# etc.) - subidas pra WARNING sempre, independente de settings.log_level.
+# `sqlalchemy.engine` aqui é só defesa extra: o principal motivo dela logar
+# em INFO é `echo=True` no engine (ver db/session.py), que já é False por
+# padrão (settings.sql_echo) - mas SQLAlchemy reafirma o nível pra INFO
+# sempre que echo=True em qualquer lugar (inclusive scripts/testes), então
+# vale silenciar aqui como rede de segurança.
+_NOISY_THIRD_PARTY_LOGGERS = (
+    "sqlalchemy.engine",
+    "sqlalchemy.pool",
+    "httpx",
+    "httpcore",
+)
+
+
 def configure_logging() -> None:
     """
     Configura logging estruturado com structlog para toda a aplicação.
 
-    Define formatadores, handlers e configurações para produção.
+    Em desenvolvimento, renderiza em texto legível (uma linha por evento,
+    "evento  chave=valor") em vez de JSON puro - muito mais fácil de
+    acompanhar o log de inicialização/requests a olho. Produção continua em
+    JSON (uma linha por evento, mas parseável por ferramenta de agregação de
+    log).
     """
+    is_dev = settings.environment != "production"
+    renderer = structlog.dev.ConsoleRenderer() if is_dev else structlog.processors.JSONRenderer()
+
     # Configurar structlog
     structlog.configure(
         processors=[
@@ -29,7 +52,7 @@ def configure_logging() -> None:
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             structlog.processors.UnicodeDecoder(),
-            structlog.processors.JSONRenderer(),
+            renderer,
         ],
         context_class=dict,
         logger_factory=structlog.stdlib.LoggerFactory(),
@@ -42,6 +65,9 @@ def configure_logging() -> None:
         stream=sys.stdout,
         level=settings.log_level,
     )
+
+    for logger_name in _NOISY_THIRD_PARTY_LOGGERS:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
 def get_logger(name: str) -> structlog.BoundLogger:

@@ -62,10 +62,13 @@ DEFAULT_BIBLIOGRAPHY: list[str] = [
     "Engineering, v. 9, p. 559-572, 2011.",
 ]
 
-DEFAULT_SIGNATURES: dict[str, dict[str, str]] = {
-    "elaborado_por": {"nome": "", "posto_funcao": ""},
-    "revisado_por": {"nome": "", "posto_funcao": ""},
-    "aprovado_por": {"nome": "", "posto_funcao": ""},
+# Cada papel é uma LISTA de assinantes (não mais um único bloco) - o front
+# permite adicionar mais de um colaborador/revisor/aprovador por papel (ver
+# ReportGeneration.tsx), sempre com pelo menos um item.
+DEFAULT_SIGNATURES: dict[str, list[dict[str, str]]] = {
+    "elaborado_por": [{"nome": "", "posto_funcao": ""}],
+    "revisado_por": [{"nome": "", "posto_funcao": ""}],
+    "aprovado_por": [{"nome": "", "posto_funcao": ""}],
 }
 
 

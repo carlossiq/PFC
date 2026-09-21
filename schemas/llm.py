@@ -323,6 +323,15 @@ class LLMOutput(BaseModel):
         elif isinstance(value, list):
             # Se for lista direta, converter para SimpleFieldQuery
             return SimpleFieldQuery(values=value)
+        elif isinstance(value, str):
+            # Modelos menores (ex: Ollama local) às vezes devolvem uma
+            # string solta em vez da lista esperada (ex: "FIELD_OF_STUDY":
+            # "Military Communications") - trata como valor único em vez
+            # de rejeitar a resposta inteira. Gemini/Anthropic sempre
+            # seguiram o formato de lista, por isso esse caso nunca
+            # apareceu antes de Ollama virar opção pra geração de query.
+            stripped = value.strip()
+            return SimpleFieldQuery(values=[stripped]) if stripped else SimpleFieldQuery()
         elif isinstance(value, SimpleFieldQuery):
             return value
         elif value is None:

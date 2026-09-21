@@ -265,6 +265,75 @@ async def test_generate_top10_heatmap_from_cpc_distribution(svc, storage):
 
 
 @pytest.mark.asyncio
+async def test_generate_top_entities_chart_requires_data(svc):
+    result = await svc.generate_top_entities_chart(
+        session_id=12, probe_query_id=120, entity_counts={}, chart_type="top_depositants", document_type="patent",
+        title="Top Depositantes",
+    )
+
+    assert result["chart"] is None
+    assert "nenhum dado" in result["skipped_reason"]
+
+
+@pytest.mark.asyncio
+async def test_generate_top_entities_chart_from_enriched_counts(svc, storage):
+    entity_counts = {"Acme": 42, "Globex": 30, "Initech": 12}
+
+    result = await svc.generate_top_entities_chart(
+        session_id=13,
+        probe_query_id=130,
+        entity_counts=entity_counts,
+        chart_type="top_depositants",
+        document_type="patent",
+        title="Top Depositantes",
+    )
+
+    assert result["skipped_reason"] is None
+    assert result["chart"]["document_type"] == "patent"
+    assert result["chart"]["chart"] == "top_depositants"
+    assert result["chart"]["image_base64"]
+
+    object_key = result["chart"]["object_key"]
+    assert object_key == "sessions/13/probe_query_130/patent_top_depositants.png"
+    assert storage.uploaded[object_key][0]
+
+
+@pytest.mark.asyncio
+async def test_generate_top_entities_chart_for_article_uses_own_chart_type(svc, storage):
+    # institutions (artigo) usa um chart_type diferente do de patente, mesmo
+    # reusando o mesmo método - evita colisão de chave se ambos os lados
+    # forem gerados na mesma sessão.
+    result = await svc.generate_top_entities_chart(
+        session_id=14,
+        probe_query_id=140,
+        entity_counts={"MIT": 20, "Stanford": 15},
+        chart_type="top_institutions",
+        document_type="article",
+        title="Top Instituições",
+    )
+
+    object_key = result["chart"]["object_key"]
+    assert object_key == "sessions/14/probe_query_140/article_top_institutions.png"
+
+
+@pytest.mark.asyncio
+async def test_generate_yearly_volume_for_article(svc, storage):
+    articles_by_year = {2019: 5, 2020: 8, 2021: 3}
+
+    result = await svc.generate_yearly_volume(
+        document_type="article", session_id=15, probe_query_id=150, yearly_counts=articles_by_year
+    )
+
+    assert result["skipped_reason"] is None
+    assert result["chart"]["document_type"] == "article"
+    assert result["chart"]["chart"] == "yearly_volume"
+
+    object_key = result["chart"]["object_key"]
+    assert object_key == "sessions/15/probe_query_150/article_yearly_volume.png"
+    assert storage.uploaded[object_key][0]
+
+
+@pytest.mark.asyncio
 async def test_generate_top10_heatmap_reused_for_articles_with_fewer_than_ten(svc):
     field_of_study = {"AI": 40, "Robotics": 12, "Optics": 5}
 

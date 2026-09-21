@@ -425,15 +425,46 @@ class ReportService:
             dict com "chart" (manifesto do PNG gerado, ou None se pulado) e
             "skipped_reason" (motivo textual se pulado, ou None).
         """
-        yearly_counts = {int(year): int(count) for year, count in patents_by_year.items()}
-        if not yearly_counts:
-            reason = "nenhum dado de patentes por ano fornecido"
-            logger.warning("patent_yearly_volume_insufficient_data", session_id=session_id, reason=reason)
+        return await self.generate_yearly_volume(
+            document_type="patent",
+            session_id=session_id,
+            probe_query_id=probe_query_id,
+            yearly_counts=patents_by_year,
+        )
+
+    async def generate_yearly_volume(
+        self,
+        document_type: str,
+        session_id: int,
+        probe_query_id: int,
+        yearly_counts: dict[str, int] | dict[int, int],
+    ) -> dict[str, Any]:
+        """Generaliza `generate_patent_yearly_volume` pra qualquer
+        `document_type` (patente OU artigo) - mesmo `_chart_yearly_volume`
+        já genérico, só faltava expor pro lado artigo. `probe_query_id` é a
+        query final da fonte correspondente a `document_type` (resolvida
+        pelo chamador).
+
+        Returns:
+            dict com "chart" (manifesto do PNG gerado, ou None se pulado) e
+            "skipped_reason" (motivo textual se pulado, ou None).
+        """
+        counts = {int(year): int(count) for year, count in yearly_counts.items()}
+        if not counts:
+            reason = f"nenhum dado de {_DOCUMENT_LABELS[document_type].lower()} por ano fornecido"
+            logger.warning(
+                "yearly_volume_insufficient_data", session_id=session_id, document_type=document_type, reason=reason
+            )
             return {"chart": None, "skipped_reason": reason}
 
-        png_bytes = self._chart_yearly_volume(yearly_counts, "patent")
+        png_bytes = self._chart_yearly_volume(counts, document_type)
         chart = await self._upload_chart(
-            png_bytes, session_id, probe_query_id, "patent", "yearly_volume", "patent_yearly_volume.png"
+            png_bytes,
+            session_id,
+            probe_query_id,
+            document_type,
+            "yearly_volume",
+            f"{document_type}_yearly_volume.png",
         )
 
         return {"chart": chart, "skipped_reason": None}
@@ -798,6 +829,21 @@ class ReportService:
         if counts is None:
             return None
 
+        return self._render_top_entities_chart(counts, document_type, title)
+
+    def _render_top_entities_chart(
+        self,
+        counts: pd.Series,
+        document_type: str,
+        title: str,
+    ) -> bytes:
+        """Desenha o gráfico de barra horizontal (ranking top-K já pronto em
+        `counts`, ordem ascendente pra barh mostrar o maior no topo) -
+        compartilhado por `_chart_top_entities` (agrega de documentos do
+        banco via `_ranked_counts`) e por `generate_top_entities_chart`
+        (recebe contagens já agregadas por outra fonte, ex.: a amostra
+        enriquecida da inferência estatística) - só a ORIGEM da contagem
+        difere entre os dois, o desenho é o mesmo."""
         color = _COLOR_PATENT if document_type == "patent" else _COLOR_ARTICLE
         label = _DOCUMENT_LABELS[document_type]
 
@@ -815,3 +861,44 @@ class ReportService:
         fig.tight_layout()
 
         return self._savefig_bytes(fig, dpi=_DPI)
+
+    async def generate_top_entities_chart(
+        self,
+        session_id: int,
+        probe_query_id: int,
+        entity_counts: dict[str, int],
+        chart_type: str,
+        document_type: str,
+        title: str,
+        top_k: int = _TOP_K,
+    ) -> dict[str, Any]:
+        """Gera o gráfico de barra horizontal top-K a partir de uma
+        distribuição nome->contagem JÁ AGREGADA pelo chamador (ex.: o campo
+        `counts` de `depositants`/`institutions` que
+        `POST /inference/final-search` devolve) - não depende de documentos
+        persistidos no banco, mesmo espírito de `generate_top10_heatmap`.
+        `chart_type` é recebido explicitamente (não fixo, diferente de
+        `generate_top10_heatmap`) porque mais de uma distribuição desse
+        formato pode existir pro MESMO `document_type` (ex.: "top
+        depositantes" e "top10 heatmap de CPC" são ambos do lado patente) -
+        sem isso as duas colidiriam na mesma chave de storage/SessionChart.
+
+        Returns:
+            dict com "chart" (manifesto do PNG gerado, ou None se pulado) e
+            "skipped_reason" (motivo textual se pulado, ou None).
+        """
+        if not entity_counts:
+            reason = "nenhum dado de distribuição fornecido"
+            logger.warning(
+                "top_entities_chart_insufficient_data", session_id=session_id, chart_type=chart_type, reason=reason
+            )
+            return {"chart": None, "skipped_reason": reason}
+
+        counts = pd.Series(entity_counts).sort_values(ascending=True).tail(top_k)
+
+        png_bytes = self._render_top_entities_chart(counts, document_type, title)
+        chart = await self._upload_chart(
+            png_bytes, session_id, probe_query_id, document_type, chart_type, f"{document_type}_{chart_type}.png"
+        )
+
+        return {"chart": chart, "skipped_reason": None}

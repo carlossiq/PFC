@@ -26,6 +26,7 @@ export const SUBSTEPS = {
 
   // Etapa de Exploração Final
   RESULTS_ANALYSIS: 'results_analysis',
+  CHART_CREATION: 'chart_creation',
 
   // Etapa de Geração do Relatório
   REPORTING: 'reporting',
@@ -49,7 +50,10 @@ export const stepsData = [
   },
   {
     name: 'Exploração Final',
-    substeps: [{ id: SUBSTEPS.RESULTS_ANALYSIS, name: 'Análise de Resultados' }],
+    substeps: [
+      { id: SUBSTEPS.RESULTS_ANALYSIS, name: 'Análise de Resultados' },
+      { id: SUBSTEPS.CHART_CREATION, name: 'Criação de Gráficos' },
+    ],
   },
   {
     name: 'Geração do Relatório',

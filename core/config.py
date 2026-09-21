@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = True
     log_level: str = "INFO"
+    # Ecoa toda query SQL executada (SQLAlchemy `echo`) - desligado por
+    # padrão mesmo com debug=True, pra não poluir o log com uma query por
+    # linha (era o principal motivo do log de inicialização ficar ilegível,
+    # ver init_db()/seed_all_config() que rodam dezenas de INSERTs no boot).
+    # Ligar só quando for depurar uma query específica.
+    sql_echo: bool = False
 
     # Server
     host: str = "0.0.0.0"
@@ -44,7 +50,7 @@ class Settings(BaseSettings):
     llm_gemini_api_key: Optional[str] = None
     llm_gemini_model: str = "gemini-2.0-flash-exp"
     llm_anthropic_api_key: Optional[str] = None
-    llm_anthropic_model: str = "claude-3-5-sonnet-20241022"
+    llm_anthropic_model: str = "claude-haiku-4-5"
 
     # KeyBERT Model Configuration (sentence-transformers)
     # Options:
@@ -63,8 +69,6 @@ class Settings(BaseSettings):
     # Search Configuration
     search_year_from: int = 2015
     search_year_to: int = 2026
-    probe_api: str = "lens_patent"
-    probe_api_ext: str = ""  # Vazio por padrão, habilitar no .env se necessário
     probe_top_k: int = 10  # Número de resultados para busca probe
     final_top_k: int = 100  # Número de resultados para busca final
 
@@ -79,46 +83,36 @@ class Settings(BaseSettings):
     term_extraction_abstract_weight: float = (
         1.0  # Peso para termos extraídos de abstracts
     )
-    # Score threshold: mínimo para retornar termos (0.0-1.0)
-    # Aumentar → menos termos, só os melhores (ex: 0.50)
-    # Diminuir → mais termos, incluindo contexto (ex: 0.15)
-    # Ajustado para all-mpnet-base-v2 (modelo para patentes)
-    term_extraction_score_threshold: float = 0.35
+    # Score threshold: mínimo para retornar termos
+    # ATENÇÃO: escala mudou com a migração para BM25F+RRF (ver
+    # TESTE_EXTRACAO_TERMOS_BM25F_RRF.md) - final_rrf_score é soma de dois
+    # termos 1/(k+rank), faixa observada empiricamente em ~459 termos de
+    # calibração: min=0.0184 max=0.0325 mean=0.0244 median=0.0244.
+    # 0.024 ~ corta pela mediana (mantém a metade melhor de cada
+    # amostra, ~20-25 termos/busca, comparável ao volume do threshold
+    # antigo de 0.35 na escala 0-1).
+    # Aumentar → menos termos, só os melhores
+    # Diminuir → mais termos, incluindo contexto
+    term_extraction_score_threshold: float = 0.024
 
-    # MMR Lambda: balanço entre relevância e diversidade (0.0-1.0)
-    # 1.0 = 100% relevância, 0% diversidade (pode ter termos muito similares)
-    # 0.5 = 50% relevância, 50% diversidade (balanço)
-    # 0.0 = 0% relevância, 100% diversidade (máxima diversidade)
-    # Default 0.55: prioriza relevância (55%) mantendo diversidade (45%)
-    # Aumentar para 0.80+ se preferir termos mais relevantes que diversos
-    # Diminuir para 0.30 se preferir máxima diversidade
-    term_extraction_mmr_lambda: float = 0.45
-
-    # MMR Similarity Threshold: filtra termos muito similares (0.0-1.0)
-    # 1.0 = pula termos 100% similares (aceita tudo que não é idêntico)
-    # 0.5 = pula termos >50% similares (padrão: rejeita duplicatas próximas)
-    # 0.3 = pula termos >30% similares (muito restritivo)
-    # Default 0.5: bom balanço, remove duplicatas sem perder termos relacionados
-    # Aumentar para 0.70 se quiser agrupar termos relacionados
-    # Diminuir para 0.30 se quiser máxima diversidade
-    term_extraction_mmr_similarity_threshold: float = 0.5
-
-    # Overlap Threshold: filtra termos com alta sobreposição de palavras (0.0-1.0)
-    # Usa word overlap ratio: shared_words / min(term_a_words, term_b_words)
-    # 1.0 = remove apenas termos idênticos
-    # 0.75 = remove termos com >75% palavras iguais
-    # 0.67 = remove termos com >67% palavras iguais (padrão: bom balanço)
-    # 0.50 = remove termos com >50% palavras iguais (muito restritivo)
-    # Default 0.67: mantém diversidade removendo apenas termos muito similares
-    # Aumentar para 0.80 se quiser aceitar mais termos similares
-    # Diminuir para 0.50 se quiser máxima diversidade
-    term_extraction_overlap_threshold: float = 0.66
+    # Piso de termos devolvidos, independente do threshold acima.
+    # final_rrf_score é relativo ao rank DENTRO do lote (RRF), não uma escala
+    # absoluta - o intervalo numérico muda com o tamanho do lote e a
+    # composição de qualidade dos candidatos, então o threshold fixo pode
+    # deixar um lote inteiro abaixo do corte (observado: lote de 315
+    # candidatos onde até o 1º colocado ficou abaixo de 0.024, devolvendo 0
+    # termos). Se o threshold deixar menos que esse piso, completa com os
+    # próximos melhor-ranqueados abaixo do corte em vez de devolver uma
+    # lista vazia ou rala demais pro usuário selecionar.
+    term_extraction_min_returned_terms: int = 10
 
     # N-gram Size-Based Score Adjustments
-    # Aplicadas em _get_score_adjustments() do term_extraction.py
+    # Usadas por TermExtractor._structural_quality_score() para RANKEAR
+    # candidatos entre si via RRF (não são mais somadas ao score - ver
+    # TESTE_EXTRACAO_TERMOS_BM25F_RRF.md)
     term_extraction_unigram_penalty: float = -0.4  # Penalidade para 1-grams
     term_extraction_bigram_bonus: float = 0.0  # Bônus/penalidade para 2-grams
-    term_extraction_trigram_bonus: float = 0.25  # Bônus para 3-grams
+    term_extraction_trigram_bonus: float = 0.25  # Bônus para 3-grams (e maiores)
 
     # Bad POS Pattern Penalties (applied when bad pattern detected)
     term_extraction_bad_bigram_penalty: float = (
@@ -127,6 +121,20 @@ class Settings(BaseSettings):
     term_extraction_bad_trigram_penalty: float = (
         -0.8
     )  # Penalidade para 3-grams com padrão ruim
+
+    # BM25F (canal lexical, substitui TfidfVectorizer) - k1/b padrão de Okapi BM25
+    term_extraction_bm25_k1: float = 1.2
+    term_extraction_bm25_b: float = 0.75
+
+    # RRF (Reciprocal Rank Fusion) - usado em 2 estágios: BM25F×KeyBERT
+    # (salience_score) e salience×qualidade estrutural (final_rrf_score).
+    # 60 é o default também usado pelo Elasticsearch para este parâmetro.
+    term_extraction_rrf_k: int = 60
+
+    # C-value: candidatos com frequência bruta abaixo deste piso são
+    # descartados antes mesmo do cálculo de c_value (substitui o filtro de
+    # sobreposição/subsunção antigo)
+    term_extraction_cvalue_min_frequency: int = 1
 
     # MinIO Configuration (armazenamento dos gráficos gerados, ver ReportService/StoragePort)
     minio_endpoint: str = "localhost:9000"

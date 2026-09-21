@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react'
-import { generateFinalQuery, rebuildFinalQuery } from '../services/finalQuery'
+import { generateFinalQuery, validateFinalQuery } from '../services/finalQuery'
 import type { FinalQueryVariant, ExtractedTerm } from '../services/finalQuery'
-import type { QueryOptionResult, StructuredQueryFields } from '../services/probeQuery'
+import type { QueryOptionResult } from '../services/probeQuery'
 import type { FormInput, ThemeInput } from '../services/refineTopic'
 import type { ProbeApi } from '../constants/probeFields'
-import { toCsv, parseCsv } from '../components/CandidatePicker'
 import { friendlyErrorMessage } from './useProbeQuerySection'
 import { useFormStore } from '../stores/useFormStore'
 import { useAutoDismiss } from './useAutoDismiss'
@@ -21,7 +20,6 @@ export interface FinalQuerySlice {
 
 interface UseFinalQuerySectionParams {
   api: ProbeApi
-  fieldOrder: readonly string[]
   variant: FinalQueryVariant
   input: FormInput
   step2SelectedTheme: (ThemeInput & { id: string }) | null
@@ -33,11 +31,10 @@ interface UseFinalQuerySectionParams {
 // o tipo (specific/balanced/generic) já foi escolhido antes de chegar aqui,
 // então não gera nada ao montar (a query já vem pronta de
 // TermSampling.tsx). "Gerar de novo" regenera com o mesmo tipo (conta como
-// iteração); a edição usa rebuildFinalQuery (síncrono, sem IA), mesmo
-// padrão de useProbeQuerySection.ts.
+// iteração); a edição é texto livre da query inteira, validada via
+// validateFinalQuery (síncrono, sem IA, só recalcula complexidade).
 export function useFinalQuerySection({
   api,
-  fieldOrder,
   variant,
   input,
   step2SelectedTheme,
@@ -87,7 +84,11 @@ export function useFinalQuerySection({
   }
 
   const [isEditing, setIsEditing] = useState(false)
-  const [editFields, setEditFields] = useState<Record<string, string>>({})
+  // Texto livre da query inteira (AND/OR/parênteses etc.) - substitui a
+  // edição por campos estruturados (title/abstract/ipc/...) separados, que
+  // obrigava a reconstruir a CQL via query builder e não permitia mexer na
+  // estrutura booleana em si.
+  const [editQueryText, setEditQueryText] = useState('')
 
   useEffect(() => {
     setIsEditing(false)
@@ -97,20 +98,7 @@ export function useFinalQuerySection({
   const isBusy = isRegenerating || isRebuilding
 
   function handleStartEdit() {
-    const fields: StructuredQueryFields = query?.fields ?? {}
-    const next: Record<string, string> = {}
-    for (const f of fieldOrder) {
-      // Year geralmente vem vazio do LLM (nenhum dos prompts pede um ano
-      // específico) - a query já aplica o intervalo padrão de qualquer
-      // jeito (year_range), então pré-preenche o campo de edição com esse
-      // padrão em vez de deixar em branco, pra não parecer que "sumiu".
-      if (f === 'year' && (!fields.year || fields.year.length === 0) && query?.year_range) {
-        next[f] = `${query.year_range.from}, ${query.year_range.to}`
-      } else {
-        next[f] = toCsv(fields[f])
-      }
-    }
-    setEditFields(next)
+    setEditQueryText(query?.query?.query ?? '')
     setIsEditing(true)
   }
 
@@ -119,18 +107,27 @@ export function useFinalQuerySection({
   }
 
   async function handleSaveEdit() {
-    const parsed: StructuredQueryFields = {}
-    for (const f of fieldOrder) parsed[f] = parseCsv(editFields[f] ?? '')
+    if (!editQueryText.trim()) {
+      setRebuildError('A query não pode ficar vazia.')
+      return
+    }
 
     setIsRebuilding(true)
     setRebuildError(null)
     try {
-      const result = await rebuildFinalQuery(parsed, api)
-      updateQuery(result)
+      const result = await validateFinalQuery(editQueryText, api)
+      // `fields` some de propósito no patch: depois de uma edição livre do
+      // texto, o breakdown por campo (title/abstract/...) que existia antes
+      // não corresponde mais ao que está na query - updateQuery faz merge
+      // raso, então sem isso o card continuaria mostrando campos antigos e
+      // desatualizados junto do texto novo.
+      updateQuery({ ...result, fields: undefined })
       setIsEditing(false)
     } catch (err) {
-      console.error(`Falha ao reconstruir query final (${api}):`, err)
-      setRebuildError('Não foi possível reconstruir a query. Tente novamente.')
+      console.error(`Falha ao validar query final (${api}):`, err)
+      setRebuildError(
+        friendlyErrorMessage(err instanceof Error ? err.message : undefined, 'Não foi possível salvar a query. Tente novamente.')
+      )
     } finally {
       setIsRebuilding(false)
     }
@@ -144,8 +141,8 @@ export function useFinalQuerySection({
     rebuildError,
     isBusy,
     isEditing,
-    editFields,
-    setEditFields,
+    editQueryText,
+    setEditQueryText,
     handleRegenerate,
     handleStartEdit,
     handleCancelEdit,

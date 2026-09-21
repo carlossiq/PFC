@@ -1,120 +1,72 @@
 import { useState } from 'react'
-import { Toggle } from './Toggle'
+import { LLMPanel } from './settings/LLMPanel'
+import { SearchApiPanel } from './settings/SearchApiPanel'
+import { SettingsCategoryPanel } from './settings/SettingsCategoryPanel'
+import { ReportCoverImagePanel } from './settings/ReportCoverImagePanel'
 
-interface ModelItem {
-  id: string
-  name: string
-  enabled: boolean
-}
+// Sub-abas da tela de Configurações - cada uma carrega só o que precisa
+// (ver SettingsCategoryPanel/SearchApiPanel/LLMPanel), evitando uma lista
+// enorme única de ~35 campos. Categorias batem com as usadas em
+// db/config_seed.py::_SETTINGS_SEED (campo `category` de AppSetting).
+const TABS = [
+  { id: 'ia', label: 'Inteligência Artificial' },
+  { id: 'busca', label: 'Busca' },
+  { id: 'extracao', label: 'Extração de Termos' },
+  { id: 'relevancia', label: 'Relevância & Qualidade' },
+  { id: 'inferencia', label: 'Inferência Estatística' },
+  { id: 'geral', label: 'Geral' },
+] as const
 
-interface ModelCategory {
-  id: string
-  label: string
-  items: ModelItem[]
-}
-
-interface ModelGroup {
-  id: string
-  title: string
-  categories: ModelCategory[]
-}
-
-const modelGroups: ModelGroup[] = [
-  {
-    id: 'ia-models',
-    title: 'Modelos de IA disponíveis',
-    categories: [
-      {
-        id: 'remota',
-        label: 'Remota',
-        items: [
-          { id: 'gemini', name: 'Gemini 2.5', enabled: true },
-          { id: 'gpt4', name: 'GPT-4', enabled: false },
-        ],
-      },
-      {
-        id: 'local',
-        label: 'Local',
-        items: [
-          { id: 'ollama', name: 'Ollama', enabled: false },
-          { id: 'llama2', name: 'Llama 2', enabled: true },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'prospection-models',
-    title: 'Modelos de prospecção',
-    categories: [
-      {
-        id: 'patents',
-        label: 'Patentes',
-        items: [{ id: 'lens-patents', name: 'LENS Patents', enabled: true },
-                {id: 'ops', name: 'OPS', enabled: false},
-        ],
-      },
-      {
-        id: 'articles',
-        label: 'Artigos',
-        items: [{ id: 'scopus', name: 'Scopus', enabled: true }],
-      },
-    ],
-  },
-]
+type TabId = (typeof TABS)[number]['id']
 
 export function ConfiguracoesTab() {
-  const [selectedModels, setSelectedModels] = useState<Map<string, string>>(() => {
-    const selected = new Map<string, string>()
-    modelGroups.forEach((group) => {
-      group.categories.forEach((category) => {
-        const enabledItem = category.items.find((item) => item.enabled)
-        if (enabledItem) {
-          selected.set(category.id, enabledItem.id)
-        }
-      })
-    })
-    return selected
-  })
-
-  const selectModel = (categoryId: string, modelId: string) => {
-    const newSelected = new Map(selectedModels)
-    newSelected.set(categoryId, modelId)
-    setSelectedModels(newSelected)
-  }
+  const [activeTab, setActiveTab] = useState<TabId>('ia')
 
   return (
     <div className="w-full">
-      <h2 className="text-2xl font-bold mb-6">Configurações</h2>
+      <h2 className="text-2xl font-bold mb-1">Configurações</h2>
+      <p className="text-sm text-gray-500 mb-6">
+        Alterações são salvas automaticamente ao adicionar/editar/selecionar - não existe botão de salvar.
+      </p>
 
-      <div className="space-y-6">
-        {modelGroups.map((group) => (
-          <div key={group.id}>
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">{group.title}</h3>
+      <div className="border-b border-gray-200 mb-6 overflow-x-auto">
+        <nav className="flex gap-1 -mb-px min-w-max">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
+                activeTab === tab.id
+                  ? 'border-[#0f9448] text-[#0f9448]'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
 
-            <div className="ml-4 space-y-4">
-              {group.categories.map((category) => (
-                <div key={category.id}>
-                  <p className="text-base font-medium text-gray-700 mb-2">{category.label}</p>
-
-                  <div className="ml-4 space-y-2">
-                    {category.items.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-700"
-                      >
-                        <Toggle
-                          enabled={selectedModels.get(category.id) === item.id}
-                          onChange={() => selectModel(category.id, item.id)}
-                        />
-                        <span className="text-sm font-medium">{item.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
+      <div className="max-w-2xl">
+        {activeTab === 'ia' && <LLMPanel />}
+        {activeTab === 'busca' && (
+          <div className="space-y-6">
+            <SearchApiPanel />
+            <div>
+              <h4 className="text-sm font-semibold text-gray-900 mb-2">Parâmetros de busca e credenciais</h4>
+              <SettingsCategoryPanel categories={['search', 'external_api']} />
             </div>
           </div>
-        ))}
+        )}
+        {activeTab === 'extracao' && <SettingsCategoryPanel categories={['term_extraction']} />}
+        {activeTab === 'relevancia' && <SettingsCategoryPanel categories={['relevance', 'fuzzy_matching']} />}
+        {activeTab === 'inferencia' && <SettingsCategoryPanel categories={['statistical_inference']} />}
+        {activeTab === 'geral' && (
+          <div className="space-y-6">
+            <ReportCoverImagePanel />
+            <SettingsCategoryPanel categories={['general']} />
+          </div>
+        )}
       </div>
     </div>
   )

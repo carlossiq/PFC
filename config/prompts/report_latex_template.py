@@ -13,6 +13,11 @@ Formato esperado de `context` (todas as chaves com default seguro se
 ausentes - seções ainda não geradas aparecem como "[Seção ainda não
 gerada]" em vez de quebrar a renderização):
     numero, ano, tema: str - capa
+    capa_imagem: str | None - nome do arquivo (basename) da imagem de capa
+        configurada em Configurações > Geral (ver
+        app/core/services/report_cover_image.py), já padronizada em tamanho
+        - None pula o bloco da imagem inteiro (nenhuma imagem configurada
+        no momento em que esta sessão foi montada)
     finalidade, objetivo, introducao: str - seções de IA (1, 3, 4)
     referencias_administrativas: list[str] - seção 2, dado do usuário
     metodologia: str - seção 5, já renderizada localmente (ver
@@ -26,7 +31,8 @@ gerada]" em vez de quebrar a renderização):
     conclusao: str - seção 7, seção de IA
     referencias_bibliograficas: list[str] - seção 8, fixa + usuário
     assinaturas: dict com elaborado_por/revisado_por/aprovado_por, cada um
-        {"nome": str, "posto_funcao": str}
+        uma LISTA de {"nome": str, "posto_funcao": str} (1+ assinantes por
+        papel - ver ReportGeneration.tsx)
 """
 
 from __future__ import annotations
@@ -53,7 +59,11 @@ REPORT_LATEX_TEMPLATE = r"""
 
 \begin{titlepage}
     \centering
-    \vspace*{3cm}
+    \vspace*{2cm}
+    \BLOCK{ if capa_imagem }
+    \includegraphics[width=4cm]{\VAR{capa_imagem}}
+    \vspace{1cm}
+    \BLOCK{ endif }
     {\LARGE\bfseries RELATÓRIO DE PROSPECÇÃO TECNOLÓGICA\par}
     \vspace{0.5cm}
     {\Large \VAR{numero}/\VAR{ano} -- AGITEC\par}
@@ -69,11 +79,15 @@ REPORT_LATEX_TEMPLATE = r"""
 \VAR{finalidade}
 
 \section{Referências}
+\BLOCK{ if referencias_administrativas }
 \begin{itemize}[leftmargin=*]
 \BLOCK{ for ref in referencias_administrativas }
     \item \VAR{ref}
 \BLOCK{ endfor }
 \end{itemize}
+\BLOCK{ else }
+Nenhuma referência administrativa informada.
+\BLOCK{ endif }
 
 \section{Objetivo}
 \VAR{objetivo}
@@ -127,29 +141,42 @@ REPORT_LATEX_TEMPLATE = r"""
 \VAR{conclusao}
 
 \section{Referências Bibliográficas}
+\BLOCK{ if referencias_bibliograficas }
 \begin{enumerate}[leftmargin=*]
 \BLOCK{ for ref in referencias_bibliograficas }
     \item \VAR{ref}
 \BLOCK{ endfor }
 \end{enumerate}
+\BLOCK{ else }
+Nenhuma referência bibliográfica informada.
+\BLOCK{ endif }
 
 \vspace{2cm}
-\noindent Elaborado por:\\[1.5cm]
+\noindent Elaborado por:
+\BLOCK{ for signer in assinaturas.elaborado_por }
+\vspace{0.5cm}\\[1cm]
 \noindent\rule{8cm}{0.4pt}\\
-\VAR{assinaturas.elaborado_por.nome}\\
-\VAR{assinaturas.elaborado_por.posto_funcao}
+\VAR{signer.nome}\\
+\VAR{signer.posto_funcao}
+\BLOCK{ endfor }
 
-\vspace{1.5cm}
-\noindent Revisado por:\\[1.5cm]
+\vspace{1cm}
+\noindent Revisado por:
+\BLOCK{ for signer in assinaturas.revisado_por }
+\vspace{0.5cm}\\[1cm]
 \noindent\rule{8cm}{0.4pt}\\
-\VAR{assinaturas.revisado_por.nome}\\
-\VAR{assinaturas.revisado_por.posto_funcao}
+\VAR{signer.nome}\\
+\VAR{signer.posto_funcao}
+\BLOCK{ endfor }
 
-\vspace{1.5cm}
-\noindent Aprovo:\\[1.5cm]
+\vspace{1cm}
+\noindent Aprovo:
+\BLOCK{ for signer in assinaturas.aprovado_por }
+\vspace{0.5cm}\\[1cm]
 \noindent\rule{8cm}{0.4pt}\\
-\VAR{assinaturas.aprovado_por.nome}\\
-\VAR{assinaturas.aprovado_por.posto_funcao}
+\VAR{signer.nome}\\
+\VAR{signer.posto_funcao}
+\BLOCK{ endfor }
 
 \end{document}
 """
@@ -172,6 +199,7 @@ _DEFAULT_CONTEXT: dict[str, Any] = {
     "numero": "000",
     "ano": "",
     "tema": "",
+    "capa_imagem": None,
     "finalidade": "[Seção ainda não gerada]",
     "objetivo": "[Seção ainda não gerada]",
     "introducao": "[Seção ainda não gerada]",
@@ -187,9 +215,9 @@ _DEFAULT_CONTEXT: dict[str, Any] = {
     "conclusao": "[Seção ainda não gerada]",
     "referencias_bibliograficas": [],
     "assinaturas": {
-        "elaborado_por": {"nome": "", "posto_funcao": ""},
-        "revisado_por": {"nome": "", "posto_funcao": ""},
-        "aprovado_por": {"nome": "", "posto_funcao": ""},
+        "elaborado_por": [{"nome": "", "posto_funcao": ""}],
+        "revisado_por": [{"nome": "", "posto_funcao": ""}],
+        "aprovado_por": [{"nome": "", "posto_funcao": ""}],
     },
 }
 

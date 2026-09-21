@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useFormStore } from '../../stores/useFormStore'
 import { useFinalQuerySection } from '../../hooks/useFinalQuerySection'
+import { useActiveSearchApis } from '../../hooks/useActiveSearchApis'
 import { friendlyErrorMessage } from '../../hooks/useProbeQuerySection'
 import { runFinalSearch } from '../../services/finalQuery'
 import { FieldCard } from '../FieldCard'
 import { FloatingLabelInput } from '../FloatingLabelInput'
+import { QuerySyntaxMeter } from '../QuerySyntaxMeter'
 import { LoadingScreen } from '../LoadingScreen'
 import { Button } from '../Button'
 import { SectionHeader } from '../SectionHeader'
@@ -22,10 +24,10 @@ interface FinalQueryCardProps {
 
 // Card de revisão/edição da única query final de uma fonte (o tipo já foi
 // escolhido antes, em TermSampling.tsx) - mostra o que foi gerado (texto,
-// campos estruturados, complexidade), com "Editar" (campos estruturados,
-// sem IA, via rebuildFinalQuery) e "Gerar de novo" (regenera com o mesmo
-// tipo, conta como iteração) - mesmo padrão visual de card+botão abaixo já
-// usado em TermSampling.tsx.
+// campos estruturados quando disponíveis, complexidade), com "Editar" (texto
+// livre da query inteira, sem IA, via validateFinalQuery) e "Gerar de novo"
+// (regenera com o mesmo tipo, conta como iteração) - mesmo padrão visual de
+// card+botão abaixo já usado em TermSampling.tsx.
 function FinalQueryCard({ title, fieldOrder, fieldLabels, section }: FinalQueryCardProps) {
   const {
     query,
@@ -35,8 +37,8 @@ function FinalQueryCard({ title, fieldOrder, fieldLabels, section }: FinalQueryC
     rebuildError,
     isBusy,
     isEditing,
-    editFields,
-    setEditFields,
+    editQueryText,
+    setEditQueryText,
     handleRegenerate,
     handleStartEdit,
     handleCancelEdit,
@@ -69,13 +71,18 @@ function FinalQueryCard({ title, fieldOrder, fieldLabels, section }: FinalQueryC
           </div>
         )}
 
+        {/* Fora dos blocos de !isEditing/isEditing de propósito: o erro
+            acontece justamente ao tentar salvar (durante a edição), então
+            precisa aparecer também com isEditing=true - senão "Salvar"
+            falha em silêncio e a tela fica presa na edição sem explicação. */}
+        {!isRegenerating && rebuildError && (
+          <div className="mb-3 p-3 rounded-lg border-2 border-red-200 bg-red-50">
+            <p className="text-sm text-red-700">{rebuildError}</p>
+          </div>
+        )}
+
         {!isRegenerating && query?.success && !isEditing && (
           <>
-            {rebuildError && (
-              <div className="mb-3 p-3 rounded-lg border-2 border-red-200 bg-red-50">
-                <p className="text-sm text-red-700">{rebuildError}</p>
-              </div>
-            )}
             <div className="space-y-3">
               <FieldCard label="Query">
                 <p className="text-sm font-mono text-gray-900 break-all">{query.query?.query}</p>
@@ -89,15 +96,19 @@ function FinalQueryCard({ title, fieldOrder, fieldLabels, section }: FinalQueryC
                   </FieldCard>
                 ))}
 
-              {/* Year sempre aparece, mesmo sem edição - mostra o padrão do
-                  backend quando o campo está vazio, mesmo padrão de
+              {/* Year sempre aparece, mesmo sem edição. query.year_range vem
+                  do backend (validate_final_query/_rebuild_query): se a
+                  query tiver uma cláusula de data reconhecível (ex: "pd
+                  within ..."), reflete ela; senão cai no padrão de
+                  settings - não dá pra saber qual dos dois é só olhando
+                  aqui, por isso não rotula como "(padrão)". Mesmo padrão de
                   ProbeQuerySectionView.tsx. */}
               <FieldCard label={fieldLabels.year}>
                 <p className="text-sm font-semibold text-gray-900">
                   {query.fields?.year && query.fields.year.length > 0
                     ? query.fields.year.join(', ')
                     : query.year_range
-                      ? `${query.year_range.from} - ${query.year_range.to} (padrão)`
+                      ? `${query.year_range.from} - ${query.year_range.to}`
                       : '—'}
                 </p>
               </FieldCard>
@@ -115,16 +126,20 @@ function FinalQueryCard({ title, fieldOrder, fieldLabels, section }: FinalQueryC
 
         {!isRegenerating && query?.success && isEditing && (
           <div className="space-y-4">
-            {fieldOrder.map((f) => (
-              <FloatingLabelInput
-                key={f}
-                label={fieldLabels[f]}
-                name={`edit-${f}`}
-                value={editFields[f] ?? ''}
-                onChange={(e) => setEditFields((prev) => ({ ...prev, [f]: e.target.value }))}
-                placeholder={f === 'year' ? 'ex: 2020 ou 2015, 2020 (intervalo)' : 'separados por vírgula'}
-              />
-            ))}
+            <FloatingLabelInput
+              label="Query completa"
+              name="edit-query"
+              value={editQueryText}
+              onChange={(e) => setEditQueryText(e.target.value)}
+              placeholder='ex: TITLE("machine learning") AND (ABS("neural network") OR ABS("deep learning"))'
+              isTextarea
+              rows={10}
+            />
+            <QuerySyntaxMeter query={editQueryText} />
+            <p className="text-xs text-gray-500 -mt-2">
+              Edite o texto inteiro da query, incluindo AND/OR/NOT, parênteses e campos (ex: TITLE(...), ABS(...)).
+              A complexidade é recalculada ao salvar.
+            </p>
 
             <div className="flex gap-3 pt-1">
               <Button fullWidth size="sm" variant="secondary" onClick={handleCancelEdit} disabled={isRebuilding}>
@@ -188,12 +203,15 @@ export function FinalExploration({ step, substep, onBack, onNext }: FinalExplora
 
   useAutoDismiss(confirmError, () => setConfirmError(null))
 
+  // Mesma API escolhida pra probe (Step3.tsx) atende a busca final - ver
+  // useActiveSearchApis.ts / search_api_selection (Configurações > Busca).
+  const { patentApi, articleApi } = useActiveSearchApis()
+
   const hasPatentQuery = step4PatentQuery !== null
   const hasArticleQuery = step4ArticleQuery !== null
 
   const patentSection = useFinalQuerySection({
-    api: 'ops',
-    fieldOrder: PROBE_FIELDS_BY_API.ops.order,
+    api: patentApi,
     variant: step4PatentSelectedVariant,
     input,
     step2SelectedTheme,
@@ -207,8 +225,7 @@ export function FinalExploration({ step, substep, onBack, onNext }: FinalExplora
   })
 
   const articleSection = useFinalQuerySection({
-    api: 'scopus',
-    fieldOrder: PROBE_FIELDS_BY_API.scopus.order,
+    api: articleApi,
     variant: step4ArticleSelectedVariant,
     input,
     step2SelectedTheme,

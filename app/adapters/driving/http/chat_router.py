@@ -196,6 +196,31 @@ async def rebuild_probe_query(
         return SuccessResponse(success=False, data={"error": str(exc)}, run_id=run_id)
 
 
+@router.post("/probe/validate-query", response_model=SuccessResponse[dict[str, Any]])
+async def validate_probe_query(
+    request: Request,
+    query: str = Body(
+        ...,
+        embed=True,
+        description="Query probe completa como texto livre (AND/OR/parênteses etc.), editada diretamente pelo usuário.",
+        example='TITLE("machine learning") AND ABS("neural network")',
+    ),
+    api: str = "ops",
+) -> SuccessResponse[dict[str, Any]]:
+    run_id = _run_id(request)
+    try:
+        result = await _svc(request).validate_probe_query(query, api)
+        return SuccessResponse(
+            success=result["success"],
+            data=result,
+            message="Query validada" if result["success"] else result.get("error", ""),
+            run_id=run_id,
+        )
+    except Exception as exc:
+        logger.error("validate_probe_query_error", error=str(exc), run_id=run_id)
+        return SuccessResponse(success=False, data={"error": str(exc)}, run_id=run_id)
+
+
 @router.post("/final/rebuild-query", response_model=SuccessResponse[dict[str, Any]])
 async def rebuild_final_query(
     request: Request,
@@ -229,6 +254,31 @@ async def rebuild_final_query(
         )
     except Exception as exc:
         logger.error("rebuild_final_query_error", error=str(exc), run_id=run_id)
+        return SuccessResponse(success=False, data={"error": str(exc)}, run_id=run_id)
+
+
+@router.post("/final/validate-query", response_model=SuccessResponse[dict[str, Any]])
+async def validate_final_query(
+    request: Request,
+    query: str = Body(
+        ...,
+        embed=True,
+        description="Query final completa como texto livre (AND/OR/parênteses etc.), editada diretamente pelo usuário.",
+        example='TITLE("machine learning") AND ABS("neural network")',
+    ),
+    api: str = "ops",
+) -> SuccessResponse[dict[str, Any]]:
+    run_id = _run_id(request)
+    try:
+        result = await _svc(request).validate_final_query(query, api)
+        return SuccessResponse(
+            success=result["success"],
+            data=result,
+            message="Query validada" if result["success"] else result.get("error", ""),
+            run_id=run_id,
+        )
+    except Exception as exc:
+        logger.error("validate_final_query_error", error=str(exc), run_id=run_id)
         return SuccessResponse(success=False, data={"error": str(exc)}, run_id=run_id)
 
 
@@ -326,11 +376,18 @@ async def extract_terms(
     request: Request,
     items: list[dict[str, Any]] = Body(..., description="List of dicts with 'title' and 'abstract'"),
     original_params: dict[str, Any] = Body(default={}),
-    top_k: int = 20,
+    score_threshold: float | None = Query(
+        default=None,
+        ge=0.0,
+        description=(
+            "Minimum final_rrf_score to keep a term. Defaults to "
+            "settings.term_extraction_score_threshold when omitted."
+        ),
+    ),
 ) -> SuccessResponse[dict[str, Any]]:
     run_id = _run_id(request)
     try:
-        result = await _svc(request).extract_terms(items, original_params, top_k)
+        result = await _svc(request).extract_terms(items, original_params, score_threshold)
         return SuccessResponse(
             success=result["success"],
             data=result,

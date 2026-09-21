@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useFormStore } from '../../stores/useFormStore'
 import { useProbeQuerySection } from '../../hooks/useProbeQuerySection'
+import { useActiveSearchApis } from '../../hooks/useActiveSearchApis'
 import { ProbeQuerySectionView } from '../ProbeQuerySectionView'
 import { Button } from '../Button'
 import { SectionHeader } from '../SectionHeader'
@@ -45,12 +46,12 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
 
   const [isConfirming, setIsConfirming] = useState(false)
   const [confirmError, setConfirmError] = useState<string | null>(null)
+  const { patentApi, articleApi } = useActiveSearchApis()
 
   const patentSection = useProbeQuerySection({
     step,
     substep,
-    api: 'ops',
-    fieldOrder: PROBE_FIELDS_BY_API.ops.order,
+    api: patentApi,
     input,
     step2SelectedTheme,
     slice: {
@@ -68,8 +69,7 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
   const articleSection = useProbeQuerySection({
     step,
     substep,
-    api: 'scopus',
-    fieldOrder: PROBE_FIELDS_BY_API.scopus.order,
+    api: articleApi,
     input,
     step2SelectedTheme,
     slice: {
@@ -113,8 +113,8 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
     setConfirmError(null)
 
     const [patentOutcome, articleOutcome] = await Promise.allSettled([
-      needsPatentSearch ? runProbeSearch(patentSection.selected!.query!, 'ops') : Promise.resolve(null),
-      needsArticleSearch ? runProbeSearch(articleSection.selected!.query!, 'scopus') : Promise.resolve(null),
+      needsPatentSearch ? runProbeSearch(patentSection.selected!.query!, patentApi) : Promise.resolve(null),
+      needsArticleSearch ? runProbeSearch(articleSection.selected!.query!, articleApi) : Promise.resolve(null),
     ])
 
     if (patentOutcome.status === 'rejected' || articleOutcome.status === 'rejected') {
@@ -145,8 +145,8 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
           title="Queries iniciais geradas por IA"
           tooltip="Estamos na Exploração Inicial: aqui geramos queries pra uma busca restrita de patentes, só pra encontrar um primeiro conjunto de documentos de referência. Esses documentos serão analisados, e é a partir dessa análise que montamos a query final - mais ampla - da etapa de Exploração Final, que faz a busca completa de verdade."
           cardsSectionLabel="Opções para patentes"
-          fieldOrder={PROBE_FIELDS_BY_API.ops.order}
-          fieldLabels={PROBE_FIELDS_BY_API.ops.labels}
+          fieldOrder={PROBE_FIELDS_BY_API[patentApi].order}
+          fieldLabels={PROBE_FIELDS_BY_API[patentApi].labels}
           queries={patentSection.queries}
           selectedIndex={patentSection.selectedIndex}
           setSelectedIndex={patentSection.setSelectedIndex}
@@ -157,8 +157,8 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
           rebuildError={patentSection.rebuildError}
           isBusy={patentSection.isBusy}
           isEditing={patentSection.isEditing}
-          editFields={patentSection.editFields}
-          setEditFields={patentSection.setEditFields}
+          editQueryText={patentSection.editQueryText}
+          setEditQueryText={patentSection.setEditQueryText}
           onRetry={patentSection.handleRetry}
           onStartEdit={patentSection.handleStartEdit}
           onCancelEdit={patentSection.handleCancelEdit}
@@ -169,8 +169,8 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
           title="Queries iniciais geradas por IA"
           tooltip="Mesma ideia da seção de patentes, mas pra artigos científicos: uma busca restrita no Scopus pra achar um primeiro conjunto de artigos de referência, que serão analisados antes da busca final, mais ampla."
           cardsSectionLabel="Opções para artigos"
-          fieldOrder={PROBE_FIELDS_BY_API.scopus.order}
-          fieldLabels={PROBE_FIELDS_BY_API.scopus.labels}
+          fieldOrder={PROBE_FIELDS_BY_API[articleApi].order}
+          fieldLabels={PROBE_FIELDS_BY_API[articleApi].labels}
           queries={articleSection.queries}
           selectedIndex={articleSection.selectedIndex}
           setSelectedIndex={articleSection.setSelectedIndex}
@@ -181,8 +181,8 @@ export function Step3({ step, substep, onBack, onNext }: Step3Props) {
           rebuildError={articleSection.rebuildError}
           isBusy={articleSection.isBusy}
           isEditing={articleSection.isEditing}
-          editFields={articleSection.editFields}
-          setEditFields={articleSection.setEditFields}
+          editQueryText={articleSection.editQueryText}
+          setEditQueryText={articleSection.setEditQueryText}
           onRetry={articleSection.handleRetry}
           onStartEdit={articleSection.handleStartEdit}
           onCancelEdit={articleSection.handleCancelEdit}
