@@ -13,7 +13,6 @@ import { FinalExploration } from "./steps/FinalExploration";
 import { FinalResults } from "./steps/FinalResults";
 import { ChartCreation } from "./steps/ChartCreation";
 import { ReportStep } from "./steps/ReportStep";
-import { SaveProgressButton } from "./SaveProgressButton";
 import { useWorkflowStore } from "../stores/useWorkflowStore";
 import { useProspectingStore } from "../stores/useProspectingStore";
 import { useFormStore } from "../stores/useFormStore";
@@ -21,7 +20,6 @@ import { useHistoryStore } from "../stores/useHistoryStore";
 import { useSidebarStore } from "../stores/useSidebarStore";
 import { TABS } from "../constants/tabs";
 import { STEPS } from "../constants/steps";
-import { buildSaveSessionPayload, saveSession } from "../services/sessionInput";
 import { resolveIntakePayload } from "../services/refineTopic";
 
 const tabContents = {
@@ -57,7 +55,6 @@ export function WorkflowPage() {
     step3GeneratedForIntake,
     step3ArticleQueries,
     step3ArticleGeneratedForIntake,
-    aiCallsInFlight,
     reset: formReset,
   } = useFormStore();
   const { push: historyPush, pop: historyPop, reset: historyReset } = useHistoryStore();
@@ -158,18 +155,6 @@ export function WorkflowPage() {
     nextStep();
   };
 
-  // Salva o progresso atual (o que estiver preenchido até o momento) com
-  // completed=false. Cria a sessão na primeira vez (POST), atualiza nas
-  // seguintes (PUT), guardando o sessionId retornado no form store.
-  const handleSaveProgress = async () => {
-    const formState = useFormStore.getState()
-    const payload = buildSaveSessionPayload(formState, false)
-    const result = await saveSession(formState.sessionId, formState.sessionName, payload)
-    useFormStore.getState().setSessionId(result.session_id, result.session_public_id)
-    // Evita reenviar (e duplicar) as mesmas chamadas de IA num próximo save.
-    useFormStore.getState().clearAiCallLog()
-  }
-
   // Volta ao step anterior restaurando o estado salvo no histórico
   const handlePrevStep = () => {
     const snapshot = historyPop();
@@ -211,12 +196,6 @@ export function WorkflowPage() {
         {isStartProspection && <StepsBar />}
 
         <div className="relative flex-1 overflow-y-auto px-4 py-3">
-          {isStartProspection && (
-            <SaveProgressButton
-              disabled={!input.theme.trim() || aiCallsInFlight > 0}
-              onSave={handleSaveProgress}
-            />
-          )}
           {isStartProspection ? (
             <>
               <Step1

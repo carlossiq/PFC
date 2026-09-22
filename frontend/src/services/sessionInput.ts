@@ -235,6 +235,10 @@ export interface SaveSessionPayload {
   probe_queries: SessionProbeQueryPayload[]
   ai_calls: AiUsage[]
   completed: boolean
+  // Posição do wizard (useProspectingStore) no momento deste save - ver
+  // ResearchSession.current_step/current_substep no backend.
+  current_step: number
+  current_substep: number | null
 }
 
 // Monta o payload de save a partir do estado atual do form store - tolera
@@ -244,6 +248,8 @@ export interface SaveSessionPayload {
 export function buildSaveSessionPayload(
   formState: SaveSessionFormState,
   completed: boolean,
+  currentStep: number,
+  currentSubstep: number | null,
 ): SaveSessionPayload {
   const wasRefinedByAI =
     !!formState.step2SelectedTheme && formState.step2SelectedTheme.id !== 'input'
@@ -312,6 +318,8 @@ export function buildSaveSessionPayload(
     ),
     ai_calls: formState.aiCallLog,
     completed,
+    current_step: currentStep,
+    current_substep: currentSubstep,
   }
 }
 

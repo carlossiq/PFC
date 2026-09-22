@@ -44,12 +44,6 @@ async def get_current_provider(request: Request) -> SuccessResponse[dict[str, An
     return SuccessResponse(success=result["success"], data=result, run_id=_run_id(request))
 
 
-@router.get("/system-prompt", response_model=SuccessResponse[dict[str, Any]])
-async def get_system_prompt(request: Request) -> SuccessResponse[dict[str, Any]]:
-    result = await _svc(request).get_system_prompt()
-    return SuccessResponse(success=result["success"], data=result, run_id=_run_id(request))
-
-
 @router.get("/ops-token-status", response_model=SuccessResponse[dict[str, Any]])
 async def check_ops_token(request: Request) -> SuccessResponse[dict[str, Any]]:
     result = await _svc(request).check_ops_token_status()
@@ -287,12 +281,22 @@ async def build_final_query_variant(
     request: Request,
     intake: InputIntake = Body(...),
     extracted_terms: list[dict[str, Any]] = Body(default=[]),
+    probe_classification_codes: list[str] = Body(
+        default=[],
+        description=(
+            "Códigos IPC observados nos resultados reais da busca probe (só faz sentido pra "
+            "patentes/ops - ver frontend finalQuery.ts::computeTopIpcCodes) - a IA só pode usar "
+            "códigos dessa lista, nunca inventar um (ver final_system_prompt.md)."
+        ),
+    ),
     variant: str = "balanced",
     api: str = "ops",
 ) -> SuccessResponse[dict[str, Any]]:
     run_id = _run_id(request)
     try:
-        result = await _svc(request).build_final_query_variant(intake, extracted_terms, variant, api)
+        result = await _svc(request).build_final_query_variant(
+            intake, extracted_terms, variant, api, probe_classification_codes
+        )
         return SuccessResponse(
             success=result["success"],
             data=result,

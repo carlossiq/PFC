@@ -35,15 +35,17 @@ class ScopusQueryBuilder(BaseQueryBuilder):
     _MAX_QUERY_LENGTH = 10000
     _FIELD_MAP_FILE = Path(__file__).parent.parent.parent / "config" / "dict" / "scopus_fields.json"
 
-    def __init__(self, api_name: str = "scopus", search_mode: str = "general") -> None:
+    def __init__(self, api_name: str = "scopus", search_mode: str = "general", variant: Optional[str] = None) -> None:
         """
         Inicializa o construtor Scopus.
 
         Args:
             api_name: Nome da API.
             search_mode: Modo de busca (probe ou general).
+            variant: Variante da busca final (specific/balanced/generic) -
+                ver BaseQueryBuilder._title_abstract_operator.
         """
-        super().__init__(api_name, search_mode)
+        super().__init__(api_name, search_mode, variant)
         self.field_map = self._load_field_map()
 
     @property
@@ -100,9 +102,16 @@ class ScopusQueryBuilder(BaseQueryBuilder):
             if scopus_field:
                 abstract_query = self._build_textual_query(abstract_value, scopus_field)
 
-        # Combinar title e abstract com OR
+        # Combinar title e abstract - OR na maioria dos casos, AND só na
+        # variante "specific" da busca final (ver
+        # BaseQueryBuilder._title_abstract_operator). title_query/abstract_query
+        # entram entre parênteses PRÓPRIOS aqui (mesmo motivo do
+        # OPSQueryBuilder - ver comentário lá): com 2+ grupos cada um já é
+        # internamente "TITLE(...) AND TITLE(...)" sem wrap externo, e
+        # misturar isso direto com o OR/AND do título-vs-abstract sem
+        # parênteses próprios deixa a precedência ambígua.
         if title_query and abstract_query:
-            query_parts.append(f"({title_query} OR {abstract_query})")
+            query_parts.append(f"(({title_query}) {self._title_abstract_operator()} ({abstract_query}))")
         elif title_query:
             query_parts.append(title_query)
         elif abstract_query:

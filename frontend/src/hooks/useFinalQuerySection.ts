@@ -25,6 +25,9 @@ interface UseFinalQuerySectionParams {
   step2SelectedTheme: (ThemeInput & { id: string }) | null
   extractedTerms: ExtractedTerm[]
   slice: FinalQuerySlice
+  // Códigos IPC reais da busca probe (só faz sentido pra 'ops') - ver
+  // finalQuery.ts::computeTopIpcCodes. Omitido/vazio pro lado artigos.
+  probeClassificationCodes?: string[]
 }
 
 // Encapsula revisão/edição/regeneração da única query final de uma fonte -
@@ -40,6 +43,7 @@ export function useFinalQuerySection({
   step2SelectedTheme,
   extractedTerms,
   slice,
+  probeClassificationCodes = [],
 }: UseFinalQuerySectionParams) {
   const { query, setQuery, updateQuery, incrementIterations } = slice
   const addAiUsage = useFormStore((state) => state.addAiUsage)
@@ -65,7 +69,8 @@ export function useFinalQuerySection({
         step2SelectedTheme,
         extractedTerms,
         variant,
-        api
+        api,
+        probeClassificationCodes
       )
       addAiUsage(aiUsage)
       setQuery(result)

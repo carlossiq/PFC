@@ -9,6 +9,8 @@ from collections import Counter
 from typing import Any, Optional
 
 from app.core.domain.types import LLMRequest, LLMUsage
+from app.core.services.classification_code_validator import validate_classification_codes
+from app.core.services.field_group_limiter import enforce_final_query_group_limits
 from app.core.services.query_complexity import QueryComplexityAnalyzer
 from core.config import Settings
 from core.logging import get_logger
@@ -20,20 +22,25 @@ logger = get_logger(__name__)
 _QB_ADAPTERS: dict[str, type] = {}
 
 
-def _get_qb_adapter(api: str, search_mode: str) -> Any:
-    """Instancia o query builder adapter correto para (api, search_mode)."""
+def _get_qb_adapter(api: str, search_mode: str, variant: Optional[str] = None) -> Any:
+    """Instancia o query builder adapter correto para (api, search_mode).
+
+    `variant` (specific/balanced/generic) só é relevante pra search_mode
+    "final" - decide se TITLE/ABSTRACT combinam com AND ou OR (ver
+    BaseQueryBuilder._title_abstract_operator). None (padrão, usado pela
+    probe) preserva o comportamento OR de sempre."""
     if api == "ops":
         from app.adapters.driven.query_builders.ops_query_builder_adapter import OPSQueryBuilderAdapter
-        return OPSQueryBuilderAdapter(search_mode=search_mode)
+        return OPSQueryBuilderAdapter(search_mode=search_mode, variant=variant)
     if api == "scopus":
         from app.adapters.driven.query_builders.scopus_query_builder_adapter import ScopusQueryBuilderAdapter
-        return ScopusQueryBuilderAdapter(search_mode=search_mode)
+        return ScopusQueryBuilderAdapter(search_mode=search_mode, variant=variant)
     if api == "lens_patent":
         from app.adapters.driven.query_builders.lens_patent_query_builder_adapter import LensPatentQueryBuilderAdapter
-        return LensPatentQueryBuilderAdapter(search_mode=search_mode)
+        return LensPatentQueryBuilderAdapter(search_mode=search_mode, variant=variant)
     if api == "lens_scholarly":
         from app.adapters.driven.query_builders.lens_scholarly_query_builder_adapter import LensScholarlyQueryBuilderAdapter
-        return LensScholarlyQueryBuilderAdapter(search_mode=search_mode)
+        return LensScholarlyQueryBuilderAdapter(search_mode=search_mode, variant=variant)
     raise ValueError(f"Unsupported api: {api}")
 
 
@@ -317,6 +324,11 @@ class ChatService:
                 llm = await self.llm_resolver.resolve("probe_query")
                 llm_response, usage = await llm.process_intake(llm_request, system_prompt)
                 usages.append(usage)
+                # Probe é a primeira busca - ainda não há nenhum código
+                # observado em documentos de verdade pra validar procedência
+                # contra, só formato (ver classification_code_validator.py).
+                llm_response.ipc = validate_classification_codes(llm_response.ipc, field_name="ipc")
+                llm_response.cpc = validate_classification_codes(llm_response.cpc, field_name="cpc")
                 query = qb.build_query(
                     strategy=llm_response,
                     year_from=year_from,
@@ -450,11 +462,6 @@ class ChatService:
             "provider": llm.provider_name,
             "available": llm.is_available(),
         }
-
-    async def get_system_prompt(self) -> dict[str, Any]:
-        from services.prompt.prompt_loader import PromptLoader
-        content = PromptLoader.load_general_system_prompt()
-        return {"success": True, "prompt": content}
 
     # ------------------------------------------------------------------
     # OPS token
@@ -911,6 +918,7 @@ class ChatService:
         extracted_terms: list[dict[str, Any]],
         variant: str,
         api: str,
+        probe_classification_codes: Optional[list[str]] = None,
     ) -> str:
         # extracted_terms traz final_rrf_score bruto (sem normalização - ver
         # TermExtractor.extract_and_rank_terms), num range matemático estreito
@@ -943,10 +951,25 @@ class ChatService:
             else "- None available"
         )
 
+        # Códigos IPC/CPC REAIS, observados nos documentos da busca probe
+        # (ver frontend finalQuery.ts::computeTopIpcCodes, calculado a partir
+        # de step3PatentResults.items - só existe pro lado patente/ops, o
+        # Scopus não tem classificação equivalente) - a única fonte de
+        # códigos que a IA pode usar (ver final_system_prompt.md, regra 3 e
+        # seção PROBE-DISCOVERED CLASSIFICATION CODES); sem essa lista, ela é
+        # instruída a deixar IPC/CPC vazio em vez de inventar.
+        classification_block = ""
+        if probe_classification_codes:
+            codes_str = "\n".join(f"- {code}" for code in probe_classification_codes[:15])
+            classification_block = (
+                f"\n## PROBE-DISCOVERED CLASSIFICATION CODES\n\n{codes_str}\n"
+            )
+
         return (
             f"{self._variant_instructions_block(variant, api)}\n"
             f"## EXTRACTED TERMS (score > {threshold})\n\n"
             f"{terms_str}\n"
+            f"{classification_block}"
         )
 
     async def _build_final_variant_query(
@@ -956,6 +979,7 @@ class ChatService:
         extracted_terms: list[dict[str, Any]],
         variant: str,
         step: str,
+        probe_classification_codes: Optional[list[str]] = None,
     ) -> dict[str, Any]:
         from services.prompt.prompt_loader import PromptLoader
 
@@ -971,8 +995,8 @@ class ChatService:
         year_range = {"from": year_from, "to": year_to}
 
         llm_request = self._intake_to_request(intake)
-        qb = _get_qb_adapter(api, search_mode="final")
-        context_suffix = self._terms_context_suffix(extracted_terms, variant, api)
+        qb = _get_qb_adapter(api, search_mode="final", variant=variant)
+        context_suffix = self._terms_context_suffix(extracted_terms, variant, api, probe_classification_codes)
         probe_fields = self._PROBE_FIELDS_BY_API.get(api, self._DEFAULT_PROBE_FIELDS)
 
         for attempt in range(1, max_attempts + 1):
@@ -984,6 +1008,26 @@ class ChatService:
             llm = await self.llm_resolver.resolve("final_query")
             llm_response, usage = await llm.process_intake(llm_request, system_prompt)
             usages.append(usage)
+
+            # Formato + procedência: só passam códigos que existem de
+            # verdade E foram observados nos documentos da busca probe (ver
+            # classification_code_validator.py) - probe_classification_codes
+            # vazia/None ainda valida formato, só não filtra por procedência.
+            llm_response.ipc = validate_classification_codes(
+                llm_response.ipc, allowed_codes=probe_classification_codes, field_name="ipc"
+            )
+            llm_response.cpc = validate_classification_codes(
+                llm_response.cpc, allowed_codes=probe_classification_codes, field_name="cpc"
+            )
+
+            # Rede de segurança estrutural: modelos pequenos (gemma3:4b)
+            # nem sempre respeitam a tabela de contagem de grupos por
+            # variante do prompt (ver FIELD GUIDELINES em
+            # final_system_prompt.md) - confirmado ao vivo devolvendo 3
+            # grupos de ABSTRACT pra uma busca GENERIC que pedia no máximo
+            # 2. Funde grupos excedentes em vez de rejeitar a resposta (ver
+            # field_group_limiter.py).
+            enforce_final_query_group_limits(llm_response, variant)
 
             query = qb.build_query(
                 strategy=llm_response,
@@ -1051,6 +1095,7 @@ class ChatService:
         extracted_terms: list[dict[str, Any]],
         variant: str,
         api: str,
+        probe_classification_codes: Optional[list[str]] = None,
     ) -> dict[str, Any]:
         try:
             return await self._build_final_variant_query(
@@ -1059,6 +1104,7 @@ class ChatService:
                 extracted_terms=extracted_terms,
                 variant=variant,
                 step="final_query",
+                probe_classification_codes=probe_classification_codes,
             )
         except Exception as exc:
             logger.error("build_final_query_variant_error", variant=variant, api=api, error=str(exc))

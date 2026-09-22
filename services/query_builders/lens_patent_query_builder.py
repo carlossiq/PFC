@@ -39,15 +39,17 @@ class LensPatentQueryBuilder(BaseQueryBuilder):
         "ipc_classifications",
     ]
 
-    def __init__(self, api_name: str = "lens_patent", search_mode: str = "general") -> None:
+    def __init__(self, api_name: str = "lens_patent", search_mode: str = "general", variant: Optional[str] = None) -> None:
         """
         Inicializa o builder Lens Patent.
 
         Args:
             api_name: Nome da API.
             search_mode: 'probe' ou 'general'.
+            variant: Variante da busca final (specific/balanced/generic) -
+                ver BaseQueryBuilder._title_abstract_operator.
         """
-        super().__init__(api_name, search_mode)
+        super().__init__(api_name, search_mode, variant)
 
     @property
     def api_identifier(self) -> str:
@@ -147,9 +149,11 @@ class LensPatentQueryBuilder(BaseQueryBuilder):
         if not abstract_value.is_empty():
             abstract_query = self._build_textual_field_query(abstract_value, "abstract")
 
-        # Combinar title e abstract com OR se ambos existem
+        # Combinar title e abstract - OR na maioria dos casos, AND só na
+        # variante "specific" da busca final (ver
+        # BaseQueryBuilder._title_abstract_operator).
         if title_query and abstract_query:
-            parts.append(f"({title_query} OR {abstract_query})")
+            parts.append(f"({title_query} {self._title_abstract_operator()} {abstract_query})")
         elif title_query:
             parts.append(title_query)
         elif abstract_query:

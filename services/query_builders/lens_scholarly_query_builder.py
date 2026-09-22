@@ -30,15 +30,17 @@ class LensScholarlyQueryBuilder(BaseQueryBuilder):
     _MAX_QUERY_LENGTH = 50000
     _FIELD_MAP_FILE = Path(__file__).parent.parent.parent / "config" / "dict" / "lens_scholarly_fields.json"
 
-    def __init__(self, api_name: str = "lens_scholarly", search_mode: str = "general") -> None:
+    def __init__(self, api_name: str = "lens_scholarly", search_mode: str = "general", variant: Optional[str] = None) -> None:
         """
         Inicializa o construtor Lens Scholarly.
 
         Args:
             api_name: Nome da API.
             search_mode: Modo de busca (probe ou general).
+            variant: Variante da busca final (specific/balanced/generic) -
+                ver BaseQueryBuilder._title_abstract_operator.
         """
-        super().__init__(api_name, search_mode)
+        super().__init__(api_name, search_mode, variant)
         self.field_map = self._load_field_map()
 
     @property
@@ -102,15 +104,22 @@ class LensScholarlyQueryBuilder(BaseQueryBuilder):
             if lens_field:
                 abstract_query = self._build_textual_query(abstract_value, lens_field)
 
-        # Adicionar title e abstract ao should (OR)
-        if title_query:
-            payload["query"]["bool"]["should"].append(title_query)
-        if abstract_query:
-            payload["query"]["bool"]["should"].append(abstract_query)
-
-        # Se há should clauses, definir minimum_should_match = 1 (pelo menos um deve bater)
-        if payload["query"]["bool"]["should"]:
-            payload["query"]["bool"]["minimum_should_match"] = 1
+        # OR na maioria dos casos (should + minimum_should_match=1), AND só
+        # na variante "specific" da busca final - aí título e abstract vão
+        # pro "must" em vez do "should" (ver
+        # BaseQueryBuilder._title_abstract_operator).
+        if self._title_abstract_operator() == "AND":
+            if title_query:
+                payload["query"]["bool"]["must"].append(title_query)
+            if abstract_query:
+                payload["query"]["bool"]["must"].append(abstract_query)
+        else:
+            if title_query:
+                payload["query"]["bool"]["should"].append(title_query)
+            if abstract_query:
+                payload["query"]["bool"]["should"].append(abstract_query)
+            if payload["query"]["bool"]["should"]:
+                payload["query"]["bool"]["minimum_should_match"] = 1
 
         # Construir consultas para outros campos textuais com AND
         for field_name in ["claims", "description", "full_text"]:

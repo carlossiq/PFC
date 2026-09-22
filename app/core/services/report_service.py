@@ -68,6 +68,44 @@ _HEATMAP_TOP_K = 10
 _HEATMAP_CMAP_NAME = "YlOrRd"
 _DPI_HEATMAP = 200
 
+# A fonte padrão do matplotlib (DejaVu Sans) não tem glyphs CJK - nomes de
+# depositantes/instituições/países de patentes/artigos frequentemente vêm
+# em chinês/japonês/coreano (ex.: grandes depositantes asiáticos), o que
+# gera "Glyph ... missing from font(s) DejaVu Sans" e o caractere sai em
+# branco no PNG. matplotlib NÃO faz fallback automático por caractere
+# entre fontes de uma lista (confirmado testando: com
+# font.sans-serif=["Microsoft YaHei", "Malgun Gothic"], só a primeira da
+# lista é usada - os Hangul continuam faltando mesmo com Malgun Gothic
+# instalada) - por isso a fonte é escolhida por rótulo (_font_for_label),
+# não globalmente. Han (chinês/a maioria dos kanjis japoneses, que
+# compartilham os mesmos codepoints Unicode) usa Microsoft YaHei; Hangul
+# (coreano) usa Malgun Gothic - ambas já vêm instaladas por padrão no
+# Windows. Se a fonte não existir no ambiente (ex.: rodando em Linux sem
+# esses pacotes), matplotlib cai de volta pra DejaVu Sans sozinho (mesmo
+# aviso de hoje, não quebra nada).
+_FONT_HAN = "Microsoft YaHei"
+_FONT_HANGUL = "Malgun Gothic"
+
+
+def _font_for_label(text: str) -> Optional[str]:
+    """Detecta se `text` contém Hangul ou Han (chinês/a maioria dos kanjis
+    japoneses) e devolve o nome da família de fonte que cobre esse script,
+    ou None se o texto não precisa de nenhuma delas (deixa a fonte padrão)."""
+    has_hangul = False
+    has_han = False
+    for ch in text:
+        code = ord(ch)
+        if 0xAC00 <= code <= 0xD7A3 or 0x1100 <= code <= 0x11FF:
+            has_hangul = True
+            break
+        if 0x4E00 <= code <= 0x9FFF or 0x3400 <= code <= 0x4DBF:
+            has_han = True
+    if has_hangul:
+        return _FONT_HANGUL
+    if has_han:
+        return _FONT_HAN
+    return None
+
 
 class ReportService:
     """Gera os PNGs de report (curva S, top entidades, distribuições) para uma sessão."""
@@ -342,6 +380,12 @@ class ReportService:
             png_bytes, session_id, probe_query_id, document_type, "s_curve", f"{document_type}_s_curve.png"
         )
         chart["projection_years"] = projection_years
+        # O aviso de ajuste pouco confiável não é mais desenhado dentro do
+        # PNG (ver _render_s_curve_chart) - vai no manifesto pro front
+        # decidir como exibir, e é persistido em SessionChart.fit_quality
+        # (ver report_router.py::_upsert_session_chart) pra sobreviver a
+        # reabrir a sessão sem reajustar a curva.
+        chart["fit_quality"] = fit_result["fit_quality"]
 
         return {
             "chart": chart,
@@ -622,9 +666,11 @@ class ReportService:
                 col + 0.5, y0 + 0.58, self._format_heatmap_value(value),
                 ha="center", va="center", fontsize=22, fontweight="bold", color=text_color,
             )
+            font_name = _font_for_label(label)
             ax_grid.text(
                 col + 0.5, y0 + 0.28, label,
                 ha="center", va="center", fontsize=10, alpha=0.85, color=text_color,
+                **({"fontname": font_name} if font_name else {}),
             )
 
         ax_grid.set_xlim(0, cols)
@@ -760,12 +806,6 @@ class ReportService:
                         fontsize=8, color=_COLOR_TEXT, fontweight="bold",
                     )
 
-            if not fit_result["fit_quality"]["reliable"]:
-                ax1.text(
-                    0.02, 0.98, f"⚠ Ajuste pouco confiável: {fit_result['fit_quality']['warning']}",
-                    transform=ax1.transAxes, fontsize=7, color="#b23b3b", va="top", ha="left", wrap=True,
-                    bbox=dict(boxstyle="round", facecolor="white", edgecolor="#b23b3b", alpha=0.85),
-                )
         else:
             # Sem ajuste confiável: mostra só o acumulado real observado,
             # como linha lisa - sem taxa de crescimento (não há modelo do
@@ -850,6 +890,14 @@ class ReportService:
         fig, ax = plt.subplots(figsize=_FIGSIZE_BAR)
         bars = ax.barh(counts.index.astype(str), counts.to_numpy(), color=color, zorder=2)
         ax.bar_label(bars, padding=3, color=_COLOR_TEXT, fontsize=8)
+        # Nomes de depositantes/instituições podem vir em chinês/japonês/
+        # coreano (ver _font_for_label) - a fonte padrão não tem esses
+        # glyphs, então troca por rótulo depois que o matplotlib já gerou
+        # os yticklabels a partir do índice.
+        for tick_label in ax.get_yticklabels():
+            font_name = _font_for_label(tick_label.get_text())
+            if font_name:
+                tick_label.set_fontname(font_name)
         ax.set_xlabel(f"Nº de {label.lower()}", color=_COLOR_TEXT)
         ax.tick_params(axis="both", colors=_COLOR_TEXT_MUTED, labelsize=9)
         ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))

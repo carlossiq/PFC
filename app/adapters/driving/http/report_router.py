@@ -96,11 +96,14 @@ async def _upsert_session_chart(
     object_key: str,
     content_type: str = "image/png",
     projection_years: Optional[int] = None,
+    fit_quality: Optional[dict[str, Any]] = None,
 ) -> None:
     """Grava (ou sobrescreve) a linha session_chart pra essa
     (probe_query_id, chart_type) - mesmo padrão de upsert por chave natural
-    já usado em session_persistence.py. `projection_years` só é relevante
-    pra chart_type="s_curve" (None pros demais tipos)."""
+    já usado em session_persistence.py. `projection_years`/`fit_quality` só
+    são relevantes pra chart_type="s_curve" (None pros demais tipos) -
+    `fit_quality` é o que permite GET /existing-chart mostrar o aviso de
+    ajuste pouco confiável numa curva já salva, sem precisar reajustar."""
     existing = await session.execute(
         select(SessionChart).where(
             SessionChart.probe_query_id == probe_query_id,
@@ -115,6 +118,7 @@ async def _upsert_session_chart(
     row.object_key = object_key
     row.content_type = content_type
     row.projection_years = projection_years
+    row.fit_quality = fit_quality
     await session.commit()
 
 
@@ -192,6 +196,7 @@ async def get_existing_chart(
         chart=row.chart_type,
         document_type=row.document_type,
         projection_years=row.projection_years,
+        fit_quality=row.fit_quality,
     )
     return SuccessResponse(data=ExistingChartResponse(chart=chart))
 
@@ -289,6 +294,7 @@ async def generate_session_graphics(
                 "s_curve",
                 object_key,
                 projection_years=payload.projection_years,
+                fit_quality=patent_curve["chart"].get("fit_quality"),
             )
     else:
         result["skipped"].append(f"patent:s_curve ({patent_curve['skipped_reason']})")
@@ -356,6 +362,7 @@ async def generate_article_s_curve(
                 "s_curve",
                 object_key,
                 projection_years=payload.projection_years,
+                fit_quality=result["chart"].get("fit_quality"),
             )
 
     logger.info(

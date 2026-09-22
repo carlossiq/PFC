@@ -6,6 +6,7 @@ import { Button } from '../Button'
 import { LoadingScreen } from '../LoadingScreen'
 import { SectionHeader } from '../SectionHeader'
 import { SCurveFitLegend } from '../SCurveFitLegend'
+import { SCurveReliabilityWarning } from '../SCurveReliabilityWarning'
 import { STEPS } from '../../constants/steps'
 import { PANEL_ACCENT } from '../../constants/probePanelAccent'
 import type { OpsFinalAggregateResult, ScopusFinalAggregateResult } from '../../services/finalQuery'
@@ -56,6 +57,7 @@ function SCurveSection({ kind, yearlyByYear }: { kind: SCurveKind; yearlyByYear:
             alt={`Curva S de ${kind === 'patent' ? 'patentes' : 'artigos'}`}
             className="w-full rounded-md border border-gray-200"
           />
+          <SCurveReliabilityWarning fitQuality={chart.fitQuality} />
           {downloadError && <p className="text-sm text-red-600">{downloadError}</p>}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">

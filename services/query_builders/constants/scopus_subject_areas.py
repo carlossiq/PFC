@@ -8,10 +8,10 @@ Testado direto contra a API: com aspas e nome livre, 0 resultados sempre,
 mesmo em queries amplas; com o código correto, resultados normais.
 
 A LLM que gera o `field_of_study` não conhece essa lista (ver
-config/prompts/general_system_prompt.txt, que pede algo como "Computer
-Vision" ou "Remote Sensing" - texto livre e granular, não um dos 27
-códigos), então o texto que ela gera precisa ser mapeado pro código mais
-próximo antes de virar SUBJAREA(...).
+config/prompts/probe_system_prompt.txt e final_system_prompt.md, que pedem
+algo como "Computer Vision" ou "Remote Sensing" - texto livre e granular,
+não um dos 27 códigos), então o texto que ela gera precisa ser mapeado pro
+código mais próximo antes de virar SUBJAREA(...).
 """
 
 from typing import Optional

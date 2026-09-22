@@ -166,6 +166,11 @@ class SessionInputSaveRequest(BaseModel):
     probe_queries: list[SessionProbeQueryInput] = Field(default_factory=list, max_items=4)
     ai_calls: list[SessionAiCallInput] = Field(default_factory=list)
     completed: bool = Field(default=False)
+    # Posição do wizard (useProspectingStore) no momento deste save - só
+    # usada pra reabrir "Continuar pesquisa" no step/substep exato de onde
+    # o usuário parou (ver ResearchSession.current_step/current_substep).
+    current_step: int = Field(default=0)
+    current_substep: Optional[int] = Field(default=None)
 
     @field_validator("name")
     @classmethod
@@ -198,6 +203,8 @@ class SessionInputSaveResponse(BaseModel):
     session_public_id: str
     session_name: str
     completed: bool
+    current_step: int
+    current_substep: Optional[int] = None
     root: SessionInputRow
     generated: Optional[SessionInputRow] = None
     probe_queries: list[SessionProbeQueryRow] = Field(default_factory=list)

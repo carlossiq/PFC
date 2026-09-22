@@ -4,7 +4,7 @@ import type { FormInput, ThemeInput } from './refineTopic'
 import type { ProbeApi } from '../constants/probeFields'
 import type { AiUsage } from './aiUsage'
 import { extractResultTitle, extractResultYear, buildProbeSearchResult } from './probeQuery'
-import type { QueryOptionResult, ProbeSearchResult, StructuredQueryFields } from './probeQuery'
+import type { QueryOptionResult, ProbeSearchResult, ProbeSearchResultItem, StructuredQueryFields } from './probeQuery'
 import { FINAL_QUERY_VARIANTS } from '../constants/finalQueryVariants'
 import type { FinalQueryVariant } from '../constants/finalQueryVariants'
 
@@ -162,18 +162,39 @@ export function buildFinalQuerySelectionSignature(selectedTerms: string[], varia
   return JSON.stringify({ terms: [...selectedTerms].sort(), variant })
 }
 
+// Top-N códigos IPC observados de verdade nos itens da busca probe (só faz
+// sentido pra patentes - Scopus não tem IPC/CPC) - mandados pra IA como a
+// ÚNICA fonte de códigos que ela pode usar na query final (ver
+// final_system_prompt.md, seção PROBE-DISCOVERED CLASSIFICATION CODES),
+// evitando o código inventar classificação do nada.
+export function computeTopIpcCodes(items: ProbeSearchResultItem[] | undefined, limit = 8): string[] {
+  if (!items || items.length === 0) return []
+  const counts = new Map<string, number>()
+  for (const item of items) {
+    for (const code of item.ipcCodes ?? []) {
+      if (!code) continue
+      counts.set(code, (counts.get(code) ?? 0) + 1)
+    }
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([code]) => code)
+}
+
 // Gera só a variante escolhida (specific/balanced/generic) da query final
 export async function generateFinalQuery(
   input: FormInput,
   step2SelectedTheme: (ThemeInput & { id: string }) | null,
   extractedTerms: ExtractedTerm[],
   variant: FinalQueryVariant,
-  api: ProbeApi
+  api: ProbeApi,
+  probeClassificationCodes: string[] = []
 ): Promise<FinalQueryResult> {
   const intake = resolveIntakePayload(input, step2SelectedTheme)
   const { data } = await apiClient.post(
     '/chat/final/query-variant',
-    { intake, extracted_terms: extractedTerms },
+    { intake, extracted_terms: extractedTerms, probe_classification_codes: probeClassificationCodes },
     { params: { variant, api } }
   )
 

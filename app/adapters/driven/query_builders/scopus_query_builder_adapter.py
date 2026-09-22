@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from app.adapters.driven.query_builders._converters import response_to_output
 from app.core.domain.types import LLMResponse
@@ -8,10 +8,11 @@ from services.query_builders.scopus_query_builder import ScopusQueryBuilder
 
 
 class ScopusQueryBuilderAdapter:
-    def __init__(self, search_mode: str = "final") -> None:
+    def __init__(self, search_mode: str = "final", variant: Optional[str] = None) -> None:
         self._builder = ScopusQueryBuilder(
             api_name="scopus",
             search_mode=search_mode,
+            variant=variant,
         )
 
     @property

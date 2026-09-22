@@ -25,22 +25,6 @@ class PromptLoader:
     _cache: dict[str, str] = {}
 
     @staticmethod
-    def load_general_system_prompt() -> str:
-        """
-        Carrega prompt do sistema geral.
-
-        Lê arquivo general_system_prompt.txt que contém instruções
-        gerais para o LLM processar requisições de prospecção exploratória.
-
-        Returns:
-            Conteúdo do prompt do sistema.
-
-        Raises:
-            FileNotFoundError: Se arquivo não existir.
-        """
-        return PromptLoader._load_prompt("general_system_prompt.txt")
-
-    @staticmethod
     def load_probe_system_prompt() -> str:
         """
         Carrega prompt do sistema para modo probe.

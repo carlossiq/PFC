@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useFormStore } from '../stores/useFormStore'
+import { useProspectingStore } from '../stores/useProspectingStore'
 import { buildSaveSessionPayload, saveSession } from '../services/sessionInput'
 import {
   generatePatentSCurve,
@@ -66,9 +67,11 @@ export function useFinalSCurve(kind: SCurveKind, yearlyByYear: Record<string, nu
     async function run() {
       try {
         const formState = useFormStore.getState()
-        const payload = buildSaveSessionPayload(formState, false)
+        const { step, substep } = useProspectingStore.getState()
+        const payload = buildSaveSessionPayload(formState, false, step, substep)
         const saveResult = await saveSession(formState.sessionId, formState.sessionName, payload)
         useFormStore.getState().setSessionId(saveResult.session_id, saveResult.session_public_id)
+        useFormStore.getState().setLastSavedSignature(JSON.stringify(payload))
         const sessionId = saveResult.session_id
 
         // Se a query final dessa fonte já tem uma curva S salva (ver

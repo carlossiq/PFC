@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { X } from 'lucide-react'
+import { X, Play, Loader2 } from 'lucide-react'
 import { Button } from '../Button'
 import { SectionHeader } from '../SectionHeader'
 import { FloatingLabelInput } from '../FloatingLabelInput'
 import { Modal } from '../Modal'
 import { useFormStore } from '../../stores/useFormStore'
+import { useProspectingStore } from '../../stores/useProspectingStore'
 import { buildSaveSessionPayload, saveSession } from '../../services/sessionInput'
 import {
   AI_SECTION_LABELS,
@@ -87,11 +88,13 @@ function ListEditor({
   items,
   onChange,
   placeholder,
+  error = false,
 }: {
   label: string
   items: string[]
   onChange: (items: string[]) => void
   placeholder: string
+  error?: boolean
 }) {
   const [draft, setDraft] = useState('')
 
@@ -116,12 +119,17 @@ function ListEditor({
             }
           }}
           placeholder={placeholder}
-          className="flex-1 h-9 px-3 rounded-lg border border-gray-300 text-sm focus:outline-none focus:border-[#0f9448] focus:ring-1 focus:ring-[#0f9448]"
+          className={`flex-1 h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-1 ${
+            error
+              ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
+              : 'border-gray-300 focus:border-[#0f9448] focus:ring-[#0f9448]'
+          }`}
         />
         <Button size="sm" variant="secondary" onClick={add} type="button">
           Adicionar
         </Button>
       </div>
+      {error && items.length === 0 && <p className="text-red-500 text-xs -mt-1 mb-2">Campo obrigatório.</p>}
       {items.length > 0 && (
         <ul className="space-y-1">
           {items.map((item, i) => (
@@ -153,17 +161,19 @@ function SignatureListEditor({
   title,
   values,
   onChange,
+  error = false,
 }: {
   title: string
   values: SignatureBlockInput[]
   onChange: (values: SignatureBlockInput[]) => void
+  error?: boolean
 }) {
   function updateAt(index: number, patch: Partial<SignatureBlockInput>) {
     onChange(values.map((v, i) => (i === index ? { ...v, ...patch } : v)))
   }
 
   return (
-    <div>
+    <div className={error ? 'rounded-lg border border-red-500 p-2' : ''}>
       <div className="flex items-center justify-between mb-1">
         <p className="text-xs text-gray-600 font-medium">{title}</p>
         <button
@@ -174,6 +184,7 @@ function SignatureListEditor({
           + Adicionar
         </button>
       </div>
+      {error && <p className="text-red-500 text-xs mb-2">Pelo menos um assinante (nome e posto/função) é obrigatório.</p>}
       <div className="space-y-2">
         {values.map((value, index) => (
           <div key={index} className="flex items-start gap-2">
@@ -220,6 +231,7 @@ function SectionRow({
   disabled: boolean
 }) {
   const busy = state.status === 'rag' || state.status === 'generating'
+  const actionLabel = state.status === 'pending' ? 'Gerar' : 'Gerar novamente'
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
@@ -228,9 +240,16 @@ function SectionRow({
           <span className={`text-xs font-semibold rounded-full px-2 py-0.5 ${STATUS_CLASSES[state.status]}`}>
             {STATUS_LABELS[state.status]}
           </span>
-          <Button size="xs" variant="secondary" onClick={onRegenerate} disabled={disabled || busy} type="button">
-            {state.status === 'pending' ? 'Gerar' : 'Gerar novamente'}
-          </Button>
+          <button
+            type="button"
+            onClick={onRegenerate}
+            disabled={disabled || busy}
+            aria-label={actionLabel}
+            title={actionLabel}
+            className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-[#0f9448] text-white transition-colors hover:bg-[#0d843f] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#0f9448]"
+          >
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <Play size={14} fill="white" />}
+          </button>
         </div>
       </div>
       {state.error && <p className="text-xs text-red-600 mb-2">{state.error}</p>}
@@ -283,6 +302,16 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
   const allSectionsDone =
     staticState.status === 'done' && AI_SECTION_ORDER.every((key) => aiSections[key].status === 'done')
   const hasStarted = staticState.status !== 'pending' || AI_SECTION_ORDER.some((key) => aiSections[key].status !== 'pending')
+
+  // Campos sempre obrigatórios pro relatório (ver Metodologia/Referências e
+  // a capa do .tex) - borda vermelha imediata (sem esperar uma tentativa de
+  // envio, já que não há um único botão "avançar" no topo do formulário) e
+  // bloqueio do botão ".tex" enquanto algum deles estiver vazio.
+  const numeroError = !numero.trim()
+  const anoError = !ano.trim()
+  const referenciasAdministrativasError = referenciasAdministrativas.length === 0
+  const elaboradoPorError = !signatures.elaboradoPor.some((s) => s.nome.trim() && s.postoFuncao.trim())
+  const hasRequiredFieldErrors = numeroError || anoError || referenciasAdministrativasError || elaboradoPorError
 
   function buildSignaturesPayload(): SignaturesFormInput {
     return signatures
@@ -444,9 +473,11 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
         assinaturas: buildSignaturesPayload(),
         quadroBusca,
       })
-      const payload = buildSaveSessionPayload(formState, true)
+      const { step: currentStep, substep: currentSubstep } = useProspectingStore.getState()
+      const payload = buildSaveSessionPayload(formState, true, currentStep, currentSubstep)
       const saveResult = await saveSession(formState.sessionId, formState.sessionName, payload)
       useFormStore.getState().setSessionId(saveResult.session_id, saveResult.session_public_id)
+      useFormStore.getState().setLastSavedSignature(JSON.stringify(payload))
       useFormStore.getState().clearAiCallLog()
       onAssembled(result.texContent)
     } catch (err) {
@@ -467,8 +498,14 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-4 mb-6 space-y-4">
         <h4 className="font-semibold text-sm text-gray-900">Metadados do REPTEC</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <FloatingLabelInput label="Número" name="reptec-numero" value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Ex.: 001" />
-          <FloatingLabelInput label="Ano" name="reptec-ano" value={ano} onChange={(e) => setAno(e.target.value)} placeholder="Ex.: 2026" />
+          <div>
+            <FloatingLabelInput label="Número" name="reptec-numero" value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Ex.: 001" error={numeroError} />
+            {numeroError && <p className="text-red-500 text-xs mt-1">Campo obrigatório.</p>}
+          </div>
+          <div>
+            <FloatingLabelInput label="Ano" name="reptec-ano" value={ano} onChange={(e) => setAno(e.target.value)} placeholder="Ex.: 2026" error={anoError} />
+            {anoError && <p className="text-red-500 text-xs mt-1">Campo obrigatório.</p>}
+          </div>
         </div>
 
         <ListEditor
@@ -476,6 +513,7 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
           items={referenciasAdministrativas}
           onChange={setReferenciasAdministrativas}
           placeholder="Ex.: DIEx Nº 115-A3/DCT de 6 de janeiro de 2023"
+          error={referenciasAdministrativasError}
         />
 
         <ListEditor
@@ -497,6 +535,7 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
             title="Elaborado por"
             values={signatures.elaboradoPor}
             onChange={(v) => setSignatures((s) => ({ ...s, elaboradoPor: v }))}
+            error={elaboradoPorError}
           />
           <SignatureListEditor
             title="Revisado por"
@@ -514,7 +553,7 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
       <div className="flex items-center justify-between mb-3">
         <h4 className="font-semibold text-sm text-gray-900">Seções do relatório</h4>
         <Button size="sm" onClick={runPipeline} disabled={isGenerating || allSectionsDone} type="button">
-          {isGenerating ? 'Gerando...' : hasStarted ? 'Continuar geração' : 'Gerar Relatório'}
+          {isGenerating ? 'Gerando...' : hasStarted ? 'Continuar geração' : 'Gerar Seções'}
         </Button>
       </div>
 
@@ -550,7 +589,7 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
           fullWidth
           variant="accent"
           onClick={() => setShowConfirmModal(true)}
-          disabled={!allSectionsDone || isAssembling}
+          disabled={!allSectionsDone || isAssembling || hasRequiredFieldErrors}
           type="button"
         >
           {isAssembling ? 'Montando...' : 'Montar .tex'}

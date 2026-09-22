@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -36,6 +36,13 @@ class ResearchSession(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     patent_source: Mapped[Optional[str]] = mapped_column(String(50))
     scholarly_source: Mapped[Optional[str]] = mapped_column(String(50))
+    # Posição do wizard (useProspectingStore) no último save de progresso -
+    # só usada pra reabrir "Continuar pesquisa" exatamente onde o usuário
+    # parou, em vez de sempre voltar pro Step1 (ver SearchPage.tsx::
+    # handleContinue). Sem sentido pra sessão completed=True (essa reabre
+    # direto no editor do documento, não no wizard).
+    current_step: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    current_substep: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=None)
     relevance_threshold: Mapped[float] = mapped_column(
         Float, nullable=False, default=lambda: settings.relevance_threshold
     )
@@ -365,6 +372,15 @@ class SessionChart(Base):
     # mostrar o mesmo valor que o usuário escolheu da última vez (ver
     # useFinalSCurve.ts), não sempre o default de 5.
     projection_years: Mapped[Optional[int]] = mapped_column(nullable=True)
+    # Diagnóstico de confiabilidade do ajuste logístico ({r_squared, reliable,
+    # warning} - ver app.core.services.s_curve.fit_s_curve), só faz sentido
+    # pra chart_type="s_curve" (null pros demais tipos). Persistido aqui (e
+    # não só devolvido na resposta de geração) pra GET /existing-chart
+    # também conseguir expor o aviso ao reabrir uma sessão já salva, sem
+    # precisar reajustar a curva - o aviso deixou de ser desenhado dentro do
+    # PNG (ver ReportService._render_s_curve_chart) e virou responsabilidade
+    # do front mostrar como um aviso separado da imagem.
+    fit_quality: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

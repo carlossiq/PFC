@@ -6,6 +6,7 @@ import { SectionHeader } from '../components/SectionHeader'
 import { ReportDocumentEditor } from '../components/steps/ReportDocumentEditor'
 import { searchSessions, deleteSession, getSessionById, type ResearchSessionSummary } from '../services/researchSession'
 import { mapSessionToFormStorePatch } from '../services/sessionHydration'
+import { buildSaveSessionPayload } from '../services/sessionInput'
 import { useFormStore } from '../stores/useFormStore'
 import { useProspectingStore } from '../stores/useProspectingStore'
 import { useHistoryStore } from '../stores/useHistoryStore'
@@ -44,9 +45,11 @@ export function SearchPage() {
     return true
   })
 
-  // Busca a sessão completa (dados frescos) e repopula o form store, sempre
-  // reabrindo no Step1 preenchido - não restaura o step/substep exato de onde
-  // o usuário parou.
+  // Busca a sessão completa (dados frescos) e repopula o form store,
+  // reabrindo exatamente no step/substep salvo no último "Salvar progresso"
+  // (ver ResearchSession.current_step/current_substep) - só chamado pra
+  // sessões completed=False (SessionCard só mostra "Continuar pesquisa"
+  // nesse caso), então não precisa checar isso aqui de novo.
   async function handleContinue(session: ResearchSessionSummary) {
     setResumingId(session.id)
     setResumeError(null)
@@ -54,8 +57,15 @@ export function SearchPage() {
       const full = await getSessionById(session.id)
       useFormStore.getState().hydrateFromSession(mapSessionToFormStorePatch(full))
       useHistoryStore.getState().reset()
-      useProspectingStore.getState().reset()
+      useProspectingStore.getState().setStep(full.current_step ?? 0, full.current_substep ?? null)
       useWorkflowStore.getState().setTab(TABS.START_PROSPECTION)
+      // Marca o estado recém-hidratado como "já salvo" - sem isso, o ícone
+      // de salvar na sidebar nasceria com uma alteração pendente falsa
+      // (comparando contra lastSavedSignature=null) mesmo sem o usuário ter
+      // mudado nada ainda.
+      const hydratedState = useFormStore.getState()
+      const initialPayload = buildSaveSessionPayload(hydratedState, false, full.current_step ?? 0, full.current_substep ?? null)
+      useFormStore.getState().setLastSavedSignature(JSON.stringify(initialPayload))
     } catch (err) {
       console.error('Falha ao retomar sessão:', err)
       setResumeError('Não foi possível retomar a sessão. Tente novamente.')

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useFormStore } from '../stores/useFormStore'
+import { useProspectingStore } from '../stores/useProspectingStore'
 import { buildSaveSessionPayload, saveSession } from '../services/sessionInput'
 import { runPatentStatisticalInference, runArticleStatisticalInference } from '../services/inference'
 import {
@@ -80,9 +81,11 @@ export function useChartCreation(enabled: boolean) {
     try {
       setStageMessage('Salvando progresso da sessão...')
       const formState = useFormStore.getState()
-      const payload = buildSaveSessionPayload(formState, false)
+      const { step, substep } = useProspectingStore.getState()
+      const payload = buildSaveSessionPayload(formState, false, step, substep)
       const saveResult = await saveSession(formState.sessionId, formState.sessionName, payload)
       useFormStore.getState().setSessionId(saveResult.session_id, saveResult.session_public_id)
+      useFormStore.getState().setLastSavedSignature(JSON.stringify(payload))
       if (requestIdRef.current !== requestId) return
       const sessionId = saveResult.session_id
 

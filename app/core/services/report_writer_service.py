@@ -79,6 +79,17 @@ def escape_latex(text: str) -> str:
     return "".join(_LATEX_ESCAPE_MAP.get(ch, ch) for ch in text)
 
 
+def latex_comment(label: str) -> str:
+    """Linha LaTeX comentada (%) pra um campo OPCIONAL que ficou vazio (ex.:
+    revisado_por/aprovado_por sem assinante, quadro de busca sem uma das
+    fontes) - some do PDF compilado, mas continua visível pra quem edita o
+    .tex direto, indicando onde aquele dado entraria. Só usada pra campos
+    opcionais: os obrigatórios (número/ano/referências administrativas/
+    elaborado por) nunca chegam vazios aqui, porque o front bloqueia
+    "Montar .tex" antes disso (ver ReportGeneration.tsx)."""
+    return f"% {label}: não informado"
+
+
 # REPORT_SYSTEM_PROMPT já instrui "não inclua título/cabeçalho da seção",
 # mas LLMs (principalmente modelos locais menores, ver Ollama) ignoram isso
 # com frequência e devolvem Markdown solto (cabeçalho "### Seção: X",

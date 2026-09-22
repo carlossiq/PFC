@@ -39,15 +39,17 @@ class OPSQueryBuilder(BaseQueryBuilder):
     _TEXTUAL_ATTRS = ["title", "abstract", "claims", "full_text"]
     _SIMPLE_ATTRS = ["ipc", "cpc", "applicant", "inventor", "year"]
 
-    def __init__(self, api_name: str = "ops", search_mode: str = "general") -> None:
+    def __init__(self, api_name: str = "ops", search_mode: str = "general", variant: Optional[str] = None) -> None:
         """
         Inicializa o construtor OPS.
 
         Args:
             api_name: Nome da API (padrão: "ops").
             search_mode: Modo de busca ("probe" ou "general").
+            variant: Variante da busca final (specific/balanced/generic) -
+                ver BaseQueryBuilder._title_abstract_operator.
         """
-        super().__init__(api_name, search_mode)
+        super().__init__(api_name, search_mode, variant)
         self.field_map = self._load_field_map()
 
     @property
@@ -102,9 +104,20 @@ class OPSQueryBuilder(BaseQueryBuilder):
             if ops_field:
                 abstract_cql = self._build_textual_cql(abstract_value, ops_field)
 
-        # Combinar title e abstract com OR
+        # Combinar title e abstract - OR na maioria dos casos, AND só na
+        # variante "specific" da busca final (ver
+        # BaseQueryBuilder._title_abstract_operator). title_cql/abstract_cql
+        # entram entre parênteses PRÓPRIOS aqui (não só o wrap externo do
+        # clause inteiro) porque, com 2+ grupos, cada um já é internamente
+        # "(g1) AND (g2)" sem parênteses ao redor - a CQL do OPS não aplica
+        # precedência AND-antes-de-OR como uma linguagem de programação (é
+        # avaliada pela estrutura de parênteses, não por precedência de
+        # operador - confirmado testando direto na API: a mesma string sem
+        # esse wrap zerava os resultados). Sem isso, o AND interno do title
+        # e o OR/AND externo ficam no mesmo nível e a busca vira
+        # efetivamente um AND geral, muito mais restritivo que o pretendido.
         if title_cql and abstract_cql:
-            cql_clauses.append(f"({title_cql} OR {abstract_cql})")
+            cql_clauses.append(f"(({title_cql}) {self._title_abstract_operator()} ({abstract_cql}))")
         elif title_cql:
             cql_clauses.append(title_cql)
         elif abstract_cql:

@@ -4,6 +4,12 @@ import { apiClient } from './api'
 // na própria resposta (ver ReportService._generate_s_curve_in_memory), nada
 // é salvo em disco - se o usuário sair da sessão sem baixar, o gráfico se
 // perde, sem deixar arquivo órfão.
+export interface SCurveFitQuality {
+  rSquared: number
+  reliable: boolean
+  warning: string | null
+}
+
 export interface GeneratedChart {
   filename: string
   imageBase64: string
@@ -12,12 +18,13 @@ export interface GeneratedChart {
   // Só preenchido pras curvas S - quantos anos a parte tracejada projeta
   // além do último ano observado (ver PatentSCurveRequest/ArticleSCurveRequest).
   projectionYears: number | null
-}
-
-export interface SCurveFitQuality {
-  rSquared: number
-  reliable: boolean
-  warning: string | null
+  // Também só pras curvas S - o aviso de ajuste pouco confiável não é mais
+  // desenhado dentro do PNG (ver ReportService._render_s_curve_chart), o
+  // front mostra como um aviso separado a partir daqui (ver
+  // SCurveReliabilityWarning.tsx). Vem preenchido tanto numa geração nova
+  // quanto ao reabrir uma curva já salva (GET /existing-chart), porque é
+  // persistido em SessionChart.fit_quality.
+  fitQuality: SCurveFitQuality | null
 }
 
 // Espelha schemas/report.py:SCurveFit - ver app/core/services/s_curve.py
@@ -40,12 +47,26 @@ export interface SCurveResult {
   fit: SCurveFit | null
 }
 
+function mapFitQuality(raw: {
+  r_squared: number
+  reliable: boolean
+  warning?: string | null
+} | null | undefined): SCurveFitQuality | null {
+  if (!raw) return null
+  return {
+    rSquared: raw.r_squared,
+    reliable: raw.reliable,
+    warning: raw.warning ?? null,
+  }
+}
+
 function mapChart(raw: {
   filename: string
   image_base64: string
   chart: string
   document_type: string
   projection_years?: number | null
+  fit_quality?: { r_squared: number; reliable: boolean; warning?: string | null } | null
 } | undefined): GeneratedChart | null {
   if (!raw) return null
   return {
@@ -54,6 +75,7 @@ function mapChart(raw: {
     chart: raw.chart,
     documentType: raw.document_type,
     projectionYears: raw.projection_years ?? null,
+    fitQuality: mapFitQuality(raw.fit_quality),
   }
 }
 
@@ -80,11 +102,7 @@ function mapFit(raw: {
     currentSaturation: raw.current_saturation,
     yearsObserved: raw.years_observed,
     cumulativeObserved: raw.cumulative_observed,
-    fitQuality: {
-      rSquared: raw.fit_quality.r_squared,
-      reliable: raw.fit_quality.reliable,
-      warning: raw.fit_quality.warning ?? null,
-    },
+    fitQuality: mapFitQuality(raw.fit_quality) as SCurveFitQuality,
   }
 }
 

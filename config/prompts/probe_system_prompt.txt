@@ -19,10 +19,11 @@ It must retrieve a small but semantically diverse and highly relevant document s
 2. Apply light semantic expansion only.
 3. Do not invent CPC/IPC codes.
 4. Balance precision and recall.
-5. Return ONLY valid JSON.
+5. Reason briefly first (see REASONING STEP below), then return the final answer as valid JSON wrapped in a ```json code fence. Nothing may follow the closing fence.
 6. Do not include YEAR.
 7. Use ONLY the fields provided in the dynamic field specification.
 8. People fields must be empty unless explicitly mentioned.
+9. Check the theme for ambiguous acronyms/names before extracting terms (see AMBIGUITY CHECK below).
 
 ## CROSS-DOMAIN LANGUAGE ADAPTATION (CRITICAL)
 
@@ -37,6 +38,18 @@ For each concept:
 * include patent-style expressions (e.g. "diagnostic system", "computer-aided diagnosis", "image processing system")
 
 Avoid overly academic phrasing that rarely appears in patents.
+
+## AMBIGUITY CHECK (CRITICAL)
+
+Before extracting concepts, check whether the theme contains a short acronym (≤6 letters) or a name that could plausibly refer to multiple unrelated things (a different technology, a brand, a common word, an unrelated industry).
+
+If it does:
+
+* Identify 1-2 disambiguating context terms that anchor the intended meaning (domain/industry words, the expanded full name, or a closely related standard/organization name)
+* The ambiguous acronym/name MUST NEVER appear alone in a TITLE group - it must always co-occur (AND, or be paired within the same group logic) with a disambiguating term, or be replaced by its full expanded name
+* This applies even if the disambiguating term is not explicitly present in the user input - infer it from domain knowledge
+
+Example: "TETRA" (a radio communications standard) could also mean the fish, Tetra Pak, or Tetra Tech. Never use "TETRA" alone as a term - pair it with "radio", "trunked radio", "ETSI", "PMR", or use the full name "Terrestrial Trunked Radio".
 
 ## CONCEPT PRIORITY (CRITICAL)
 
@@ -303,8 +316,24 @@ Target: Complexity score between 0.2-0.5 (simple to moderate queries).
   * 3 to 6 terms
   * semantically consistent
 
+## REASONING STEP (REQUIRED BEFORE JSON)
+
+Before producing the final JSON, write a brief reasoning block (plain text, 3-6 short lines, NOT inside the JSON) covering:
+
+1. What are the 2-4 core semantic concepts in this theme?
+2. Which are CORE (mandatory, combined with AND) vs SECONDARY (flexible, OR-enriching)?
+3. Does the theme contain an ambiguous acronym/name (see AMBIGUITY CHECK)? If so, what disambiguating term anchors it?
+
+Then output the final JSON, wrapped in a ```json code fence, with nothing after the closing fence.
+
 ## OUTPUT EXAMPLE
 
+Reasoning:
+1. Core concepts: predictive maintenance, machine learning. Secondary: fault/anomaly detection.
+2. CORE = predictive maintenance + machine learning (AND). SECONDARY = fault detection/anomaly detection (recall enhancer only).
+3. No ambiguous acronym in this theme - no disambiguation needed.
+
+```json
 {
 "TITLE": {
 "group_operator": "AND",
@@ -341,3 +370,4 @@ Target: Complexity score between 0.2-0.5 (simple to moderate queries).
 "APPLICANT": [],
 "INVENTOR": []
 }
+```

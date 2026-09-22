@@ -13,7 +13,9 @@ import {
 } from '../services/researchSession'
 import type { SessionInputRow, SessionProbeQueryRow } from '../services/sessionInput'
 import { getExistingChart, chartDataUrl } from '../services/report'
+import type { SCurveFitQuality } from '../services/report'
 import { SCurveFitLegend } from './SCurveFitLegend'
+import { SCurveReliabilityWarning } from './SCurveReliabilityWarning'
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString('pt-BR')
@@ -127,6 +129,7 @@ function ProbeQueryFieldsBlock({ query, title }: { query: SessionProbeQueryRow; 
 function SCurveChartBlock({ sessionId, fonte, label }: { sessionId: number; fonte: 'ops' | 'scopus'; label: string }) {
   const [isLoading, setIsLoading] = useState(true)
   const [chartUrl, setChartUrl] = useState<string | null>(null)
+  const [fitQuality, setFitQuality] = useState<SCurveFitQuality | null>(null)
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
@@ -136,6 +139,7 @@ function SCurveChartBlock({ sessionId, fonte, label }: { sessionId: number; font
         if (cancelled) return
         if (chart) {
           setChartUrl(chartDataUrl(chart))
+          setFitQuality(chart.fitQuality)
         } else {
           setFailed(true)
         }
@@ -163,7 +167,12 @@ function SCurveChartBlock({ sessionId, fonte, label }: { sessionId: number; font
     )
   }
 
-  return <img src={chartUrl} alt={label} className="w-full rounded-md border border-gray-200" />
+  return (
+    <div className="space-y-2">
+      <img src={chartUrl} alt={label} className="w-full rounded-md border border-gray-200" />
+      <SCurveReliabilityWarning fitQuality={fitQuality} />
+    </div>
+  )
 }
 
 type InputBlockType =

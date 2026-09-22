@@ -3,7 +3,7 @@ import { useFormStore } from '../../stores/useFormStore'
 import { useFinalQuerySection } from '../../hooks/useFinalQuerySection'
 import { useActiveSearchApis } from '../../hooks/useActiveSearchApis'
 import { friendlyErrorMessage } from '../../hooks/useProbeQuerySection'
-import { runFinalSearch } from '../../services/finalQuery'
+import { runFinalSearch, computeTopIpcCodes } from '../../services/finalQuery'
 import { FieldCard } from '../FieldCard'
 import { FloatingLabelInput } from '../FloatingLabelInput'
 import { QuerySyntaxMeter } from '../QuerySyntaxMeter'
@@ -180,6 +180,7 @@ export function FinalExploration({ step, substep, onBack, onNext }: FinalExplora
   const {
     input,
     step2SelectedTheme,
+    step3PatentResults,
     step4PatentTerms,
     step4PatentSelectedTerms,
     step4PatentSelectedVariant,
@@ -194,7 +195,11 @@ export function FinalExploration({ step, substep, onBack, onNext }: FinalExplora
     setStep4ArticleQuery,
     updateStep4ArticleQuery,
     incrementStep4ArticleQueryIterations,
+    step4PatentResults,
+    step4PatentResultsQuery,
     setStep4PatentResults,
+    step4ArticleResults,
+    step4ArticleResultsQuery,
     setStep4ArticleResults,
   } = useFormStore()
 
@@ -216,6 +221,7 @@ export function FinalExploration({ step, substep, onBack, onNext }: FinalExplora
     input,
     step2SelectedTheme,
     extractedTerms: (step4PatentTerms ?? []).filter((t) => step4PatentSelectedTerms.includes(t.term)),
+    probeClassificationCodes: computeTopIpcCodes(step3PatentResults?.items),
     slice: {
       query: step4PatentQuery,
       setQuery: setStep4PatentQuery,
@@ -246,13 +252,33 @@ export function FinalExploration({ step, substep, onBack, onNext }: FinalExplora
     (!hasPatentQuery || !!patentSection.query?.success) &&
     (!hasArticleQuery || !!articleSection.query?.success)
 
+  // Só rebusca uma fonte se a query final dela mudou desde a última busca
+  // bem-sucedida (mesmo padrão de Step3.tsx pra probe search) - sem isso,
+  // só voltar de "Resultados da Busca Final" (ou reabrir a sessão e
+  // renavegar os passos) sem editar nada disparava uma busca nova a cada
+  // "Confirmar e buscar", mesmo com a query idêntica.
   async function handleConfirm() {
     if (!canConfirm) return
+
+    const patentQuerySignature =
+      hasPatentQuery && patentSection.query?.success ? JSON.stringify(patentSection.query.query) : null
+    const articleQuerySignature =
+      hasArticleQuery && articleSection.query?.success ? JSON.stringify(articleSection.query.query) : null
+    const needsPatentSearch =
+      hasPatentQuery && (!step4PatentResults || step4PatentResultsQuery !== patentQuerySignature)
+    const needsArticleSearch =
+      hasArticleQuery && (!step4ArticleResults || step4ArticleResultsQuery !== articleQuerySignature)
+
+    if (!needsPatentSearch && !needsArticleSearch) {
+      onNext()
+      return
+    }
+
     setIsConfirming(true)
     setConfirmError(null)
     try {
       const [patentOutcome, articleOutcome] = await Promise.allSettled([
-        hasPatentQuery && patentSection.query?.success && patentSection.query.year_range
+        needsPatentSearch && patentSection.query?.success && patentSection.query.year_range
           ? runFinalSearch(
               patentSection.query.query!,
               'ops',
@@ -260,7 +286,7 @@ export function FinalExploration({ step, substep, onBack, onNext }: FinalExplora
               patentSection.query.year_range.to
             )
           : Promise.resolve(null),
-        hasArticleQuery && articleSection.query?.success && articleSection.query.year_range
+        needsArticleSearch && articleSection.query?.success && articleSection.query.year_range
           ? runFinalSearch(
               articleSection.query.query!,
               'scopus',
@@ -278,8 +304,8 @@ export function FinalExploration({ step, substep, onBack, onNext }: FinalExplora
         return
       }
 
-      if (patentOutcome.value) setStep4PatentResults(patentOutcome.value)
-      if (articleOutcome.value) setStep4ArticleResults(articleOutcome.value)
+      if (needsPatentSearch && patentOutcome.value) setStep4PatentResults(patentOutcome.value, patentQuerySignature)
+      if (needsArticleSearch && articleOutcome.value) setStep4ArticleResults(articleOutcome.value, articleQuerySignature)
       onNext()
     } finally {
       setIsConfirming(false)

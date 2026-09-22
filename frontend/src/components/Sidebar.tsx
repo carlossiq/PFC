@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { HelpCircle, User, Power, ChevronLeft, ChevronRight, Settings, Search, ChartNoAxesCombined } from 'lucide-react'
 import { Tooltip } from './Tooltip';
 import { Modal } from './Modal'
+import { SaveProgressButton } from './SaveProgressButton'
 import { useSidebarStore } from '../stores/useSidebarStore'
 import { useWorkflowStore } from '../stores/useWorkflowStore'
 import { useFormStore } from '../stores/useFormStore'
@@ -92,6 +93,12 @@ export function Sidebar() {
             </button>
           </>
         )} */}
+
+        {/* Salvar progresso - só durante uma prospecção ativa (ver
+            SaveProgressButton.tsx); pointer-events-auto próprio pra escapar
+            do pointer-events-none que `locked` aplica no <aside> inteiro
+            logo abaixo. */}
+        {locked && <SaveProgressButton />}
 
         {/* Bottom */}
         <div className="mt-auto px-2 pb-4">

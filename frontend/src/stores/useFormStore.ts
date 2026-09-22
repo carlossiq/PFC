@@ -243,13 +243,33 @@ interface FormStore {
   // agregados (depositants/cpc/title/patentsByYear e institutions/
   // areaOfStudy/title/articlesByYear, respectivamente), não mais uma lista
   // de documentos - ver OpsFinalAggregateResult/ScopusFinalAggregateResult
-  // em finalQuery.ts.
+  // em finalQuery.ts. `*ResultsQuery` espelha step3PatentResultsQuery/
+  // step3ArticleResultsQuery acima (mesmo motivo: reconhecer, em
+  // FinalExploration.tsx, que a query final não mudou desde a última busca
+  // - ex: usuário só voltou de "Resultados da Busca Final" ou reabriu a
+  // sessão e renavegou os passos sem editar nada - e evitar rebuscar à
+  // toa). Documentos da busca final nunca são persistidos no banco (só os
+  // da probe são), então a hidratação de uma sessão retomada nunca
+  // preenche esses dois campos - a primeira busca depois de reabrir a
+  // sessão é sempre inevitável, só as repetições dentro da mesma visita
+  // que esse cache evita.
   step4PatentResults: OpsFinalAggregateResult | null
+  step4PatentResultsQuery: string | null
   step4ArticleResults: ScopusFinalAggregateResult | null
-  setStep4PatentResults: (result: OpsFinalAggregateResult | null) => void
-  setStep4ArticleResults: (result: ScopusFinalAggregateResult | null) => void
+  step4ArticleResultsQuery: string | null
+  setStep4PatentResults: (result: OpsFinalAggregateResult | null, querySignature: string | null) => void
+  setStep4ArticleResults: (result: ScopusFinalAggregateResult | null, querySignature: string | null) => void
 
   resetStep4: () => void
+
+  // Assinatura (JSON.stringify do SaveSessionPayload) do último "Salvar
+  // progresso" bem-sucedido (manual ou automático, ver useChartCreation.ts/
+  // useFinalSCurve.ts) - comparada contra o payload atual pra decidir se o
+  // ícone de salvar na sidebar tem alteração pendente (ver
+  // SaveProgressButton.tsx). null = nunca salvou nessa sessão ainda (botão
+  // nasce "sujo").
+  lastSavedSignature: string | null
+  setLastSavedSignature: (signature: string | null) => void
 
   // Log local de chamadas de IA medidas durante a sessão atual
   aiCallLog: AiUsage[]
@@ -332,7 +352,10 @@ export const useFormStore = create<FormStore>((set, get) => ({
   step4ArticleGeneratedForSelection: null,
   step4ArticleQueryIterations: 0,
   step4PatentResults: null,
+  step4PatentResultsQuery: null,
   step4ArticleResults: null,
+  step4ArticleResultsQuery: null,
+  lastSavedSignature: null,
   aiCallLog: [],
   aiCallsInFlight: 0,
 
@@ -552,15 +575,19 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step4ArticleQueryIterations: 0,
     }),
 
-  setStep4PatentResults: (result) =>
+  setStep4PatentResults: (result, querySignature) =>
     set({
       step4PatentResults: result,
+      step4PatentResultsQuery: querySignature,
     }),
 
-  setStep4ArticleResults: (result) =>
+  setStep4ArticleResults: (result, querySignature) =>
     set({
       step4ArticleResults: result,
+      step4ArticleResultsQuery: querySignature,
     }),
+
+  setLastSavedSignature: (signature) => set({ lastSavedSignature: signature }),
 
   resetStep4: () =>
     set({
@@ -579,7 +606,9 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step4ArticleGeneratedForSelection: null,
       step4ArticleQueryIterations: 0,
       step4PatentResults: null,
+      step4PatentResultsQuery: null,
       step4ArticleResults: null,
+      step4ArticleResultsQuery: null,
     }),
 
   addAiUsage: (usage) => {
@@ -646,6 +675,7 @@ export const useFormStore = create<FormStore>((set, get) => ({
       step3PatentResultsQuery: null,
       step3ArticleResults: null,
       step3ArticleResultsQuery: null,
+      lastSavedSignature: null,
       aiCallLog: [],
       aiCallsInFlight: 0,
     })

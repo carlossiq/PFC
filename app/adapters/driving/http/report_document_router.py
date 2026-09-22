@@ -28,7 +28,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.driving.http.dependencies import get_db_session
 from app.adapters.driving.http.report_router import _resolve_final_probe_query_id
-from app.core.services.report_writer_service import RAGUnavailableError, ReportWriterService, escape_latex
+from app.core.services.report_writer_service import (
+    RAGUnavailableError,
+    ReportWriterService,
+    escape_latex,
+    latex_comment,
+)
 from app.core.services.report_cover_image import REPORT_COVER_IMAGE_FILENAME, REPORT_COVER_IMAGE_OBJECT_KEY
 from config.prompts.report_static_sections import DEFAULT_BIBLIOGRAPHY, DEFAULT_SIGNATURES, render_metodologia
 from core.config import settings
@@ -267,21 +272,54 @@ def _apply_section_generate_overrides(data: dict[str, Any], payload: Optional[Se
         data["peak_year"] = payload.peak_year
 
 
-def _merge_signatures(payload: Optional[SignaturesInput]) -> dict[str, list[dict[str, str]]]:
+_SIGNATURE_ROLE_LABELS = {
+    "elaborado_por": "Elaborado por",
+    "revisado_por": "Revisado por",
+    "aprovado_por": "Aprovado por",
+}
+
+
+def _merge_signatures(payload: Optional[SignaturesInput]) -> dict[str, Any]:
     """Assinaturas: nomes/postos default de config
     (config/prompts/report_static_sections.py), sobrescrevíveis por
-    requisição - cada papel aceita 1+ assinantes (ver SignaturesInput)."""
-    merged = {k: [dict(block) for block in v] for k, v in DEFAULT_SIGNATURES.items()}
-    if payload is None:
-        return merged
-    for field in ("elaborado_por", "revisado_por", "aprovado_por"):
-        blocks = getattr(payload, field)
-        if blocks:
-            merged[field] = [
-                {"nome": escape_latex(block.nome), "posto_funcao": escape_latex(block.posto_funcao)}
-                for block in blocks
-            ]
+    requisição - cada papel aceita 1+ assinantes (ver SignaturesInput).
+
+    Blocos em branco (nome OU posto/função vazios - inclusive o bloco
+    default acima, nunca preenchido) são filtrados fora: "elaborado_por"
+    nunca deveria sobrar vazio depois disso (o front bloqueia "Montar .tex"
+    até ter pelo menos um assinante válido, ver ReportGeneration.tsx), mas
+    "revisado_por"/"aprovado_por" são opcionais - quando sobram vazios,
+    `{role}_comment` é preenchido com uma linha LaTeX comentada (ver
+    latex_comment) pro template usar no lugar do bloco de assinatura (ver
+    config/prompts/report_latex_template.py)."""
+    merged: dict[str, Any] = {k: [dict(block) for block in v] for k, v in DEFAULT_SIGNATURES.items()}
+    if payload is not None:
+        for field in ("elaborado_por", "revisado_por", "aprovado_por"):
+            blocks = getattr(payload, field)
+            if blocks:
+                merged[field] = [
+                    {"nome": escape_latex(block.nome), "posto_funcao": escape_latex(block.posto_funcao)}
+                    for block in blocks
+                ]
+
+    for field, label in _SIGNATURE_ROLE_LABELS.items():
+        merged[field] = [block for block in merged[field] if block["nome"].strip() and block["posto_funcao"].strip()]
+        merged[f"{field}_comment"] = latex_comment(label) if not merged[field] else None
+
     return merged
+
+
+def _quadro_busca_line(label: str, query: Optional[str], count: Optional[int]) -> str:
+    """Uma linha `\\item` inteira (já pronta, não só o valor) do quadro de
+    busca (patentes OU artigos) - precisa ser a linha INTEIRA porque, se só
+    o valor virasse `% ...`, o `%` comentaria também o resto da linha
+    (inclusive o item da outra fonte, se estivessem na mesma linha do
+    template como antes - ver config/prompts/report_latex_template.py).
+    "Disponível" exige query E contagem juntos - só um dos dois não é
+    informação suficiente pra valer a pena mostrar como se fosse real."""
+    if not query or count is None:
+        return "    " + latex_comment(label)
+    return f"    \\item {label}: {escape_latex(query)} ({count})"
 
 
 def _validate_ai_section_key(section_key: str) -> None:
@@ -557,10 +595,8 @@ async def _assemble_document(
         qb = payload.quadro_busca
         if any((qb.patente_query, qb.patente_count is not None, qb.artigo_query, qb.artigo_count is not None)):
             quadro_busca = {
-                "patente_query": escape_latex(qb.patente_query or "[não disponível]"),
-                "patente_count": qb.patente_count if qb.patente_count is not None else "[não disponível]",
-                "artigo_query": escape_latex(qb.artigo_query or "[não disponível]"),
-                "artigo_count": qb.artigo_count if qb.artigo_count is not None else "[não disponível]",
+                "patente_line": _quadro_busca_line("Depósito de Patentes", qb.patente_query, qb.patente_count),
+                "artigo_line": _quadro_busca_line("Publicações Científicas", qb.artigo_query, qb.artigo_count),
             }
 
     # Decide se o bloco da imagem de capa entra no .tex (estrutura, fixada

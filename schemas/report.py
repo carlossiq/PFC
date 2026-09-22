@@ -5,6 +5,14 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+class SCurveFitQuality(BaseModel):
+    """Diagnóstico de confiabilidade do ajuste da curva logística."""
+
+    r_squared: float
+    reliable: bool
+    warning: Optional[str] = None
+
+
 class GeneratedChart(BaseModel):
     """Um PNG gerado pelo ReportService - sempre desenhado em memória e
     devolvido em `image_base64` (nada é salvo em disco). `object_key` vem
@@ -12,7 +20,13 @@ class GeneratedChart(BaseModel):
     "melhor esforço": pode vir vazio mesmo numa curva S se o storage
     estiver fora do ar. `projection_years` só vem preenchido pras curvas S
     - quantos anos a parte tracejada projeta além do último ano observado
-    (ver PatentSCurveRequest/ArticleSCurveRequest).
+    (ver PatentSCurveRequest/ArticleSCurveRequest). `fit_quality` também só
+    vem preenchido pras curvas S - o aviso de ajuste pouco confiável NÃO é
+    mais desenhado dentro do PNG (ver
+    ReportService._render_s_curve_chart), então o front é responsável por
+    mostrá-lo como um aviso separado usando este campo (funciona tanto pra
+    uma curva recém-gerada quanto pra uma já salva/reaberta via
+    GET /existing-chart, ver SessionChart.fit_quality).
     """
 
     filename: str
@@ -21,6 +35,7 @@ class GeneratedChart(BaseModel):
     chart: str
     document_type: str
     projection_years: Optional[int] = None
+    fit_quality: Optional[SCurveFitQuality] = None
 
 
 class PatentSCurveRequest(BaseModel):
@@ -141,14 +156,6 @@ class YearlyVolumeResponse(BaseModel):
 
     chart: Optional[GeneratedChart] = None
     skipped_reason: Optional[str] = None
-
-
-class SCurveFitQuality(BaseModel):
-    """Diagnóstico de confiabilidade do ajuste da curva logística."""
-
-    r_squared: float
-    reliable: bool
-    warning: Optional[str] = None
 
 
 class SCurveFit(BaseModel):

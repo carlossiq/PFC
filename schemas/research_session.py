@@ -32,6 +32,11 @@ class ResearchSessionSummary(BaseModel):
     completed: bool
     created_at: datetime
     completed_at: Optional[datetime] = None
+    # Ver ResearchSession.current_step/current_substep - usados só pra
+    # reabrir "Continuar pesquisa" (sessão completed=False) no step/substep
+    # exato de onde o usuário parou (ver SearchPage.tsx::handleContinue).
+    current_step: int = 0
+    current_substep: Optional[int] = None
     inputs: list[SessionInputRow]
     probe_queries: list[SessionProbeQueryRow] = []
     ai_calls: list[SessionAiCallRow] = []

@@ -172,6 +172,8 @@ async def persist_session_input(
     elif not payload.completed:
         research_session.completed_at = None
     research_session.completed = payload.completed
+    research_session.current_step = payload.current_step
+    research_session.current_substep = payload.current_substep
 
     root = next((i for i in research_session.inputs if i.parent_id is None), None)
     if root is None:
@@ -295,6 +297,8 @@ async def persist_session_input(
         session_public_id=research_session.public_id,
         session_name=research_session.name,
         completed=research_session.completed,
+        current_step=research_session.current_step,
+        current_substep=research_session.current_substep,
         root=SessionInputRow.model_validate(root),
         generated=SessionInputRow.model_validate(generated_row) if generated_row else None,
         probe_queries=[SessionProbeQueryRow.model_validate(row) for row in probe_query_rows],

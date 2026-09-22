@@ -18,6 +18,11 @@ export interface ResearchSessionSummary {
   completed: boolean
   created_at: string
   completed_at: string | null
+  // Posição do wizard salva no último "Salvar progresso" - usada por
+  // SearchPage.tsx::handleContinue pra reabrir exatamente onde o usuário
+  // parou (ver useProspectingStore.ts).
+  current_step: number
+  current_substep: number | null
   inputs: SessionInputRow[]
   probe_queries: SessionProbeQueryRow[]
   ai_calls: SessionAiCallRow[]

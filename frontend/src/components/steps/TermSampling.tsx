@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useFormStore } from '../../stores/useFormStore'
 import { useTermSampling } from '../../hooks/useTermSampling'
-import { generateFinalQuery, buildFinalQuerySelectionSignature } from '../../services/finalQuery'
+import { generateFinalQuery, buildFinalQuerySelectionSignature, computeTopIpcCodes } from '../../services/finalQuery'
 import type { ExtractedTerm, FinalQueryVariant } from '../../services/finalQuery'
 import { FINAL_QUERY_VARIANTS, FINAL_QUERY_VARIANT_LABELS } from '../../constants/finalQueryVariants'
 import { selectableCardClass } from '../CandidatePicker'
@@ -276,7 +276,8 @@ export function TermSampling({ step, substep, onBack, onNext }: TermSamplingProp
               step2SelectedTheme,
               step4PatentTerms!.filter((t) => step4PatentSelectedTerms.includes(t.term)),
               step4PatentSelectedVariant,
-              'ops'
+              'ops',
+              computeTopIpcCodes(step3PatentResults?.items)
             )
           : Promise.resolve(null),
         articleNeedsGeneration

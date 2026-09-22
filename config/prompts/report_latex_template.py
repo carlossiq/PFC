@@ -102,8 +102,8 @@ Nenhuma referência administrativa informada.
 
 \BLOCK{ if quadro_busca }
 \begin{itemize}[leftmargin=*]
-    \item Depósito de Patentes: \VAR{quadro_busca.patente_query} (\VAR{quadro_busca.patente_count})
-    \item Publicações Científicas: \VAR{quadro_busca.artigo_query} (\VAR{quadro_busca.artigo_count})
+\VAR{quadro_busca.patente_line}
+\VAR{quadro_busca.artigo_line}
 \end{itemize}
 \BLOCK{ endif }
 
@@ -162,21 +162,29 @@ Nenhuma referência bibliográfica informada.
 
 \vspace{1cm}
 \noindent Revisado por:
+\BLOCK{ if assinaturas.revisado_por }
 \BLOCK{ for signer in assinaturas.revisado_por }
 \vspace{0.5cm}\\[1cm]
 \noindent\rule{8cm}{0.4pt}\\
 \VAR{signer.nome}\\
 \VAR{signer.posto_funcao}
 \BLOCK{ endfor }
+\BLOCK{ else }
+\VAR{assinaturas.revisado_por_comment}
+\BLOCK{ endif }
 
 \vspace{1cm}
 \noindent Aprovo:
+\BLOCK{ if assinaturas.aprovado_por }
 \BLOCK{ for signer in assinaturas.aprovado_por }
 \vspace{0.5cm}\\[1cm]
 \noindent\rule{8cm}{0.4pt}\\
 \VAR{signer.nome}\\
 \VAR{signer.posto_funcao}
 \BLOCK{ endfor }
+\BLOCK{ else }
+\VAR{assinaturas.aprovado_por_comment}
+\BLOCK{ endif }
 
 \end{document}
 """
@@ -216,8 +224,10 @@ _DEFAULT_CONTEXT: dict[str, Any] = {
     "referencias_bibliograficas": [],
     "assinaturas": {
         "elaborado_por": [{"nome": "", "posto_funcao": ""}],
-        "revisado_por": [{"nome": "", "posto_funcao": ""}],
-        "aprovado_por": [{"nome": "", "posto_funcao": ""}],
+        "revisado_por": [],
+        "revisado_por_comment": "% Revisado por: não informado",
+        "aprovado_por": [],
+        "aprovado_por_comment": "% Aprovado por: não informado",
     },
 }
 
