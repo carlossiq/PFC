@@ -22,10 +22,6 @@ from app.adapters.driving.http.dependencies import get_db_session
 from app.core.services.report_service import ReportService
 from core.logging import get_logger
 from db.research_session_models import (
-    Article,
-    Patent,
-    ProbeQueryArticle,
-    ProbeQueryPatent,
     ResearchSession,
     SessionChart,
     SessionProbeQuery,
@@ -122,27 +118,6 @@ async def _upsert_session_chart(
     await session.commit()
 
 
-def _patent_to_dict(patent: Patent) -> dict[str, Any]:
-    return {
-        "year": patent.year,
-        "applicants": patent.applicants,
-        "inventors": patent.inventors,
-        "cpc_codes": patent.cpc_codes,
-        "ipc_codes": patent.ipc_codes,
-        "country": patent.country,
-    }
-
-
-def _article_to_dict(article: Article) -> dict[str, Any]:
-    return {
-        "year": article.year,
-        "authors": article.authors,
-        "journal_or_source": article.journal_or_source,
-        "field_of_study": article.field_of_study,
-        "affiliation_countries": article.affiliation_countries,
-    }
-
-
 @router.get("/{session_id}/existing-chart", response_model=SuccessResponse[ExistingChartResponse])
 async def get_existing_chart(
     session_id: int,
@@ -208,68 +183,33 @@ async def generate_session_graphics(
     request: Request,
     session: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[ReportGraphicsResponse]:
-    """Gera os gráficos de report para uma sessão.
+    """Gera a curva S de patentes de uma sessão.
 
-    A curva S de patentes é calculada a partir do `patents_by_year`
-    enviado no corpo da requisição, NÃO derivada do banco - normalmente é
-    o mesmo dict que `/chat/final/search` já devolve para a fonte OPS, o
-    que permite chamar esta rota logo após a busca final, sem depender da
-    sessão já ter sido persistida. Os demais gráficos (top entidades,
-    CPC/IPC, distribuição geográfica, curva S de artigos) continuam vindo
-    dos documentos já persistidos da busca final (tipo != None) - não
-    dispara nenhuma busca nova.
+    Calculada a partir do `patents_by_year` enviado no corpo da requisição,
+    NÃO derivada do banco - normalmente é o mesmo dict que
+    `/chat/final/search` já devolve para a fonte OPS. Nome da rota mantido
+    por compatibilidade com o front (generatePatentSCurve em report.ts).
     """
     exists = await session.execute(select(ResearchSession.id).where(ResearchSession.id == session_id))
     if exists.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
     ops_probe_query_id = await _resolve_final_probe_query_id(session, session_id, "ops")
-    # best-effort: hoje os documentos de artigo da busca final nunca são
-    # persistidos no banco (ver docstring de generate_article_s_curve mais
-    # abaixo), então `articles` sempre vem vazio e nada de artigo chega a
-    # ser gerado/upado aqui - mas se isso mudar no futuro, não queremos
-    # quebrar a rota só porque a sessão não tem (ainda) uma query final de
-    # scopus.
-    scopus_probe_query_id = await _resolve_final_probe_query_id(session, session_id, "scopus", required=False)
-    probe_query_ids = {"patent": ops_probe_query_id}
-    if scopus_probe_query_id is not None:
-        probe_query_ids["article"] = scopus_probe_query_id
-
-    # IN (subquery) em vez de JOIN + .distinct() na linha inteira: Patent/Article
-    # têm colunas JSON (applicants, cpc_codes, ...), e o tipo `json` do Postgres
-    # não tem operador de igualdade - um SELECT DISTINCT sobre a linha completa
-    # estoura "could not identify an equality operator for type json". A
-    # subquery só precisa comparar patent_id/article_id (inteiro), então nunca
-    # esbarra nisso, e dedup é automático (cada id aparece uma vez na tabela).
-    patent_stmt = select(Patent).where(
-        Patent.id.in_(
-            select(ProbeQueryPatent.patent_id)
-            .join(SessionProbeQuery, SessionProbeQuery.id == ProbeQueryPatent.probe_query_id)
-            .where(SessionProbeQuery.session_id == session_id, SessionProbeQuery.tipo.isnot(None))
-        )
-    )
-    article_stmt = select(Article).where(
-        Article.id.in_(
-            select(ProbeQueryArticle.article_id)
-            .join(SessionProbeQuery, SessionProbeQuery.id == ProbeQueryArticle.probe_query_id)
-            .where(SessionProbeQuery.session_id == session_id, SessionProbeQuery.tipo.isnot(None))
-        )
-    )
-    patents = (await session.execute(patent_stmt)).scalars().all()
-    articles = (await session.execute(article_stmt)).scalars().all()
-
+    # Só a curva S de patentes: o "report completo" antigo
+    # (ReportService.generate_session_report - top inventores/autores/
+    # periódicos, distribuição IPC/área de estudo/geográfica) saiu desta rota
+    # de propósito - esses gráficos não fazem parte do relatório REPTEC (ver
+    # _CHART_CAPTIONS em report_document_router.py); os que entram são
+    # gerados por rotas próprias a partir do checklist de "Criação de
+    # Gráficos" (useChartCreation.ts).
     svc = _svc(request)
-    result = await svc.generate_session_report(
-        session_id=session_id,
-        patents=[_patent_to_dict(p) for p in patents],
-        articles=[_article_to_dict(a) for a in articles],
-        probe_query_ids=probe_query_ids,
-    )
-    for chart in result["charts"]:
-        object_key = chart.get("object_key")
-        probe_query_id = probe_query_ids.get(chart["document_type"])
-        if object_key and probe_query_id is not None:
-            await _upsert_session_chart(session, probe_query_id, chart["document_type"], chart["chart"], object_key)
+    result: dict[str, Any] = {
+        "session_id": session_id,
+        "patents_used": 0,
+        "articles_used": 0,
+        "charts": [],
+        "skipped": [],
+    }
 
     try:
         patent_curve = await svc.generate_patent_s_curve(

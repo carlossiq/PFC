@@ -237,11 +237,13 @@ export async function validateFinalQuery(query: string, api: ProbeApi = 'ops'): 
 }
 
 // Compilado agregado devolvido pela busca final da OPS (patentes) - a rota
-// não devolve mais a lista bruta de documentos pro lado OPS (ver
-// ChatService.run_final_search no backend), só esses 4 agregados. Um
+// não devolve mais uma lista de documentos pra exibição direta (ver
+// ChatService.run_final_search no backend), só esses agregados. Um
 // redesenho de UI pra exibi-los (gráficos de depositantes/CPC/ano) fica pra
-// depois - por ora só evita quebrar a chamada e o save de sessão (que só
-// usa `resultsCount`, ver sessionInput.ts).
+// depois. `rawItems` é a exceção: itens crus (title/abstract/inventors/...)
+// não pra exibição, só pra persistir/alimentar o RAG do relatório (ver
+// buildProbeQueryPayload em sessionInput.ts) - por isso não vira nenhum
+// campo "amigável" aqui, só repassado como veio do backend.
 export interface OpsFinalAggregateResult {
   success: boolean
   resultsCount: number
@@ -249,13 +251,14 @@ export interface OpsFinalAggregateResult {
   cpc: Record<string, number>
   title: string[]
   patentsByYear: Record<string, number>
+  rawItems: Record<string, unknown>[]
 }
 
 // Equivalente a OpsFinalAggregateResult, pro Scopus (artigos) - mesmo
-// motivo de existir: a rota não devolve mais a lista bruta de artigos pro
-// lado Scopus (ver ChatService._run_scopus_final_search no backend), só
-// esses 4 agregados. areaOfStudy usa o nome completo da área ASJC (ex:
+// motivo de existir. areaOfStudy usa o nome completo da área ASJC (ex:
 // "Medicine"), não a sigla (ex: "MEDI") - já resolvido no backend.
+// `rawItems` aqui já vem enriquecido com abstract via OpenAlex (ver
+// ChatService._enrich_scopus_abstracts), quando disponível.
 export interface ScopusFinalAggregateResult {
   success: boolean
   resultsCount: number
@@ -263,6 +266,7 @@ export interface ScopusFinalAggregateResult {
   areaOfStudy: Record<string, number>
   title: string[]
   articlesByYear: Record<string, number>
+  rawItems: Record<string, unknown>[]
 }
 
 // Roda a busca final real com a query escolhida entre as variantes geradas.
@@ -315,6 +319,7 @@ export async function runFinalSearch(
       cpc: result.cpc ?? {},
       title,
       patentsByYear: result.patents_by_year ?? {},
+      rawItems: result.raw_items ?? [],
     }
   }
 
@@ -327,6 +332,7 @@ export async function runFinalSearch(
       areaOfStudy: result.area_of_study ?? {},
       title,
       articlesByYear: result.articles_by_year ?? {},
+      rawItems: result.raw_items ?? [],
     }
   }
 

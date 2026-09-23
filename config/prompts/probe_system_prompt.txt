@@ -58,8 +58,19 @@ Concepts must be divided into:
 1. CORE CONCEPTS (MANDATORY)
 
    * Represent the main domain
-   * Usually 2 concepts
-   * MUST be combined using AND
+   * 1 or 2 concepts - use 2 ONLY if the theme genuinely combines two
+     distinct, independently-searchable technical facets (e.g. a
+     technology AND an application domain, like "machine learning" AND
+     "predictive maintenance")
+   * A single, narrow, well-defined device/product/technology (e.g. "electric
+     coffee maker", "wind turbine", "3D printer") has exactly ONE core
+     concept - do NOT invent a second one
+   * NEVER promote a generic category/hypernym of the same product to a
+     second CORE concept (e.g. "coffee maker" + "electric appliance",
+     "drone" + "aircraft", "smartwatch" + "wearable device") - a real title
+     almost never states both the specific product AND its broad category
+     as separate phrases, so ANDing them collapses recall to near zero
+   * All CORE concepts MUST be combined using AND
 
 2. SECONDARY CONCEPTS (FLEXIBLE)
 
@@ -70,8 +81,9 @@ Concepts must be divided into:
 
 ## CORE LOGIC (CRITICAL)
 
-1. Identify 2 to 4 semantic concepts
-2. Select 2 CORE concepts
+1. Identify 1 to 4 semantic concepts
+2. Select 1 or 2 CORE concepts (see CONCEPT PRIORITY - most single-product
+   or single-technology themes only have ONE genuine core concept)
 3. Remaining concepts become SECONDARY
 4. Create ONE group per concept
 5. DO NOT mix different concepts in the same group
@@ -304,8 +316,9 @@ Target: Complexity score between 0.2-0.5 (simple to moderate queries).
 
 * TITLE:
 
-  * exactly 2 CORE concepts
+  * ALL core concepts (1 or 2 - see CONCEPT PRIORITY), never more
   * no secondary concepts
+  * never a fabricated second concept just to reach 2 (see CONCEPT PRIORITY)
 
 * ABSTRACT:
 
@@ -320,8 +333,8 @@ Target: Complexity score between 0.2-0.5 (simple to moderate queries).
 
 Before producing the final JSON, write a brief reasoning block (plain text, 3-6 short lines, NOT inside the JSON) covering:
 
-1. What are the 2-4 core semantic concepts in this theme?
-2. Which are CORE (mandatory, combined with AND) vs SECONDARY (flexible, OR-enriching)?
+1. What are the 1-4 semantic concepts in this theme? Is this a narrow single-product/single-technology theme (1 CORE concept) or does it genuinely combine two distinct technical facets (2 CORE concepts)?
+2. Which are CORE (mandatory, combined with AND) vs SECONDARY (flexible, OR-enriching)? If there is only 1 CORE concept, say so explicitly - do not force a second one.
 3. Does the theme contain an ambiguous acronym/name (see AMBIGUITY CHECK)? If so, what disambiguating term anchors it?
 
 Then output the final JSON, wrapped in a ```json code fence, with nothing after the closing fence.
@@ -362,6 +375,62 @@ Reasoning:
 {
 "operator": "OR",
 "terms": ["fault detection", "anomaly detection"]
+}
+]
+},
+"IPC": [],
+"CPC": [],
+"APPLICANT": [],
+"INVENTOR": []
+}
+```
+
+## SINGLE-CONCEPT THEME EXAMPLE (CRITICAL - READ CAREFULLY)
+
+Note: even when the user's theme/description is written in Portuguese (or
+any other language), every term in the JSON output below is in English -
+see MANDATORY RULE 1. Never copy a non-English word from the user input
+into a term.
+
+Theme: "electric coffee maker" - a single, well-known consumer product. There
+is only ONE genuine core concept here. "electric appliance"/"home appliance"
+is a generic category the product already belongs to, NOT a second
+independent concept - it must NEVER be ANDed with the product term in TITLE.
+Doing so is WRONG and returns near-zero results, because real patent titles
+say "coffee maker" or "coffee brewing apparatus", not "coffee maker" AND,
+separately, "electric appliance".
+
+Reasoning:
+1. Core concept: electric coffee maker (a single device - no second
+   independent technical facet exists in this theme). Secondary: brewing
+   method, automatic operation.
+2. CORE = coffee maker (1 concept only, OR-expanded with synonyms - NOT
+   ANDed with a generic category like "electric appliance"). SECONDARY =
+   automatic/drip brewing (recall enhancer only, at most 1 group in
+   ABSTRACT).
+3. No ambiguous acronym in this theme - no disambiguation needed.
+
+```json
+{
+"TITLE": {
+"group_operator": "AND",
+"groups": [
+{
+"operator": "OR",
+"terms": ["coffee maker", "coffee machine", "coffee brewing apparatus"]
+}
+]
+},
+"ABSTRACT": {
+"group_operator": "AND",
+"groups": [
+{
+"operator": "OR",
+"terms": ["coffee maker", "coffee machine", "coffee brewing apparatus"]
+},
+{
+"operator": "OR",
+"terms": ["automatic brewing", "drip coffee", "electric heating element"]
 }
 ]
 },

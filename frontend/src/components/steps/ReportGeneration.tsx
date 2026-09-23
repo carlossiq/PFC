@@ -298,20 +298,27 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [isAssembling, setIsAssembling] = useState(false)
   const [assembleError, setAssembleError] = useState<string | null>(null)
+  const [hasAttemptedAssemble, setHasAttemptedAssemble] = useState(false)
 
   const allSectionsDone =
     staticState.status === 'done' && AI_SECTION_ORDER.every((key) => aiSections[key].status === 'done')
   const hasStarted = staticState.status !== 'pending' || AI_SECTION_ORDER.some((key) => aiSections[key].status !== 'pending')
 
   // Campos sempre obrigatórios pro relatório (ver Metodologia/Referências e
-  // a capa do .tex) - borda vermelha imediata (sem esperar uma tentativa de
-  // envio, já que não há um único botão "avançar" no topo do formulário) e
-  // bloqueio do botão ".tex" enquanto algum deles estiver vazio.
+  // a capa do .tex) - a borda vermelha só aparece depois de uma tentativa de
+  // clicar em "Montar .tex" com algo faltando (hasAttemptedAssemble), não já
+  // na entrada da tela. O botão continua sempre clicável (ver
+  // handleAssembleClick) - clicar com campo faltando apenas revela os erros,
+  // sem abrir o modal de confirmação.
   const numeroError = !numero.trim()
   const anoError = !ano.trim()
   const referenciasAdministrativasError = referenciasAdministrativas.length === 0
   const elaboradoPorError = !signatures.elaboradoPor.some((s) => s.nome.trim() && s.postoFuncao.trim())
   const hasRequiredFieldErrors = numeroError || anoError || referenciasAdministrativasError || elaboradoPorError
+  const showNumeroError = hasAttemptedAssemble && numeroError
+  const showAnoError = hasAttemptedAssemble && anoError
+  const showReferenciasAdministrativasError = hasAttemptedAssemble && referenciasAdministrativasError
+  const showElaboradoPorError = hasAttemptedAssemble && elaboradoPorError
 
   function buildSignaturesPayload(): SignaturesFormInput {
     return signatures
@@ -452,6 +459,14 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
     setIsGenerating(false)
   }
 
+  function handleAssembleClick() {
+    if (hasRequiredFieldErrors) {
+      setHasAttemptedAssemble(true)
+      return
+    }
+    setShowConfirmModal(true)
+  }
+
   async function handleConfirmAssemble() {
     setShowConfirmModal(false)
     setIsAssembling(true)
@@ -499,12 +514,12 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
         <h4 className="font-semibold text-sm text-gray-900">Metadados do REPTEC</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <FloatingLabelInput label="Número" name="reptec-numero" value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Ex.: 001" error={numeroError} />
-            {numeroError && <p className="text-red-500 text-xs mt-1">Campo obrigatório.</p>}
+            <FloatingLabelInput label="Número" name="reptec-numero" value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Ex.: 001" error={showNumeroError} />
+            {showNumeroError && <p className="text-red-500 text-xs mt-1">Campo obrigatório.</p>}
           </div>
           <div>
-            <FloatingLabelInput label="Ano" name="reptec-ano" value={ano} onChange={(e) => setAno(e.target.value)} placeholder="Ex.: 2026" error={anoError} />
-            {anoError && <p className="text-red-500 text-xs mt-1">Campo obrigatório.</p>}
+            <FloatingLabelInput label="Ano" name="reptec-ano" value={ano} onChange={(e) => setAno(e.target.value)} placeholder="Ex.: 2026" error={showAnoError} />
+            {showAnoError && <p className="text-red-500 text-xs mt-1">Campo obrigatório.</p>}
           </div>
         </div>
 
@@ -513,7 +528,7 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
           items={referenciasAdministrativas}
           onChange={setReferenciasAdministrativas}
           placeholder="Ex.: DIEx Nº 115-A3/DCT de 6 de janeiro de 2023"
-          error={referenciasAdministrativasError}
+          error={showReferenciasAdministrativasError}
         />
 
         <ListEditor
@@ -535,7 +550,7 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
             title="Elaborado por"
             values={signatures.elaboradoPor}
             onChange={(v) => setSignatures((s) => ({ ...s, elaboradoPor: v }))}
-            error={elaboradoPorError}
+            error={showElaboradoPorError}
           />
           <SignatureListEditor
             title="Revisado por"
@@ -588,8 +603,8 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
         <Button
           fullWidth
           variant="accent"
-          onClick={() => setShowConfirmModal(true)}
-          disabled={!allSectionsDone || isAssembling || hasRequiredFieldErrors}
+          onClick={handleAssembleClick}
+          disabled={!allSectionsDone || isAssembling}
           type="button"
         >
           {isAssembling ? 'Montando...' : 'Montar .tex'}

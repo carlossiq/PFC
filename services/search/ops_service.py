@@ -6,6 +6,7 @@ import asyncio
 import json
 import re
 import time
+import unicodedata
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from typing import Any, Optional
@@ -109,6 +110,40 @@ def _find_first_by_local_name(element: ET.Element, local_name: str) -> Optional[
     return None
 
 
+_EPODOC_COUNTRY_SUFFIX_RE = re.compile(r"\s*\[[A-Z]{2}\]\s*$")
+
+
+def _is_latin_name(name: str) -> bool:
+    """True se todas as letras do nome são do alfabeto latino (com ou sem
+    acento). O relatório LaTeX só tipografa script latino (ver
+    report_writer_service.escape_latex, que REMOVE o resto) - um depositante
+    chinês cujo nome "original" vem em CJK virava string vazia no texto
+    gerado ("com a , , e liderando")."""
+    return all(not ch.isalpha() or "LATIN" in unicodedata.name(ch, "") for ch in name)
+
+
+def _pick_party_names(parties: list[tuple[Optional[str], Optional[str], str]]) -> list[str]:
+    """Escolhe UM nome por parte a partir de (data-format, sequence, nome):
+    o "original" (legível, ex. "Shen, Hai Jun") quando está em alfabeto
+    latino; senão o "epodoc" da mesma parte (mesmo `sequence`), que a OPS
+    sempre devolve romanizado (ex. "HUANENG CLEAN ENERGY RES INST [CN]" -
+    sem o sufixo de país). Sem par epodoc, mantém o original."""
+    originals: list[tuple[Optional[str], str]] = []
+    epodoc_by_sequence: dict[Optional[str], str] = {}
+    for data_format, sequence, name in parties:
+        if data_format in (None, "original"):
+            originals.append((sequence, name))
+        elif data_format == "epodoc":
+            epodoc_by_sequence.setdefault(sequence, _EPODOC_COUNTRY_SUFFIX_RE.sub("", name).strip())
+
+    names = []
+    for sequence, name in originals:
+        if not _is_latin_name(name) and epodoc_by_sequence.get(sequence):
+            name = epodoc_by_sequence[sequence]
+        names.append(name)
+    return names
+
+
 def _extract_party_names_xml(party_elems: list[ET.Element], name_wrapper_tag: str) -> list[str]:
     """
     Extrai nomes de uma lista de elementos <applicant>/<inventor> da OPS
@@ -124,178 +159,13 @@ def _extract_party_names_xml(party_elems: list[ET.Element], name_wrapper_tag: st
     Returns:
         Lista de nomes, sem duplicar data-format.
     """
-    names = []
+    parties = []
     for party_elem in party_elems:
-        if party_elem.attrib.get("data-format") not in (None, "original"):
-            continue
         name_wrapper = _find_first_by_local_name(party_elem, name_wrapper_tag)
         name_elem = _find_first_by_local_name(name_wrapper, "name") if name_wrapper is not None else None
         if name_elem is not None and name_elem.text:
-            names.append(name_elem.text)
-    return names
-
-
-def _json_text(value: Any) -> Optional[str]:
-    """Extrai o texto de um campo JSON-do-XML da OPS, que vem como {"$": "..."} ou string direta."""
-    if isinstance(value, dict):
-        return value.get("$")
-    if isinstance(value, str):
-        return value
-    return None
-
-
-def _build_cpc_code(
-    section: Optional[str],
-    class_: Optional[str],
-    subclass: Optional[str],
-    main_group: Optional[str],
-    subgroup: Optional[str],
-) -> Optional[str]:
-    """
-    Monta o código CPC no formato "H10F 77/211" a partir dos componentes
-    separados que a OPS devolve em <patent-classifications>/<patent-classification>
-    (section/class/subclass/main-group/subgroup) - diferente do bloco
-    <classifications-ipcr>, que já vem com um único campo <text> pronto.
-    """
-    if not all([section, class_, subclass, main_group, subgroup]):
-        return None
-    return f"{section}{class_}{subclass} {main_group}/{subgroup}"
-
-
-def _extract_cpc_codes(biblio_data: dict) -> list[str]:
-    """Extrai códigos CPC (formato JSON) de bibliographic-data.patent-classifications."""
-    codes: list[str] = []
-    container = biblio_data.get("patent-classifications", {})
-    if not container:
-        return codes
-    entries = container.get("patent-classification", [])
-    if not isinstance(entries, list):
-        entries = [entries] if entries else []
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        code = _build_cpc_code(
-            _json_text(entry.get("section")),
-            _json_text(entry.get("class")),
-            _json_text(entry.get("subclass")),
-            _json_text(entry.get("main-group")),
-            _json_text(entry.get("subgroup")),
-        )
-        if code:
-            codes.append(code)
-    return codes
-
-
-def _extract_cpc_codes_xml(exchange_doc_elem: ET.Element) -> list[str]:
-    """
-    Extrai códigos CPC (formato XML) de <patent-classifications>/<patent-classification>.
-
-    Busca <patent-classification> em qualquer profundidade (via
-    _find_all_by_local_name) em vez de localizar o container
-    <patent-classifications> como filho direto primeiro - ele está aninhado
-    dentro de <bibliographic-data>, não é filho direto de exchange-document.
-    """
-    codes: list[str] = []
-    for entry in _find_all_by_local_name(exchange_doc_elem, "patent-classification"):
-        section_elem = _find_first_by_local_name(entry, "section")
-        class_elem = _find_first_by_local_name(entry, "class")
-        subclass_elem = _find_first_by_local_name(entry, "subclass")
-        main_group_elem = _find_first_by_local_name(entry, "main-group")
-        subgroup_elem = _find_first_by_local_name(entry, "subgroup")
-        code = _build_cpc_code(
-            section_elem.text if section_elem is not None else None,
-            class_elem.text if class_elem is not None else None,
-            subclass_elem.text if subclass_elem is not None else None,
-            main_group_elem.text if main_group_elem is not None else None,
-            subgroup_elem.text if subgroup_elem is not None else None,
-        )
-        if code:
-            codes.append(code)
-    return codes
-
-
-def _extract_final_fields(exchange_doc: dict) -> dict[str, Any]:
-    """
-    Extração enxuta (formato JSON) usada SÓ pela busca final (ver
-    OPSService.search_biblio_page) - dedicada, não a mesma usada pela probe
-    (OPSService._extract_biblio_fields), pra não arriscar mudar o
-    comportamento da probe ao corrigir a extração de CPC.
-
-    Returns:
-        Dict com title, applicants, cpc (lista de códigos "SEC-CLASS-SUB MG/SG") e year.
-    """
-    result: dict[str, Any] = {"title": None, "applicants": [], "cpc": [], "year": None}
-    try:
-        biblio_data = exchange_doc.get("bibliographic-data", {})
-
-        invention_titles = biblio_data.get("invention-title", [])
-        if not isinstance(invention_titles, list):
-            invention_titles = [invention_titles] if invention_titles else []
-        for title_item in invention_titles:
-            if isinstance(title_item, dict):
-                lang = title_item.get("@lang", "")
-                title_text = title_item.get("$", "")
-                if lang == "en":
-                    result["title"] = title_text
-                    break
-                elif result["title"] is None:
-                    result["title"] = title_text
-
-        pub_ref = biblio_data.get("publication-reference", {})
-        doc_ids = pub_ref.get("document-id", [])
-        if not isinstance(doc_ids, list):
-            doc_ids = [doc_ids] if doc_ids else []
-        for doc_id in doc_ids:
-            if doc_id.get("@document-id-type") == "docdb":
-                date_str = _json_text(doc_id.get("date"))
-                if date_str and len(date_str) >= 4:
-                    result["year"] = int(date_str[:4])
-                break
-
-        parties = biblio_data.get("parties", {})
-        result["applicants"] = OPSService._extract_party_names(
-            parties.get("applicants", {}).get("applicant", []), "applicant-name"
-        )
-
-        result["cpc"] = _extract_cpc_codes(biblio_data)
-    except Exception:
-        pass
-    return result
-
-
-def _extract_final_fields_xml(exchange_doc_elem: ET.Element) -> dict[str, Any]:
-    """Versão XML (fallback) de _extract_final_fields - ver docstring lá."""
-    result: dict[str, Any] = {"title": None, "applicants": [], "cpc": [], "year": None}
-    try:
-        invention_titles = _find_all_by_local_name(exchange_doc_elem, "invention-title")
-        for title_elem in invention_titles:
-            lang = title_elem.attrib.get("lang", "")
-            title_text = title_elem.text or ""
-            if lang == "en":
-                result["title"] = title_text
-                break
-            elif result["title"] is None:
-                result["title"] = title_text
-
-        all_doc_ids = _find_all_by_local_name(exchange_doc_elem, "document-id")
-        for doc_id_elem in all_doc_ids:
-            if doc_id_elem.get("document-id-type") == "docdb":
-                date_elem = _find_first_by_local_name(doc_id_elem, "date")
-                date_str = date_elem.text if date_elem is not None else None
-                if date_str and len(date_str) >= 4:
-                    result["year"] = int(date_str[:4])
-                break
-
-        # Busca <applicant> em qualquer profundidade (mesmo motivo do CPC
-        # acima): <applicants> está aninhado dentro de <parties>, não é
-        # filho direto de exchange-document.
-        applicant_elems = _find_all_by_local_name(exchange_doc_elem, "applicant")
-        result["applicants"] = _extract_party_names_xml(applicant_elems, "applicant-name")
-
-        result["cpc"] = _extract_cpc_codes_xml(exchange_doc_elem)
-    except Exception:
-        pass
-    return result
+            parties.append((party_elem.attrib.get("data-format"), party_elem.attrib.get("sequence"), name_elem.text))
+    return _pick_party_names(parties)
 
 
 def _find_all_by_local_name(element: ET.Element, local_name: str) -> list[ET.Element]:
@@ -593,18 +463,17 @@ class OPSService:
             y_from, y_to = year_range
             query = {**query, "query": self._apply_year_range(query.get("query", ""), y_from, y_to)}
 
-        # Extração enxuta dedicada à busca final (title/applicants/cpc/year) -
-        # não a mesma usada pela probe (search_with_abstracts), pra não
-        # arriscar mudar o comportamento dela (ver _extract_final_fields).
-        return await self._search_abstract_with_retry(
-            query,
-            start,
-            page_size,
-            run_id,
-            start_time,
-            extract_json_fn=_extract_final_fields,
-            extract_xml_fn=_extract_final_fields_xml,
-        )
+        # _search_abstract_with_retry sempre usa a extração completa (mesma
+        # da probe) - abstract e inventors já vêm nessa mesma resposta
+        # /search/biblio, sem requisição extra. Antes a busca final usava
+        # uma extração enxuta própria (só title/applicants/cpc/year) "pra
+        # não arriscar mudar o que a probe recebe" - mas title/applicants/cpc/
+        # year continuam presentes na extração completa
+        # (ChatService._aggregate_ops_final_items só precisou trocar as
+        # chaves lidas, não a lógica), e agora abstract/inventors também
+        # sobrevivem, alimentando o RAG do relatório (ver
+        # ReportWriterService.ensure_session_indexed).
+        return await self._search_abstract_with_retry(query, start, page_size, run_id, start_time)
 
     async def _ensure_valid_token(self, run_id: Optional[str] = None) -> None:
         """
@@ -1010,19 +879,17 @@ class OPSService:
         if not isinstance(entries, list):
             entries = [entries] if entries else []
 
-        names = []
+        parties = []
         for entry in entries:
             if not isinstance(entry, dict):
                 if entry:
-                    names.append(str(entry))
-                continue
-            if entry.get("@data-format") not in (None, "original"):
+                    parties.append((None, None, str(entry)))
                 continue
             name_wrapper = entry.get(name_key, {})
             name = name_wrapper.get("name", {}).get("$") if isinstance(name_wrapper, dict) else None
             if name:
-                names.append(name)
-        return names
+                parties.append((entry.get("@data-format"), entry.get("@sequence"), name))
+        return _pick_party_names(parties)
 
     def _extract_biblio_fields(self, exchange_doc: dict) -> dict[str, Any]:
         """
@@ -1188,16 +1055,19 @@ class OPSService:
         page_size: int,
         run_id: Optional[str],
         start_time: float,
-        extract_json_fn: Optional[Any] = None,
-        extract_xml_fn: Optional[Any] = None,
     ) -> SearchResult:
         """
         Executa busca de UMA página no endpoint /search/biblio com retry logic.
 
         Este endpoint retorna resultados já com dados bibliográficos (abstracts, títulos, etc),
         eliminando a necessidade de enriquecimento posterior. Usa header X-OPS-Range para controlar
-        a janela de resultados - chamado em loop por search_with_abstracts pra paginar além do
-        limite de 100 por requisição.
+        a janela de resultados - chamado em loop por search_with_abstracts (probe) e por
+        search_biblio_page (busca final) pra paginar além do limite de 100 por requisição.
+        Sempre usa self._extract_biblio_fields/self._extract_biblio_fields_xml (a extração
+        completa - title/abstract/applicants/inventors/ipc/cpc/... - já que a mesma resposta
+        serve tanto a probe quanto a busca final, e ambas precisam desses campos: a probe pro
+        RAG/exibição, a busca final pra agregação (ChatService._aggregate_ops_final_items) e,
+        agora, também pro RAG do relatório (ReportWriterService.ensure_session_indexed).
 
         Args:
             query: Query dict com 'query' (CQL string).
@@ -1205,18 +1075,12 @@ class OPSService:
             page_size: Tamanho desta página (1-100, limite da API OPS).
             run_id: ID da requisição para logging.
             start_time: Timestamp de início.
-            extract_json_fn: Função de extração por documento (formato JSON) -
-                default self._extract_biblio_fields (usada pela probe via
-                search_with_abstracts). search_biblio_page (busca final)
-                injeta uma extração enxuta própria (_extract_final_fields),
-                pra não arriscar mudar o que a probe recebe.
-            extract_xml_fn: Idem, formato XML (fallback).
 
         Returns:
             SearchResult com dados ou erro.
         """
-        json_fn = extract_json_fn or self._extract_biblio_fields
-        xml_fn = extract_xml_fn or self._extract_biblio_fields_xml
+        json_fn = self._extract_biblio_fields
+        xml_fn = self._extract_biblio_fields_xml
         retry_count = 0
 
         for attempt in range(self._MAX_RETRIES):

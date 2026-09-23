@@ -12,16 +12,25 @@ FROM texlive/texlive:latest-minimal
 # (latex-bin, article.cls etc, ver collection-latex) vem instalado. Coleções
 # em vez de pacotes avulsos: mais robusto que ir descobrindo dependência
 # faltante uma a uma (collection-latex = kernel + classes base;
-# collection-latexrecommended já cobre geometry/graphics/hyperref).
+# collection-latexrecommended já cobre geometry/graphics/hyperref/caption/
+# float/fancyhdr/microtype). lastpage/titlesec/tocloft são do latexextra
+# (não instalado inteiro) - usados pelo template do REPTEC pro rodapé
+# "Página x de y", títulos "1 FINALIDADE" e sumário pontilhado.
 RUN tlmgr update --self && \
     tlmgr install \
         collection-latex \
         collection-latexrecommended \
         collection-fontsrecommended \
         babel-portuges \
+        hyphen-portuguese \
         enumitem \
+        lastpage \
+        titlesec \
+        tocloft \
+        setspace \
         latexmk && \
-    tlmgr path add
+    tlmgr path add && \
+    fmtutil-sys --all
 # tlmgr path add: a imagem "latest-minimal" (diferente de "latest"/"full") não
 # põe o bin dir do TeX Live (/usr/local/texlive/<ano>/bin/x86_64-linux) no
 # PATH por padrão - sem isso "latexmk"/"pdflatex" não são achados em tempo de

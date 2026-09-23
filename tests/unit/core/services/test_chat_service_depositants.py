@@ -50,10 +50,13 @@ def test_fuzzy_group_depositants_threshold_is_configurable():
 
 def test_aggregate_ops_final_items_groups_depositants_and_cpc():
     svc = _svc()
+    # Formato COMPLETO (OPSService._extract_biblio_fields, mesma extração
+    # da probe) - não mais o formato enxuto descontinuado
+    # (applicants/cpc/title).
     items = [
-        {"applicants": ["Acme Corp"], "cpc": ["B64G 1/2222"], "title": "t1"},
-        {"applicants": ["ACME CORP."], "cpc": ["B64G 1/443"], "title": "t2"},
-        {"applicants": ["Globex Inc"], "cpc": ["H02S 10/40"], "title": None},
+        {"applicants": ["Acme Corp"], "cpc_classifications": ["B64G 1/2222"], "invention_title": "t1"},
+        {"applicants": ["ACME CORP."], "cpc_classifications": ["B64G 1/443"], "invention_title": "t2"},
+        {"applicants": ["Globex Inc"], "cpc_classifications": ["H02S 10/40"], "invention_title": None},
     ]
 
     depositants, cpc, titles = svc._aggregate_ops_final_items(items)

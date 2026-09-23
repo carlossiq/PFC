@@ -3,7 +3,9 @@ import { HelpCircle, User, Power, ChevronLeft, ChevronRight, Settings, Search, C
 import { Tooltip } from './Tooltip';
 import { Modal } from './Modal'
 import { SaveProgressButton } from './SaveProgressButton'
+import { ReportImagesToggleButton } from './ReportImagesToggleButton'
 import { useSidebarStore } from '../stores/useSidebarStore'
+import { useReportImagesPanelStore } from '../stores/useReportImagesPanelStore'
 import { useWorkflowStore } from '../stores/useWorkflowStore'
 import { useFormStore } from '../stores/useFormStore'
 import { TABS } from '../constants/tabs'
@@ -12,6 +14,7 @@ export function Sidebar() {
   const { collapsed, toggleCollapsed, setCollapsed, locked } = useSidebarStore()
   const { tab, setTab } = useWorkflowStore()
   const { sessionName, setSessionName } = useFormStore()
+  const reportEditorMounted = useReportImagesPanelStore((s) => s.editorMounted)
   const [showConfirm, setShowConfirm] = useState(false)
   const [nameError, setNameError] = useState(false)
 
@@ -99,6 +102,10 @@ export function Sidebar() {
             do pointer-events-none que `locked` aplica no <aside> inteiro
             logo abaixo. */}
         {locked && <SaveProgressButton />}
+
+        {/* Abre/fecha o painel "Imagens" do editor do .tex - só com o editor
+            na tela (ver ReportImagesToggleButton.tsx). */}
+        {reportEditorMounted && <ReportImagesToggleButton />}
 
         {/* Bottom */}
         <div className="mt-auto px-2 pb-4">

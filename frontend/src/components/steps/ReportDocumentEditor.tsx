@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { ChevronLeft, Download, ExternalLink, FilePlus2, Plus, Trash2, X } from 'lucide-react'
 import { Button } from '../Button'
 import { Tooltip } from '../Tooltip'
 import { LoadingScreen } from '../LoadingScreen'
@@ -8,14 +8,19 @@ import { useFormStore } from '../../stores/useFormStore'
 import { useProspectingStore } from '../../stores/useProspectingStore'
 import { useHistoryStore } from '../../stores/useHistoryStore'
 import { useWorkflowStore } from '../../stores/useWorkflowStore'
+import { useReportImagesPanelStore } from '../../stores/useReportImagesPanelStore'
 import { TABS } from '../../constants/tabs'
 import {
   compileReportPdf,
+  deleteReportAttachment,
+  downloadReportImage,
   getReportCharts,
   getReportDocument,
   getReportPdfBase64,
+  openReportImage,
   openReportPdf,
   reassembleReport,
+  uploadReportAttachment,
   type ReportChart,
 } from '../../services/report'
 
@@ -44,9 +49,20 @@ function escapeLatex(text: string): string {
   return text.replace(/[\\{}$&%#_~^]/g, (ch) => LATEX_ESCAPE_MAP[ch])
 }
 
-function chartFigureSnippet(chart: ReportChart): string {
-  const caption = escapeLatex(chart.caption)
-  return `\n\\begin{figure}[h]\n  \\centering\n  \\includegraphics[width=0.85\\textwidth]{${chart.filename}}\n  \\caption{${caption}}\n\\end{figure}\n`
+// Anexo não tem título próprio (o nome do arquivo não serve de título de
+// figura) - entra um texto provisório pro usuário trocar no próprio .tex.
+const ATTACHMENT_CAPTION_PLACEHOLDER = 'Título da figura'
+
+// Mesmo formato das figuras montadas pelo template (título "Figura N:"
+// acima, "Fonte: O autor." abaixo, centralizada) - usa o macro \figura
+// quando o .tex já o define (montado com o template atual); documentos
+// montados antes dele ganham o bloco equivalente por extenso.
+function chartFigureSnippet(chart: ReportChart, texText: string): string {
+  const caption = escapeLatex(chart.origin === 'attachment' ? ATTACHMENT_CAPTION_PLACEHOLDER : chart.caption)
+  if (texText.includes('\\newcommand{\\figura}')) {
+    return `\n\\figura{${caption}}{${chart.filename}}\n`
+  }
+  return `\n\\begin{figure}[h]\n  \\centering\n  \\caption{${caption}}\n  \\includegraphics[width=0.85\\textwidth]{${chart.filename}}\\par\n  {\\small Fonte: O autor.}\n\\end{figure}\n`
 }
 
 interface ReportDocumentEditorProps {
@@ -72,6 +88,13 @@ export function ReportDocumentEditor({
   onExit,
 }: ReportDocumentEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // Rastreia se o textarea já recebeu foco de verdade nesta visita - sem
+  // isso, clicar numa miniatura de gráfico ANTES de clicar no textarea usa
+  // selectionStart/selectionEnd = 0 (valor padrão de um textarea nunca
+  // focado), inserindo o \begin{figure} antes até do \documentclass e
+  // quebrando a compilação ("Environment figure undefined" - o pdflatex
+  // nem chega a processar a classe do documento). Ver insertChartSnippet.
+  const hasFocusedTextareaRef = useRef(false)
 
   const [isLoadingDoc, setIsLoadingDoc] = useState(initialTexContent === null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -80,7 +103,33 @@ export function ReportDocumentEditor({
   const [pdfAvailable, setPdfAvailable] = useState(false)
 
   const [charts, setCharts] = useState<ReportChart[]>([])
-  const [isPanelOpen, setIsPanelOpen] = useState(true)
+  const isPanelOpen = useReportImagesPanelStore((s) => s.isOpen)
+  const setIsPanelOpen = useReportImagesPanelStore((s) => s.setOpen)
+
+  // Avisa a Sidebar que o editor está na tela (mostra o botão de imagem só
+  // enquanto isso for verdade).
+  useEffect(() => {
+    const { setEditorMounted } = useReportImagesPanelStore.getState()
+    setEditorMounted(true)
+    return () => setEditorMounted(false)
+  }, [])
+  // Miniatura com o menu de ações aberto (pelo filename) - null = nenhum.
+  const [menuFor, setMenuFor] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<ReportChart | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
+  const [imageError, setImageError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  // Fecha o menu de ações ao clicar em qualquer lugar fora do painel.
+  useEffect(() => {
+    if (menuFor === null) return
+    function handleMouseDown(e: MouseEvent) {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) setMenuFor(null)
+    }
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => document.removeEventListener('mousedown', handleMouseDown)
+  }, [menuFor])
 
   const [isCompiling, setIsCompiling] = useState(false)
   const [compileError, setCompileError] = useState<string | null>(null)
@@ -141,11 +190,36 @@ export function ReportDocumentEditor({
 
   const canCompile = !isLoadingDoc && texText !== lastCompiledText
 
+  // Ponto de inserção seguro quando não há uma posição de cursor real
+  // (textarea nunca focado) - antes de `\end{document}`, pra cair dentro
+  // do corpo do documento (o final puro e simples do arquivo ficaria
+  // depois de `\end{document}`, onde o LaTeX ignora tudo silenciosamente
+  // - o gráfico nunca apareceria no PDF, sem nenhum erro de compilação
+  // pra avisar).
+  function fallbackInsertionIndex(t: string): number {
+    const endDocIdx = t.lastIndexOf('\\end{document}')
+    return endDocIdx === -1 ? t.length : endDocIdx
+  }
+
   function insertChartSnippet(chart: ReportChart) {
-    const snippet = chartFigureSnippet(chart)
+    const snippet = chartFigureSnippet(chart, texText)
     const textarea = textareaRef.current
-    if (!textarea) {
-      setTexText((t) => t + snippet)
+    if (!textarea || !hasFocusedTextareaRef.current) {
+      setTexText((t) => {
+        const at = fallbackInsertionIndex(t)
+        return t.slice(0, at) + snippet + t.slice(at)
+      })
+      // Foca e posiciona o cursor logo após o snippet inserido, pra que a
+      // PRÓXIMA inserção (ou digitação) já use a posição real do cursor
+      // em vez de cair de novo no fallback.
+      if (textarea) {
+        requestAnimationFrame(() => {
+          const at = fallbackInsertionIndex(textarea.value)
+          textarea.focus()
+          const pos = Math.min(at, textarea.value.length) + snippet.length
+          textarea.setSelectionRange(pos, pos)
+        })
+      }
       return
     }
     const start = textarea.selectionStart
@@ -157,6 +231,110 @@ export function ReportDocumentEditor({
       textarea.setSelectionRange(pos, pos)
     })
   }
+
+  async function handleUploadAttachment(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    // Limpa o input já - sem isso, escolher o MESMO arquivo de novo (ex.:
+    // depois de excluí-lo) não dispara onChange.
+    e.target.value = ''
+    if (!file) return
+    setIsUploading(true)
+    setImageError(null)
+    try {
+      const attachment = await uploadReportAttachment(sessionId, file)
+      setCharts((list) => [...list, attachment])
+    } catch (err) {
+      console.error('Falha ao enviar anexo:', err)
+      setImageError(errorMessage(err, 'Não foi possível enviar a imagem.'))
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  async function handleConfirmDelete() {
+    const chart = pendingDelete
+    setPendingDelete(null)
+    if (!chart) return
+    setImageError(null)
+    try {
+      await deleteReportAttachment(sessionId, chart.filename)
+      setCharts((list) => list.filter((c) => c.filename !== chart.filename))
+    } catch (err) {
+      console.error('Falha ao excluir anexo:', err)
+      setImageError(errorMessage(err, 'Não foi possível excluir a imagem.'))
+    }
+  }
+
+  function renderImageCard(chart: ReportChart) {
+    const isMenuOpen = menuFor === chart.filename
+    const canDelete = chart.origin === 'attachment'
+    const menuItemClass =
+      'w-full flex items-center gap-1.5 px-2 py-1.5 text-left text-[11px] text-gray-700 hover:bg-gray-100 disabled:text-gray-300 disabled:hover:bg-transparent disabled:cursor-not-allowed'
+    return (
+      <div key={chart.filename} className="relative">
+        <button
+          type="button"
+          onClick={() => setMenuFor(isMenuOpen ? null : chart.filename)}
+          title={chart.caption}
+          className={`w-full text-left rounded-md border transition-colors overflow-hidden ${
+            isMenuOpen ? 'border-[#0f9448]' : 'border-gray-200 hover:border-[#0f9448]'
+          }`}
+        >
+          <img src={`data:image/png;base64,${chart.imageBase64}`} alt={chart.caption} className="w-full block" />
+          <p className="text-[10px] text-gray-600 px-1.5 py-1 truncate">{chart.caption}</p>
+        </button>
+        {isMenuOpen && (
+          <div className="absolute left-1 right-1 top-full z-10 mt-1 rounded-md border border-gray-200 bg-white shadow-lg py-1">
+            <button
+              type="button"
+              className={menuItemClass}
+              onClick={() => {
+                setMenuFor(null)
+                insertChartSnippet(chart)
+              }}
+            >
+              <FilePlus2 size={12} /> Adicionar ao .tex
+            </button>
+            <button
+              type="button"
+              className={menuItemClass}
+              onClick={() => {
+                setMenuFor(null)
+                openReportImage(chart)
+              }}
+            >
+              <ExternalLink size={12} /> Abrir em nova aba
+            </button>
+            <button
+              type="button"
+              className={menuItemClass}
+              onClick={() => {
+                setMenuFor(null)
+                downloadReportImage(chart)
+              }}
+            >
+              <Download size={12} /> Download
+            </button>
+            <button
+              type="button"
+              className={`${menuItemClass} ${canDelete ? 'text-red-600 hover:bg-red-50' : ''}`}
+              disabled={!canDelete}
+              title={canDelete ? undefined : 'Gráficos gerados pelo sistema não podem ser excluídos.'}
+              onClick={() => {
+                setMenuFor(null)
+                setPendingDelete(chart)
+              }}
+            >
+              <Trash2 size={12} /> Excluir
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const generatedCharts = charts.filter((c) => c.origin === 'generated')
+  const attachments = charts.filter((c) => c.origin === 'attachment')
 
   async function handleCompile() {
     setIsCompiling(true)
@@ -287,6 +465,21 @@ export function ReportDocumentEditor({
       </div>
 
       <Modal
+        isOpen={pendingDelete !== null}
+        title="Excluir imagem?"
+        message={
+          pendingDelete && texText.includes(pendingDelete.filename)
+            ? `"${pendingDelete.filename}" ainda é usada no .tex - remova a referência do documento antes de compilar, senão a compilação vai falhar (arquivo não encontrado).`
+            : `"${pendingDelete?.filename ?? ''}" será excluída permanentemente.`
+        }
+        confirmText="Excluir"
+        cancelText="Cancelar"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setPendingDelete(null)}
+        isDangerous
+      />
+
+      <Modal
         isOpen={showReassembleConfirm}
         title="Remontar o documento?"
         message="Isso substitui o texto atual do .tex por uma versão remontada do zero (mesmos dados da capa, seções e gráficos atuais) - qualquer edição manual feita aqui desde a última montagem será perdida."
@@ -328,50 +521,76 @@ export function ReportDocumentEditor({
       )}
 
       <div className="flex-1 flex gap-3 min-h-0">
-        <div
-          className={`shrink-0 border border-gray-200 rounded-lg bg-white overflow-hidden transition-all duration-200 ${
-            isPanelOpen ? 'w-56' : 'w-9'
-          }`}
-        >
-          <button
-            type="button"
-            onClick={() => setIsPanelOpen((v) => !v)}
-            className="w-full flex items-center justify-center gap-1 py-2 text-gray-500 hover:text-gray-700 hover:bg-gray-50 border-b border-gray-200"
-            aria-label={isPanelOpen ? 'Recolher imagens' : 'Expandir imagens'}
-          >
-            {isPanelOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
-            {isPanelOpen && <span className="text-xs font-medium">Imagens</span>}
-          </button>
-          {isPanelOpen && (
+        {/* Fechado = some por completo (sem faixa recolhida) - reabre pelo
+            botão de imagem da Sidebar (ReportImagesToggleButton.tsx). */}
+        {isPanelOpen && (
+          <div ref={panelRef} className="shrink-0 w-56 border border-gray-200 rounded-lg bg-white overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIsPanelOpen(false)}
+              className="w-full flex items-center justify-center gap-1 py-2 text-gray-500 hover:text-gray-700 hover:bg-gray-50 border-b border-gray-200"
+              aria-label="Recolher imagens"
+            >
+              <ChevronLeft size={16} />
+              <span className="text-xs font-medium">Imagens</span>
+            </button>
             <div className="p-2 space-y-2 overflow-y-auto" style={{ maxHeight: 'calc(100% - 2.25rem)' }}>
-              {charts.length === 0 && (
+              {imageError && (
+                <div className="flex items-start justify-between gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1">
+                  <p className="text-[10px] text-red-700">{imageError}</p>
+                  <button
+                    type="button"
+                    onClick={() => setImageError(null)}
+                    className="shrink-0 text-red-700"
+                    aria-label="Fechar aviso"
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              )}
+
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 px-1">Gráficos</p>
+              {generatedCharts.length === 0 && (
                 <p className="text-xs text-gray-400 px-1">Nenhum gráfico disponível para esta sessão.</p>
               )}
-              {charts.map((chart) => (
-                <button
-                  key={chart.filename}
-                  type="button"
-                  onClick={() => insertChartSnippet(chart)}
-                  title={`Inserir ${chart.caption} no cursor`}
-                  className="w-full text-left rounded-md border border-gray-200 hover:border-[#0f9448] transition-colors overflow-hidden"
-                >
-                  <img
-                    src={`data:image/png;base64,${chart.imageBase64}`}
-                    alt={chart.caption}
-                    className="w-full block"
-                  />
-                  <p className="text-[10px] text-gray-600 px-1.5 py-1 truncate">{chart.caption}</p>
-                </button>
-              ))}
+              {generatedCharts.map(renderImageCard)}
+
+              <div className="flex items-center justify-between border-t border-gray-200 pt-2 px-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Anexos</p>
+                <Tooltip label="Adicionar imagem (PNG ou JPG)" position="right">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    className="w-5 h-5 flex items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:border-[#0f9448] hover:text-[#0f9448] disabled:opacity-50"
+                    aria-label="Adicionar imagem"
+                  >
+                    <Plus size={12} />
+                  </button>
+                </Tooltip>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  className="hidden"
+                  onChange={handleUploadAttachment}
+                />
+              </div>
+              {isUploading && <p className="text-xs text-gray-400 px-1">Enviando...</p>}
+              {!isUploading && attachments.length === 0 && <p className="text-xs text-gray-400 px-1">Nenhum anexo.</p>}
+              {attachments.map(renderImageCard)}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className="relative flex-1 min-h-[60vh]">
           <textarea
             ref={textareaRef}
             value={texText}
             onChange={(e) => setTexText(e.target.value)}
+            onFocus={() => {
+              hasFocusedTextareaRef.current = true
+            }}
             spellCheck={false}
             disabled={isCompiling}
             className="w-full h-full rounded-lg border border-gray-300 bg-gray-50 p-4 font-mono text-xs text-gray-900 leading-relaxed focus:outline-none focus:border-[#0f9448] focus:ring-1 focus:ring-[#0f9448] resize-none disabled:opacity-70"

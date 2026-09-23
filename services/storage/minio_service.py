@@ -52,3 +52,6 @@ class MinioService:
 
     def delete_object(self, key: str) -> None:
         self._client.remove_object(self.bucket, key)
+
+    def list_keys(self, prefix: str) -> list[str]:
+        return [obj.object_name for obj in self._client.list_objects(self.bucket, prefix=prefix, recursive=True)]

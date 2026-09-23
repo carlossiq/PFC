@@ -41,15 +41,20 @@ async function withExistingCheck(
 // steps.ts): roda a inferência estatística (StatisticalInferenceService,
 // via services/inference.ts) sobre o compilado da busca final e, com o
 // resultado, gera os 3 pares de gráfico que não dependem de documentos
-// persistidos no banco (top depositantes/instituições, CPC/área de estudo,
+// persistidos no banco (top depositantes/instituições, IPC/área de estudo,
 // histórico de patentes/artigos) - a curva S (gerada em FinalResults.tsx,
-// substep anterior) já cobre o 4º par.
+// substep anterior) já cobre o 4º par. O campo `cpc` (aqui e em
+// StatisticalInferenceResult/OpsFinalAggregateResult) contém, na prática,
+// classificações IPC - a OPS nunca retorna CPC no endpoint de busca final
+// usado (ver ChatService._aggregate_ops_final_items) - ainda assim o
+// relatório trata essa distribuição como CPC (pedido explícito do usuário,
+// ver _CHART_CAPTIONS em report_document_router.py).
 //
 // Dedupe por assinatura (mesmo princípio de useFinalSCurve.ts): só roda de
 // novo se os resultados da busca final mudarem (ex.: usuário voltou e
 // regenerou a query final) - simplesmente reabrir esta tela não repete o
 // trabalho nem reenvia gráficos idênticos pro MinIO.
-export function useChartCreation(enabled: boolean) {
+export function useChartCreation(enabled: boolean, onNext: () => void) {
   const [stageMessage, setStageMessage] = useState('Preparando...')
   const [isDone, setIsDone] = useState(false)
   const [fatalError, setFatalError] = useState<string | null>(null)
@@ -72,6 +77,20 @@ export function useChartCreation(enabled: boolean) {
   // useFinalSCurve.ts (generatedForRef, marcado antes do run()).
   const startedForRef = useRef<string | null>(null)
   const requestIdRef = useRef(0)
+
+  // Dispara onNext() no máximo uma vez por assinatura - sem isso, voltar pra
+  // essa tela depois de já ter avançado (ex.: clicar "Voltar" em Geração de
+  // Relatório) reativa `enabled`, doneForRef já bate com a assinatura atual,
+  // isDone é setado pra true de novo e, se onNext fosse disparado a partir
+  // disso, avançaria sozinho de volta pro Relatório instantaneamente -
+  // parecendo que "Voltar" não funciona.
+  const notifiedForRef = useRef<string | null>(null)
+  function maybeAdvance() {
+    if (notifiedForRef.current !== signature) {
+      notifiedForRef.current = signature
+      onNext()
+    }
+  }
 
   async function run() {
     const requestId = ++requestIdRef.current
@@ -172,6 +191,7 @@ export function useChartCreation(enabled: boolean) {
 
       doneForRef.current = signature
       setIsDone(true)
+      maybeAdvance()
     } catch (err) {
       if (requestIdRef.current !== requestId) return
       console.error('Falha ao preparar a criação de gráficos:', err)
@@ -195,6 +215,7 @@ export function useChartCreation(enabled: boolean) {
     if (!hasPatent && !hasArticle) return
     if (doneForRef.current === signature) {
       setIsDone(true)
+      maybeAdvance()
       return
     }
     if (startedForRef.current === signature) return

@@ -572,7 +572,8 @@ class ReportService:
         ax.set_axisbelow(True)
         for spine in ("top", "right"):
             ax.spines[spine].set_visible(False)
-        ax.set_title(f"{label} por Ano", color=_COLOR_TEXT, fontsize=13, loc="left")
+        # Sem título desenhado: o título da figura vai no .tex, acima da imagem
+        # (ver _CHART_CAPTIONS em report_document_router.py).
         fig.tight_layout()
 
         return self._savefig_bytes(fig, dpi=_DPI)
@@ -677,12 +678,13 @@ class ReportService:
         ax_grid.set_ylim(0, rows)
         ax_grid.set_aspect("equal")
         ax_grid.axis("off")
-        ax_grid.set_title(title, color=_COLOR_TEXT, fontsize=13, loc="left")
+        # Sem título desenhado: o título da figura vai no .tex, acima da imagem
+        # (ver _CHART_CAPTIONS em report_document_router.py).
 
         threshold = float(np.percentile(values, 90)) if values else 0.0
         self._add_heatmap_gradient_legend(ax_legend, cmap, norm, threshold)
 
-        fig.subplots_adjust(left=0.02, right=0.98, top=0.90, bottom=0.16)
+        fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.16)
 
         return self._savefig_bytes(fig, dpi=_DPI_HEATMAP)
 
@@ -833,8 +835,9 @@ class ReportService:
             handles=handles, loc="center left", bbox_to_anchor=(1.14, 0.5),
             frameon=False, fontsize=9, handlelength=1.6,
         )
-        ax1.set_title(f"Curva S e Evolução Temporal — {label}", color=_COLOR_TEXT, fontsize=13, loc="left")
-        fig.subplots_adjust(left=0.09, right=0.78, top=0.9, bottom=0.12)
+        # Sem título desenhado: o título da figura vai no .tex, acima da imagem
+        # (ver _CHART_CAPTIONS em report_document_router.py).
+        fig.subplots_adjust(left=0.09, right=0.78, top=0.97, bottom=0.12)
 
         # bbox_inches="tight" - a legenda fica fora da área dos eixos (à
         # direita), então sem isso o savefig corta o texto na borda da
@@ -905,7 +908,8 @@ class ReportService:
         ax.set_axisbelow(True)
         for spine in ("top", "right", "left"):
             ax.spines[spine].set_visible(False)
-        ax.set_title(f"{title} — {label}", color=_COLOR_TEXT, fontsize=13, loc="left")
+        # Sem título desenhado: o título da figura vai no .tex, acima da imagem
+        # (ver _CHART_CAPTIONS em report_document_router.py).
         fig.tight_layout()
 
         return self._savefig_bytes(fig, dpi=_DPI)

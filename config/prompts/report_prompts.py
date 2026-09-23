@@ -202,6 +202,10 @@ def _informacoes_tecnologicas_prompt(context: str, data: dict) -> str:
     """Prompt for Informações Tecnológicas (Technological Information) section."""
     patent_count = data.get("patent_count", "não especificado")
     top_applicants = data.get("top_applicants", [])
+    # Conteúdo vem de IPC (a OPS não retorna CPC no endpoint /search/biblio
+    # usado pela busca final, ver ChatService._aggregate_ops_final_items),
+    # mas o relatório trata essa distribuição como CPC - pedido explícito do
+    # usuário (mesma nomenclatura das figuras, ver _CHART_CAPTIONS).
     top_cpcs = data.get("top_cpc_codes", [])
 
     applicants_text = (
@@ -224,7 +228,7 @@ Analise e descreva:
 4. Evolução temporal dos depósitos
 5. Distribuição geográfica das patentes
 
-Explique o significado das classificações CPC. Use dados do contexto para fundamentar.
+Explique o significado das classificações CPC (Classificação Cooperativa de Patentes). Use dados do contexto para fundamentar. Se algum dos itens acima não tiver dado disponível, diga isso claramente em vez de inventar.
 
 Escreva 4-5 parágrafos estruturados."""
 

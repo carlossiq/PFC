@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from core.config import Settings
+from core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def build_container(settings: Settings) -> dict[str, Any]:

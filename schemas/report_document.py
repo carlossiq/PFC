@@ -191,6 +191,9 @@ class ReportChartItem(BaseModel):
     chart_type: str
     document_type: str
     caption: str
+    # "generated" = gráfico criado pelo sistema (não pode ser excluído no
+    # editor); "attachment" = imagem avulsa enviada pelo usuário.
+    origin: str = "generated"
 
 
 class ReportChartsResponse(BaseModel):

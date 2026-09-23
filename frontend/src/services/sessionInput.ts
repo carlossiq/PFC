@@ -126,8 +126,14 @@ export function buildProbeQueryPayload(
     complexity_level: selected.complexity?.level ?? null,
     iterations: iterations + 1,
     result_count: resultCount,
-    patents: fonte === 'ops' && tipo === null ? rawItems : [],
-    articles: fonte === 'scopus' && tipo === null ? rawItems : [],
+    // patents/articles: sem o `tipo === null` que existia antes - tanto a
+    // linha probe (tipo=null) quanto a linha final (tipo=variante) podem
+    // carregar documentos reais agora, pra alimentar o RAG do relatório
+    // (ver ChatService.run_final_search/ReportWriterService.ensure_session_indexed).
+    // `terms` continua exclusivo da probe: amostragem de termos não existe
+    // pro lado final.
+    patents: fonte === 'ops' ? rawItems : [],
+    articles: fonte === 'scopus' ? rawItems : [],
     terms: tipo === null ? buildTermsPayload(terms, selectedTerms) : [],
   }
 }
@@ -221,11 +227,11 @@ export interface SaveSessionFormState {
   step4PatentSelectedVariant: FinalQueryVariant
   step4PatentQuery: QueryOptionResult | null
   step4PatentQueryIterations: number
-  step4PatentResults: { resultsCount: number } | null
+  step4PatentResults: { resultsCount: number; rawItems: Record<string, unknown>[] } | null
   step4ArticleSelectedVariant: FinalQueryVariant
   step4ArticleQuery: QueryOptionResult | null
   step4ArticleQueryIterations: number
-  step4ArticleResults: { resultsCount: number } | null
+  step4ArticleResults: { resultsCount: number; rawItems: Record<string, unknown>[] } | null
   aiCallLog: AiUsage[]
 }
 
@@ -298,7 +304,7 @@ export function buildSaveSessionPayload(
     'ops',
     formState.step4PatentQueryIterations,
     formState.step4PatentResults?.resultsCount ?? null,
-    [],
+    formState.step4PatentResults?.rawItems ?? [],
     formState.step4PatentSelectedVariant,
   )
   const articleFinalQuery = buildProbeQueryPayload(
@@ -306,7 +312,7 @@ export function buildSaveSessionPayload(
     'scopus',
     formState.step4ArticleQueryIterations,
     formState.step4ArticleResults?.resultsCount ?? null,
-    [],
+    formState.step4ArticleResults?.rawItems ?? [],
     formState.step4ArticleSelectedVariant,
   )
 

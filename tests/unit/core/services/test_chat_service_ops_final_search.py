@@ -55,12 +55,38 @@ def _base_query() -> dict:
     return {"query": '(TITLE:"heart") AND (pd within "20200101 20201231")'}
 
 
+# Itens no formato COMPLETO (OPSService._extract_biblio_fields, mesma
+# extração da probe - ver ChatService._search_abstract_with_retry) - não
+# mais o formato enxuto descontinuado (title/applicants/cpc/year). "year" é
+# derivado de "publication_date" (formato "YYYYMMDD") por
+# ChatService._ops_item_year, não uma chave própria do item.
+def _item(
+    title: str,
+    applicants: list[str],
+    cpc_classifications: list[str],
+    publication_date: str,
+    abstract: str = "Some abstract text.",
+    inventors: Optional[list[str]] = None,
+) -> dict:
+    return {
+        "invention_title": title,
+        "abstract": abstract,
+        "applicants": applicants,
+        "inventors": inventors or [],
+        "cpc_classifications": cpc_classifications,
+        "ipc_classifications": [],
+        "publication_date": publication_date,
+        "docdb_id": "US.123456.A1",
+        "family_id": "12345",
+    }
+
+
 @pytest.mark.asyncio
 async def test_run_ops_final_search_uses_range_strategy_when_total_is_small():
     svc = _svc()
     items = [
-        {"applicants": ["Acme Corp"], "cpc": ["B64G 1/2222"], "title": "t1", "year": 2020},
-        {"applicants": ["Globex Inc"], "cpc": ["H02S 10/40"], "title": "t2", "year": 2021},
+        _item("t1", ["Acme Corp"], ["B64G 1/2222"], "20200615"),
+        _item("t2", ["Globex Inc"], ["H02S 10/40"], "20210301"),
     ]
     adapter = FakeOpsAdapter(total_count=50, items_per_start={1: items})
 
@@ -72,6 +98,7 @@ async def test_run_ops_final_search_uses_range_strategy_when_total_is_small():
     assert compiled["cpc"] == {"B64G": 1, "H02S": 1}
     assert compiled["title"] == ["t1", "t2"]
     assert compiled["patents_by_year"] == {2020: 1, 2021: 1}
+    assert compiled["raw_items"] == items
     # range strategy: uma única página (50 < 100), sem paginação por ano.
     assert len(adapter.fetch_calls) == 1
     assert adapter.fetch_calls[0][0] == 1
@@ -80,7 +107,7 @@ async def test_run_ops_final_search_uses_range_strategy_when_total_is_small():
 @pytest.mark.asyncio
 async def test_run_ops_final_search_range_strategy_ignores_iteration():
     svc = _svc()
-    items = [{"applicants": ["Acme Corp"], "cpc": [], "title": "t1", "year": 2020}]
+    items = [_item("t1", ["Acme Corp"], [], "20200101")]
     adapter_it0 = FakeOpsAdapter(total_count=50, items_per_start={1: items})
     adapter_it1 = FakeOpsAdapter(total_count=50, items_per_start={1: items})
 
@@ -101,8 +128,8 @@ async def test_run_ops_final_search_uses_year_strategy_when_total_is_large():
     adapter = FakeOpsAdapter(
         total_count=5000,
         year_data={
-            2019: (2000, {1: [{"applicants": ["Acme Corp"], "cpc": ["B64G 1/2222"], "title": "a", "year": 2019}]}),
-            2020: (3000, {1: [{"applicants": ["Globex Inc"], "cpc": ["H02S 10/40"], "title": "b", "year": 2020}]}),
+            2019: (2000, {1: [_item("a", ["Acme Corp"], ["B64G 1/2222"], "20190101")]}),
+            2020: (3000, {1: [_item("b", ["Globex Inc"], ["H02S 10/40"], "20200101")]}),
         },
     )
 
@@ -127,8 +154,8 @@ async def test_run_ops_final_search_year_strategy_iteration_selects_next_window(
             2020: (
                 3000,
                 {
-                    1: [{"applicants": ["Acme Corp"], "cpc": [], "title": "page0", "year": 2020}],
-                    101: [{"applicants": ["Globex Inc"], "cpc": [], "title": "page1", "year": 2020}],
+                    1: [_item("page0", ["Acme Corp"], [], "20200101")],
+                    101: [_item("page1", ["Globex Inc"], [], "20200101")],
                 },
             ),
         },
@@ -156,13 +183,14 @@ async def test_run_ops_final_search_falls_back_when_total_count_unavailable():
     assert compiled["patents_by_year"] == {}
     assert compiled["depositants"] == {}
     assert compiled["title"] == []
+    assert compiled["raw_items"] == []
     assert len(adapter.fetch_calls) == 1
 
 
 @pytest.mark.asyncio
 async def test_run_final_search_ops_returns_aggregated_shape_with_strategy():
     svc = ChatService(
-        llm=None,
+        llm_resolver=None,
         patent_pairs=[(FakeOpsAdapter(total_count=10, items_per_start={1: []}), None)],
         scholarly_pairs=[],
         settings=Settings(),
@@ -173,6 +201,6 @@ async def test_run_final_search_ops_returns_aggregated_shape_with_strategy():
     assert result["success"] is True
     assert result["api"] == "ops"
     assert set(result) == {
-        "success", "api", "depositants", "cpc", "title", "patents_by_year", "strategy", "error",
+        "success", "api", "depositants", "cpc", "title", "patents_by_year", "strategy", "raw_items", "error",
     }
     assert "results" not in result

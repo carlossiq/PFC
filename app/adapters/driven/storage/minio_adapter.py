@@ -18,5 +18,8 @@ class MinioStorageAdapter:
     async def delete(self, key: str) -> None:
         await asyncio.to_thread(self._service.delete_object, key)
 
+    async def list_keys(self, prefix: str) -> list[str]:
+        return await asyncio.to_thread(self._service.list_keys, prefix)
+
     async def ensure_bucket(self) -> None:
         await asyncio.to_thread(self._service.ensure_bucket)

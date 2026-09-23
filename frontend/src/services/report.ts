@@ -558,28 +558,88 @@ export async function getReportDocument(sessionId: number): Promise<ReportDocume
   }
 }
 
+// "generated" = gráfico criado pelo sistema (não pode ser excluído);
+// "attachment" = imagem avulsa enviada pelo usuário no editor do .tex.
+export type ReportChartOrigin = 'generated' | 'attachment'
+
 export interface ReportChart {
   filename: string
   imageBase64: string
   chartType: string
   documentType: string
   caption: string
+  origin: ReportChartOrigin
 }
 
-// Gráficos já gerados pra busca final dessa sessão, com o PNG em base64 -
-// alimenta o painel lateral de imagens da tela de edição do .tex.
+interface RawReportChart {
+  filename: string
+  image_base64: string
+  chart_type: string
+  document_type: string
+  caption: string
+  origin?: ReportChartOrigin
+}
+
+function mapReportChart(c: RawReportChart): ReportChart {
+  return {
+    filename: c.filename,
+    imageBase64: c.image_base64,
+    chartType: c.chart_type,
+    documentType: c.document_type,
+    caption: c.caption,
+    origin: c.origin ?? 'generated',
+  }
+}
+
+// Gráficos já gerados pra busca final dessa sessão + anexos enviados pelo
+// usuário, com a imagem em base64 - alimenta o painel lateral de imagens da
+// tela de edição do .tex.
 export async function getReportCharts(sessionId: number): Promise<ReportChart[]> {
   const { data } = await apiClient.get(`/report/${sessionId}/charts`)
   if (!data.success) throw new Error(data.message || 'Falha ao buscar os gráficos do relatório.')
-  return (data.data.charts ?? []).map(
-    (c: { filename: string; image_base64: string; chart_type: string; document_type: string; caption: string }) => ({
-      filename: c.filename,
-      imageBase64: c.image_base64,
-      chartType: c.chart_type,
-      documentType: c.document_type,
-      caption: c.caption,
-    })
-  )
+  return (data.data.charts ?? []).map(mapReportChart)
+}
+
+// Sem Content-Type explícito pelo mesmo motivo de uploadReportCoverImage
+// (config.ts): o navegador precisa setar o boundary do multipart sozinho.
+export async function uploadReportAttachment(sessionId: number, file: File): Promise<ReportChart> {
+  const formData = new FormData()
+  formData.append('file', file, file.name)
+  const { data } = await apiClient.post(`/report/${sessionId}/attachments`, formData, {
+    headers: { 'Content-Type': undefined },
+  })
+  if (!data.success) throw new Error(data.message || 'Falha ao enviar a imagem.')
+  return mapReportChart(data.data)
+}
+
+export async function deleteReportAttachment(sessionId: number, filename: string): Promise<void> {
+  const { data } = await apiClient.delete(`/report/${sessionId}/attachments/${encodeURIComponent(filename)}`)
+  if (!data.success) throw new Error(data.message || 'Falha ao excluir a imagem.')
+}
+
+function reportImageBlobUrl(chart: Pick<ReportChart, 'filename' | 'imageBase64'>): string {
+  const byteChars = atob(chart.imageBase64)
+  const bytes = new Uint8Array(byteChars.length)
+  for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i)
+  const type = /\.jpe?g$/i.test(chart.filename) ? 'image/jpeg' : 'image/png'
+  return URL.createObjectURL(new Blob([bytes], { type }))
+}
+
+// Mesma ideia de openReportPdf: a URL do blob não é revogada, a nova aba
+// ainda pode estar carregando a imagem quando esta função retorna.
+export function openReportImage(chart: ReportChart): void {
+  window.open(reportImageBlobUrl(chart), '_blank')
+}
+
+export function downloadReportImage(chart: ReportChart): void {
+  const objectUrl = reportImageBlobUrl(chart)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = chart.filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(objectUrl)
 }
 
 // Baixa o PDF já compilado (persistido por /compile-pdf) - usado por

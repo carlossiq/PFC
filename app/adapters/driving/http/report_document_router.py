@@ -19,10 +19,13 @@ Nenhuma rota aqui toca nos dados/rotas de app/adapters/driving/http/report_route
 from __future__ import annotations
 
 import base64
+import io
+import re
+import unicodedata
 from collections import Counter
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,7 +38,14 @@ from app.core.services.report_writer_service import (
     latex_comment,
 )
 from app.core.services.report_cover_image import REPORT_COVER_IMAGE_FILENAME, REPORT_COVER_IMAGE_OBJECT_KEY
-from config.prompts.report_static_sections import DEFAULT_BIBLIOGRAPHY, DEFAULT_SIGNATURES, render_metodologia
+from app.core.services.report_static_figures import REPORT_STATIC_FIGURES
+from config.prompts.report_static_sections import (
+    DEFAULT_BIBLIOGRAPHY,
+    DEFAULT_SIGNATURES,
+    legacy_metodologia_to_paragraph,
+    merge_bibliography,
+    render_metodologia,
+)
 from core.config import settings
 from core.logging import get_logger
 from db.research_session_models import (
@@ -73,31 +83,31 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/report", tags=["report-document"])
 
+# Título de cada figura no .tex (acima da imagem - a imagem em si não tem
+# título desenhado, ver report_service.py) e, ao mesmo tempo, a LISTA DE
+# GRÁFICOS PERMITIDOS no relatório: SessionChart pode ter linhas de
+# chart_type fora daqui (ex.: top_inventors/top_authors/geographic_
+# distribution do pipeline antigo de POST /report/{id}/graphics, gerados em
+# sessões anteriores à remoção dele) - essas nunca entram no .tex nem no
+# painel de imagens do editor (ver _is_report_chart).
+# A distribuição de classificações de patentes é tratada como CPC no texto
+# do relatório (pedido explícito do usuário), mesmo sendo IPC na origem (a
+# OPS não devolve CPC na busca final, ver ChatService._aggregate_ops_final_items).
 _CHART_CAPTIONS: dict[tuple[str, str], str] = {
     ("patent", "s_curve"): "Curva S e Evolução Temporal — Patentes",
     ("article", "s_curve"): "Curva S e Evolução Temporal — Artigos",
-    # chart_type real gerado por useChartCreation.ts (generateTopEntitiesChart)
-    # - "top_applicants"/"top_authors" abaixo são de um pipeline mais antigo
-    # (ReportService.generate_session_report, POST /report/{id}/graphics),
-    # não usado pelo checklist atual; sem essas duas chaves, o caption caía
-    # no fallback (chart.chart_type cru, com "_") sem escape_latex - LaTeX
-    # trata "_" fora de modo matemático como início de subscrito e quebra a
-    # compilação (era exatamente esse o bug reportado).
-    ("patent", "top_depositants"): "Top Depositantes",
-    ("article", "top_institutions"): "Top Instituições",
-    ("patent", "top_applicants"): "Top Depositantes",
-    ("patent", "top_inventors"): "Top Inventores",
-    ("article", "top_authors"): "Top Autores",
-    ("article", "top_journals"): "Top Periódicos",
-    ("patent", "cpc_distribution"): "Distribuição por CPC",
-    ("patent", "ipc_distribution"): "Distribuição por IPC",
-    ("article", "field_of_study_distribution"): "Distribuição por Área de Estudo",
-    ("patent", "geographic_distribution"): "Distribuição Geográfica — Patentes",
-    ("article", "geographic_distribution"): "Distribuição Geográfica — Artigos",
+    ("patent", "top_depositants"): "Top 10 Depositantes",
+    ("article", "top_institutions"): "Top 10 Instituições",
     ("patent", "yearly_volume"): "Patentes por Ano",
-    ("patent", "top10_heatmap"): "Top 10 — Patentes",
-    ("article", "top10_heatmap"): "Top 10 — Artigos",
+    ("article", "yearly_volume"): "Artigos por Ano",
+    ("patent", "top10_heatmap"): "Top 10 Classificações (CPC)",
+    ("article", "top10_heatmap"): "Top 10 Áreas de Estudo",
 }
+
+
+def _is_report_chart(chart: SessionChart) -> bool:
+    return (chart.document_type, chart.chart_type) in _CHART_CAPTIONS
+
 
 
 def _writer(request: Request) -> ReportWriterService:
@@ -137,6 +147,47 @@ async def _cover_image_exists(storage) -> bool:
         return True
     except Exception:
         return False
+
+
+# Anexos: imagens avulsas que o usuário sobe no painel "Imagens" do editor
+# do .tex (subpainel "Anexos") pra referenciar à mão no documento - ficam só
+# no MinIO, sob um prefixo por sessão (sem tabela própria: a listagem é o
+# próprio conteúdo do prefixo). Diferente dos gráficos gerados, podem ser
+# excluídos pelo usuário.
+_ATTACHMENT_EXTENSIONS = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg"}
+_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
+_ATTACHMENT_FILENAME_RE = re.compile(r"^anexo-[a-z0-9-]+\.(png|jpg|jpeg)$")
+
+
+def _attachments_prefix(session_id: int) -> str:
+    return f"sessions/{session_id}/report/attachments/"
+
+
+async def _list_attachment_keys(storage, session_id: int) -> list[str]:
+    try:
+        return sorted(await storage.list_keys(_attachments_prefix(session_id)))
+    except Exception as exc:
+        logger.warning("report_attachments_list_failed", session_id=session_id, error=str(exc))
+        return []
+
+
+def _attachment_filename(original: str, taken: set[str]) -> str:
+    """Nome seguro pro \\includegraphics: "anexo-<slug>.<ext>" (só
+    [a-z0-9-], sem espaço/acento/"_"), com sufixo numérico se já existir
+    - o prefixo "anexo-" também impede colisão com os PNGs dos gráficos
+    gerados, que dividem o mesmo diretório de compilação."""
+    stem, _, ext = original.rpartition(".")
+    ext = ext.lower()
+    if not stem or ext not in _ATTACHMENT_EXTENSIONS:
+        raise HTTPException(status_code=422, detail="Formato não suportado - envie uma imagem PNG ou JPG.")
+    ascii_stem = unicodedata.normalize("NFKD", stem).encode("ascii", "ignore").decode("ascii").lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_stem).strip("-")[:50] or "imagem"
+    candidate = f"anexo-{slug}.{ext}"
+    counter = 2
+    while candidate in taken:
+        candidate = f"anexo-{slug}-{counter}.{ext}"
+        counter += 1
+    return candidate
 
 
 async def _detect_databases_used(session: AsyncSession, session_id: int) -> list[str]:
@@ -197,7 +248,12 @@ def _patent_to_rag_dict(patent: Patent) -> dict[str, Any]:
         "abstract": patent.abstract,
         "year": patent.year,
         "applicants": patent.applicants,
+        # Inventores (pessoa), não depositantes (empresa) - usado pra
+        # citação de autoria no texto gerado (ver
+        # ReportWriterService._build_source_citation/ensure_session_indexed).
+        "inventors": patent.inventors,
         "cpc_codes": patent.cpc_codes,
+        "ipc_codes": patent.ipc_codes,
         "country": patent.country,
     }
 
@@ -239,7 +295,11 @@ def _build_report_data(
         "patent_count": len(patents),
         "article_count": len(articles),
         "top_applicants": [{"name": v} for v in _top_values(patents, "applicants", True)],
-        "top_cpc_codes": _top_values(patents, "cpc_codes", True),
+        # "top_cpc_codes" é lido de ipc_codes de propósito - patent.cpc_codes
+        # fica sempre vazio (a OPS não retorna CPC nesse endpoint, só IPC;
+        # ver ChatService._aggregate_ops_final_items). Chave preservada por
+        # compatibilidade com SectionGenerateOverrides.top_cpc_codes.
+        "top_cpc_codes": _top_values(patents, "ipc_codes", True),
         "top_journals": [{"journal": v} for v in _top_values(articles, "journal_or_source", False)],
         "top_fields": _top_values(articles, "field_of_study", True),
     }
@@ -309,17 +369,19 @@ def _merge_signatures(payload: Optional[SignaturesInput]) -> dict[str, Any]:
     return merged
 
 
-def _quadro_busca_line(label: str, query: Optional[str], count: Optional[int]) -> str:
-    """Uma linha `\\item` inteira (já pronta, não só o valor) do quadro de
-    busca (patentes OU artigos) - precisa ser a linha INTEIRA porque, se só
-    o valor virasse `% ...`, o `%` comentaria também o resto da linha
-    (inclusive o item da outra fonte, se estivessem na mesma linha do
-    template como antes - ver config/prompts/report_latex_template.py).
-    "Disponível" exige query E contagem juntos - só um dos dois não é
-    informação suficiente pra valer a pena mostrar como se fosse real."""
+def _format_count_pt(count: int) -> str:
+    """1800 -> "1.800" (separador de milhar pt-BR)."""
+    return f"{count:,}".replace(",", ".")
+
+
+def _quadro_busca_cell(label: str, query: Optional[str], count: Optional[int]) -> str:
+    """Conteúdo (já escapado) de uma célula do Quadro de estratégias de
+    busca - "Patentes (1.800) = <query>". "Disponível" exige query E
+    contagem juntos - só um dos dois não é informação suficiente pra valer
+    a pena mostrar como se fosse real; sem isso a célula fica com "—"."""
     if not query or count is None:
-        return "    " + latex_comment(label)
-    return f"    \\item {label}: {escape_latex(query)} ({count})"
+        return "—"
+    return f"{label} ({_format_count_pt(count)}) = {escape_latex(query)}"
 
 
 def _validate_ai_section_key(section_key: str) -> None:
@@ -553,6 +615,8 @@ async def _assemble_document(
     charts_ciclo_vida: list[dict[str, str]] = []
     chart_object_keys: list[str] = []
     for chart in charts_result.scalars().all():
+        if not _is_report_chart(chart):
+            continue
         # Confere ANTES de referenciar no .tex - SessionChart.object_key
         # pode apontar pra um objeto que não existe mais no MinIO (dados
         # apagados/resetados fora de banda, por exemplo) - sem essa
@@ -571,12 +635,7 @@ async def _assemble_document(
             )
             continue
 
-        # escape_latex mesmo pras legendas fixas do dict acima (nunca custam
-        # nada erradas) - principalmente pro fallback (chart.chart_type cru),
-        # que pode ter "_"/outros caracteres especiais de LaTeX se um
-        # chart_type novo for adicionado no futuro sem entrar em
-        # _CHART_CAPTIONS.
-        caption = escape_latex(_CHART_CAPTIONS.get((chart.document_type, chart.chart_type), chart.chart_type))
+        caption = escape_latex(_CHART_CAPTIONS[(chart.document_type, chart.chart_type)])
         entry = {"filename": chart.object_key.rsplit("/", 1)[-1], "caption": caption}
         chart_object_keys.append(chart.object_key)
         if chart.chart_type == "s_curve":
@@ -595,8 +654,8 @@ async def _assemble_document(
         qb = payload.quadro_busca
         if any((qb.patente_query, qb.patente_count is not None, qb.artigo_query, qb.artigo_count is not None)):
             quadro_busca = {
-                "patente_line": _quadro_busca_line("Depósito de Patentes", qb.patente_query, qb.patente_count),
-                "artigo_line": _quadro_busca_line("Publicações Científicas", qb.artigo_query, qb.artigo_count),
+                "patente": _quadro_busca_cell("Patentes", qb.patente_query, qb.patente_count),
+                "artigo": _quadro_busca_cell("Artigos", qb.artigo_query, qb.artigo_count),
             }
 
     # Decide se o bloco da imagem de capa entra no .tex (estrutura, fixada
@@ -609,7 +668,13 @@ async def _assemble_document(
     # .tex já referencia esse arquivo.
     has_cover_image = await _cover_image_exists(storage)
 
-    ref_biblio_text = _text("referencias_bibliograficas")
+    # Obras fixas SEMPRE entram (merge_bibliography) - sessões montadas
+    # antes de a Metodologia completa ir pro template persistiram só as 3
+    # obras que o texto antigo citava.
+    stored_biblio = sections_by_key.get("referencias_bibliograficas")
+    stored_biblio_refs = (
+        stored_biblio.generated_text.split("\n") if stored_biblio and stored_biblio.generated_text else []
+    )
     context = {
         "numero": escape_latex(payload.numero),
         "ano": escape_latex(payload.ano),
@@ -619,7 +684,7 @@ async def _assemble_document(
         "objetivo": _text("objetivo"),
         "introducao": _text("introducao"),
         "referencias_administrativas": [escape_latex(ref) for ref in payload.referencias_administrativas],
-        "metodologia": _text("metodologia"),
+        "metodologia": legacy_metodologia_to_paragraph(_text("metodologia")),
         "quadro_busca": quadro_busca,
         "informacoes_cientificas": _text("informacoes_cientificas"),
         "informacoes_tecnologicas": _text("informacoes_tecnologicas"),
@@ -628,7 +693,9 @@ async def _assemble_document(
         "charts_tecnologicas": charts_tecnologicas,
         "charts_ciclo_vida": charts_ciclo_vida,
         "conclusao": _text("conclusao"),
-        "referencias_bibliograficas": ref_biblio_text.split("\n") if ref_biblio_text else [],
+        "referencias_bibliograficas": merge_bibliography(
+            [escape_latex(ref) for ref in DEFAULT_BIBLIOGRAPHY], stored_biblio_refs
+        ),
         "assinaturas": _merge_signatures(payload.assinaturas),
     }
 
@@ -743,6 +810,8 @@ async def compile_report_pdf(
     storage = _storage(request)
     image_object_keys: list[str] = []
     for chart in charts_result.scalars().all():
+        if not _is_report_chart(chart):
+            continue
         candidate_key = f"sessions/{session_id}/report/{chart.object_key.rsplit('/', 1)[-1]}"
         # Confere que o "recorte" da imagem pra essa sessão (feito em
         # /assemble) realmente existe antes de mandar pro compilador -
@@ -771,6 +840,17 @@ async def compile_report_pdf(
     # pdflatex não reclama de arquivo extra não referenciado.
     if await _cover_image_exists(storage):
         image_object_keys.append(REPORT_COVER_IMAGE_OBJECT_KEY)
+
+    # Figuras fixas da Metodologia (madeo/kucharavy, chaves globais - ver
+    # report_static_figures.py) e anexos enviados pelo usuário no editor -
+    # mesmo raciocínio da capa: arquivo extra não referenciado não atrapalha.
+    for object_key in REPORT_STATIC_FIGURES.values():
+        try:
+            await storage.download(object_key)
+            image_object_keys.append(object_key)
+        except Exception as exc:
+            logger.warning("report_static_figure_missing_at_compile", object_key=object_key, error=str(exc))
+    image_object_keys.extend(await _list_attachment_keys(storage, session_id))
 
     latex_svc = _latex_svc(request)
     result = await latex_svc.compile_pdf(session_id, report_row.tex_object_key, image_object_keys)
@@ -881,20 +961,104 @@ async def get_report_charts(
     storage = _storage(request)
     items: list[ReportChartItem] = []
     for chart in charts_result.scalars().all():
+        if not _is_report_chart(chart):
+            continue
         try:
             png_bytes = await storage.download(chart.object_key)
         except Exception as exc:
             logger.warning("report_chart_download_failed", session_id=session_id, object_key=chart.object_key, error=str(exc))
             continue
-        caption = _CHART_CAPTIONS.get((chart.document_type, chart.chart_type), chart.chart_type)
         items.append(
             ReportChartItem(
                 filename=chart.object_key.rsplit("/", 1)[-1],
                 image_base64=base64.b64encode(png_bytes).decode("ascii"),
                 chart_type=chart.chart_type,
                 document_type=chart.document_type,
-                caption=caption,
+                caption=_CHART_CAPTIONS[(chart.document_type, chart.chart_type)],
+                origin="generated",
+            )
+        )
+
+    for object_key in await _list_attachment_keys(storage, session_id):
+        filename = object_key.rsplit("/", 1)[-1]
+        try:
+            data = await storage.download(object_key)
+        except Exception as exc:
+            logger.warning("report_attachment_download_failed", session_id=session_id, object_key=object_key, error=str(exc))
+            continue
+        items.append(
+            ReportChartItem(
+                filename=filename,
+                image_base64=base64.b64encode(data).decode("ascii"),
+                chart_type="attachment",
+                document_type="attachment",
+                caption=filename,
+                origin="attachment",
             )
         )
 
     return SuccessResponse(data=ReportChartsResponse(charts=items))
+
+
+@router.post("/{session_id}/attachments", response_model=SuccessResponse[ReportChartItem])
+async def upload_report_attachment(
+    session_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[ReportChartItem]:
+    """Sobe uma imagem avulsa (anexo) pro painel de imagens do editor do
+    .tex - fica disponível pra inserir no documento e é enviada ao
+    compilador junto dos gráficos (ver compile_report_pdf)."""
+    await _get_session_or_404(session, session_id)
+    raw_bytes = await file.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=422, detail="Arquivo vazio.")
+    if len(raw_bytes) > _ATTACHMENT_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Imagem maior que 10 MB.")
+
+    storage = _storage(request)
+    taken = {key.rsplit("/", 1)[-1] for key in await _list_attachment_keys(storage, session_id)}
+    filename = _attachment_filename(file.filename or "", taken)
+    try:
+        from PIL import Image
+
+        Image.open(io.BytesIO(raw_bytes)).verify()
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="Arquivo enviado não é uma imagem válida.") from exc
+
+    await storage.upload(
+        _attachments_prefix(session_id) + filename, raw_bytes, _ATTACHMENT_EXTENSIONS[filename.rsplit(".", 1)[-1]]
+    )
+    logger.info("report_attachment_uploaded", session_id=session_id, filename=filename)
+    return SuccessResponse(
+        data=ReportChartItem(
+            filename=filename,
+            image_base64=base64.b64encode(raw_bytes).decode("ascii"),
+            chart_type="attachment",
+            document_type="attachment",
+            caption=filename,
+            origin="attachment",
+        )
+    )
+
+
+@router.delete("/{session_id}/attachments/{filename}", response_model=SuccessResponse[dict[str, str]])
+async def delete_report_attachment(
+    session_id: int,
+    filename: str,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict[str, str]]:
+    """Exclui um anexo - só anexos (nome "anexo-..."), nunca os gráficos
+    gerados pelo sistema nem as figuras fixas da Metodologia."""
+    await _get_session_or_404(session, session_id)
+    if not _ATTACHMENT_FILENAME_RE.match(filename):
+        raise HTTPException(status_code=422, detail="Só anexos enviados pelo usuário podem ser excluídos.")
+    storage = _storage(request)
+    object_key = _attachments_prefix(session_id) + filename
+    if object_key not in await _list_attachment_keys(storage, session_id):
+        raise HTTPException(status_code=404, detail="Anexo não encontrado.")
+    await storage.delete(object_key)
+    logger.info("report_attachment_deleted", session_id=session_id, filename=filename)
+    return SuccessResponse(data={"filename": filename})

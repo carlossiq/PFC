@@ -4,7 +4,6 @@ Search service for Scopus API with pagination.
 
 import asyncio
 import time
-from dataclasses import replace
 from typing import Any, Optional
 
 import httpx
@@ -16,13 +15,14 @@ from services.search.base import SearchError, SearchResult
 logger = get_logger(__name__)
 
 
-def _extract_final_fields(entry: dict[str, Any]) -> dict[str, Any]:
+def extract_scopus_final_fields(entry: dict[str, Any]) -> dict[str, Any]:
     """
-    Extração enxuta (title/institutions/year) usada só pela busca final (ver
-    ScopusService.fetch_results_page) - dedicada, não a mesma usada pela
-    probe (que devolve o entry inteiro pra enriquecimento via OpenAlex em
-    ChatService._enrich_scopus_abstracts), pra não arriscar mudar o
-    comportamento dela.
+    Deriva title/institutions/year de um entry BRUTO da Scopus - usada por
+    ChatService._aggregate_scopus_final_items no momento da agregação (não
+    mais dentro de fetch_results_page: o entry bruto agora sobrevive até lá,
+    ver docstring de fetch_results_page, pra dc:creator/prism:doi não se
+    perderem antes do enriquecimento via OpenAlex e da persistência pro RAG
+    do relatório).
 
     "affilname" é o campo confirmado contra resposta real desta API key -
     diferente de "organization", usado sem confirmação em
@@ -391,7 +391,7 @@ class ScopusService:
         pra decidir range vs ano ANTES de buscar de verdade, e pra contar
         cada área de estudo via SUBJAREA(CODE) (ver
         ChatService._run_scopus_area_of_study_counts). Não faz sentido
-        aplicar _extract_final_fields aqui - o único dado que importa é
+        aplicar extract_scopus_final_fields aqui - o único dado que importa é
         total_count, e count=1 já limita a 1 item bruto na resposta.
         """
         return await self._search_page(query_params, start=0, count=1, run_id=run_id)
@@ -404,21 +404,28 @@ class ScopusService:
         run_id: Optional[str] = None,
     ) -> SearchResult:
         """
-        Busca UMA página de até _FINAL_SEARCH_PAGE_SIZE resultados já com a
-        extração enxuta da busca final (title/institutions/year, ver
-        _extract_final_fields) - mesma ideia de OPSService.search_biblio_page,
-        adaptada: aqui a extração roda depois da resposta bruta (a Scopus já
-        devolve JSON plano, sem o parsing XML/aninhado que a OPS precisa),
-        não injetada no parser via extract_json_fn/extract_xml_fn.
+        Busca UMA página de até _FINAL_SEARCH_PAGE_SIZE resultados da busca
+        final - devolve os entries BRUTOS da Scopus (mesmo formato que
+        search(), usado pela probe: dc:title/dc:creator/prism:doi/
+        affiliation/... intactos), não mais a extração enxuta
+        (title/institutions/year, ver extract_scopus_final_fields) que
+        existia antes. O motivo de manter o entry bruto: dc:creator/
+        prism:doi precisam sobreviver até depois da coleta pra (a)
+        enriquecer com abstract via OpenAlex por DOI (ver
+        ChatService._enrich_scopus_abstracts) e (b) persistir título/autor/
+        abstract pro RAG do relatório (ver
+        ChatService._run_scopus_final_search/buildProbeQueryPayload no
+        front) - a extração enxuta descartava os dois campos antes mesmo do
+        item chegar em chat_service.py. `extract_scopus_final_fields`
+        continua existindo como helper puro, chamado agora em
+        ChatService._aggregate_scopus_final_items (no momento da agregação,
+        não mais na extração).
 
         Diferente de search() (usado pela probe), que pagina automaticamente
         em blocos de _DEFAULT_RESULTS_PER_PAGE (25) - aqui o chamador
         controla start/count diretamente, sem paginação automática.
         """
-        result = await self._search_page(query_params, start=start, count=count, run_id=run_id)
-        if not result.success:
-            return result
-        return replace(result, results=[_extract_final_fields(entry) for entry in result.results])
+        return await self._search_page(query_params, start=start, count=count, run_id=run_id)
 
     @staticmethod
     def _should_continue_pagination(page_results: list[dict[str, Any]]) -> bool:

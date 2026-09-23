@@ -121,12 +121,11 @@ export function useFinalQuerySection({
     setRebuildError(null)
     try {
       const result = await validateFinalQuery(editQueryText, api)
-      // `fields` some de propósito no patch: depois de uma edição livre do
-      // texto, o breakdown por campo (title/abstract/...) que existia antes
-      // não corresponde mais ao que está na query - updateQuery faz merge
-      // raso, então sem isso o card continuaria mostrando campos antigos e
-      // desatualizados junto do texto novo.
-      updateQuery({ ...result, fields: undefined })
+      // `fields` vem re-extraído do texto editado pelo backend (ver
+      // query_field_extractor.py) e substitui o breakdown inteiro -
+      // updateQuery faz merge raso, então o `?? {}` garante que campos
+      // removidos na edição não sobrevivam com valores antigos.
+      updateQuery({ ...result, fields: result.fields ?? {} })
       setIsEditing(false)
     } catch (err) {
       console.error(`Falha ao validar query final (${api}):`, err)

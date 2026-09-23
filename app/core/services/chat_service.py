@@ -12,6 +12,7 @@ from app.core.domain.types import LLMRequest, LLMUsage
 from app.core.services.classification_code_validator import validate_classification_codes
 from app.core.services.field_group_limiter import enforce_final_query_group_limits
 from app.core.services.query_complexity import QueryComplexityAnalyzer
+from app.core.services.query_field_extractor import extract_fields_from_query
 from core.config import Settings
 from core.logging import get_logger
 from services.llm.base import LLMJSONParseError
@@ -159,9 +160,14 @@ class ChatService:
             "recommendations": analysis["recommendations"],
         }
 
-    def _simplification_suffix(self, complexity: dict[str, Any], attempt: int) -> str:
+    def _simplification_suffix(
+        self,
+        complexity: dict[str, Any],
+        attempt: int,
+        non_english_terms: Optional[list[str]] = None,
+    ) -> str:
         max_score = getattr(self.settings, "llm_max_query_complexity", 0.6) * 100
-        return (
+        suffix = (
             f"\n\n[CRITICAL RETRY #{attempt}] "
             f"Previous query was TOO COMPLEX (score: {complexity['score']:.1f}/100, max: {max_score:.0f}). "
             f"\nComplexity breakdown:\n"
@@ -177,6 +183,20 @@ class ChatService:
             f"- Maximum 2 groups per field, 2-3 terms per group\n"
             f"Keep it simple and focused!"
         )
+        # non_english_terms preenchido por _has_non_english_terms - modelo
+        # colou o termo do idioma original (ex.: tema em português) em vez
+        # de traduzir (violação da MANDATORY RULE 1), mesmo com a regra já
+        # explícita no prompt base - reforça com os termos específicos que
+        # vazaram, retry genérico de complexidade não menciona isso.
+        if non_english_terms:
+            quoted = ", ".join(f'"{t}"' for t in non_english_terms)
+            suffix += (
+                f"\n\n[LANGUAGE ERROR] The previous query contained non-English terms: {quoted}. "
+                f"MANDATORY RULE 1 requires ALL terms to be in English - translate every "
+                f"concept to its standard English technical term. Never copy a term "
+                f"directly from the user's input if it is not already in English."
+            )
+        return suffix
 
     # Instrui a LLM sobre quais campos preencher dependendo do tipo de
     # documento buscado (a mesma chamada de _build_query_with_retry é usada
@@ -254,6 +274,33 @@ class ChatService:
         }
 
     @staticmethod
+    def _non_english_terms(fields: dict[str, list[str]]) -> list[str]:
+        """
+        Guardrail determinístico pra MANDATORY RULE 1 do prompt (probe e
+        final): "Translate all terms to English" - modelos locais pequenos
+        (gemma3:4b) às vezes vazam o termo original do usuário sem
+        traduzir (ex.: tema "cafeteira elétrica" em português gerando um
+        termo "cafeteira elétrica" na query) - confirmado ao vivo, mesmo
+        com a regra explícita no prompt (o mesmo padrão de compliance
+        não-confiável já visto em field_group_limiter.py). Só varre os
+        campos textuais livres (title/abstract/claims/...) - applicant/
+        inventor/cpc/ipc ficam de fora, porque nome de pessoa/empresa pode
+        legitimamente ser não-inglês. Heurística simples (não detecta
+        idioma de verdade): qualquer termo com caractere fora de ASCII é
+        tratado como vazamento, já que inglês técnico é overwhelmingly
+        ASCII e um termo acentuado quase sempre é o idioma original
+        colado sem tradução. Devolve os termos ofensores (lista vazia =
+        nenhum) - usados tanto pra decidir passed quanto pra reforçar o
+        prompt de retry com os termos específicos que vazaram.
+        """
+        offenders: list[str] = []
+        for field_name in ChatService._TEXTUAL_LLM_FIELDS:
+            for term in fields.get(field_name, []) or []:
+                if isinstance(term, str) and not term.isascii() and term not in offenders:
+                    offenders.append(term)
+        return offenders
+
+    @staticmethod
     def _query_fields_to_llm_output(fields: dict[str, list[str]]) -> Any:
         """
         Reconstrói um schemas.llm.LLMOutput a partir dos campos estruturados
@@ -302,6 +349,7 @@ class ChatService:
         max_attempts = 3
         attempts_history: list[dict] = []
         complexity: Optional[dict] = None
+        non_english_terms: list[str] = []
         last_error: Optional[Exception] = None
         usages: list[LLMUsage] = []
 
@@ -318,7 +366,7 @@ class ChatService:
             base_prompt = getattr(PromptLoader, prompt_loader_method)()
             system_prompt = base_prompt + self._api_field_hint(api)
             if attempt > 1 and complexity is not None:
-                system_prompt += self._simplification_suffix(complexity, attempt)
+                system_prompt += self._simplification_suffix(complexity, attempt, non_english_terms)
 
             try:
                 llm = await self.llm_resolver.resolve("probe_query")
@@ -348,10 +396,19 @@ class ChatService:
 
             cql_query = query.get("query", "")
             complexity = self._complexity_from_query(cql_query)
-            passed = complexity["score"] <= max_score
             fields = self._flatten_llm_response_fields(llm_response, probe_fields)
+            non_english_terms = self._non_english_terms(fields)
+            passed = complexity["score"] <= max_score and not non_english_terms
 
-            attempts_history.append({"attempt": attempt, "query": query, "complexity": complexity, "fields": fields})
+            attempts_history.append(
+                {
+                    "attempt": attempt,
+                    "query": query,
+                    "complexity": complexity,
+                    "fields": fields,
+                    "non_english_terms": non_english_terms,
+                }
+            )
 
             logger.info(
                 "query_complexity_check",
@@ -360,6 +417,7 @@ class ChatService:
                 attempt=attempt,
                 score=complexity["score"],
                 max_score=max_score,
+                non_english_terms=non_english_terms,
                 passed=passed,
             )
 
@@ -393,14 +451,29 @@ class ChatService:
                 "ai_usage": self._aggregate_usage(usages, step),
             }
 
-        best = min(attempts_history, key=lambda x: x["complexity"]["score"])
+        # Desempate: prefere tentativas sem vazamento de idioma antes de
+        # olhar complexidade - uma query mais simples mas com termo em
+        # português é pior que uma um pouco mais complexa 100% em inglês.
+        best = min(
+            attempts_history,
+            key=lambda x: (bool(x["non_english_terms"]), x["complexity"]["score"]),
+        )
         logger.warning(
             "query_complexity_exceeded_returning_best",
             api=api,
             best_attempt=best["attempt"],
             best_score=best["complexity"]["score"],
+            best_non_english_terms=best["non_english_terms"],
         )
         max_allowed = max_complexity * 100
+        warning = (
+            f"Query complexity ({best['complexity']['score']:.1f}/100) exceeds limit "
+            f"({max_allowed:.0f}) after {max_attempts} attempts. "
+            f"Returning attempt #{best['attempt']} (least complex)."
+        )
+        if best["non_english_terms"]:
+            quoted = ", ".join(f'"{t}"' for t in best["non_english_terms"])
+            warning += f" WARNING: contains non-English terms that could not be fixed in time: {quoted}."
         return {
             "success": True,
             "api": api,
@@ -410,11 +483,7 @@ class ChatService:
             "fields": best["fields"],
             "year_range": year_range,
             "ai_usage": self._aggregate_usage(usages, step),
-            "warning": (
-                f"Query complexity ({best['complexity']['score']:.1f}/100) exceeds limit "
-                f"({max_allowed:.0f}) after {max_attempts} attempts. "
-                f"Returning attempt #{best['attempt']} (least complex)."
-            ),
+            "warning": warning,
         }
 
     # ------------------------------------------------------------------
@@ -847,11 +916,12 @@ class ChatService:
         probe quanto final (search_mode não importa aqui: ao contrário de
         _rebuild_query, não reconstruímos nada a partir de campos
         estruturados nem chamamos um query builder - o texto digitado já É a
-        query, só computamos complexidade/warnings pra exibir). `fields` fica
-        de fora do resultado de propósito: depois de uma edição livre não há
-        mais correspondência 1:1 com campos estruturados, então o frontend
-        limpa o breakdown por campo ao salvar (ver useProbeQuerySection.ts /
-        useFinalQuerySection.ts).
+        query, só computamos complexidade/warnings pra exibir).
+
+        `fields`: extraído de volta do próprio texto (ver
+        query_field_extractor.py) - mantém os cards Title/Abstract/... do
+        frontend identificando a query depois de uma edição livre, em vez
+        de sumirem (o frontend substitui o breakdown inteiro por este).
 
         `year_range`: se a query já tiver uma cláusula de data reconhecível
         (ver _extract_year_range_from_query), usa ela - preserva uma data
@@ -874,6 +944,7 @@ class ChatService:
                 "success": True,
                 "api": api,
                 "query": {"query": query},
+                "fields": extract_fields_from_query(query, api),
                 "complexity": complexity,
                 "year_range": year_range,
             }
@@ -988,6 +1059,7 @@ class ChatService:
         max_attempts = 2
         attempts_history: list[dict] = []
         complexity: Optional[dict] = None
+        non_english_terms: list[str] = []
         usages: list[LLMUsage] = []
 
         year_from = getattr(self.settings, "search_year_from", 2015)
@@ -1003,7 +1075,7 @@ class ChatService:
             base_prompt = PromptLoader.load_prompt("final_system_prompt.md")
             system_prompt = base_prompt + context_suffix
             if attempt > 1:
-                system_prompt += self._simplification_suffix(complexity, attempt)
+                system_prompt += self._simplification_suffix(complexity, attempt, non_english_terms)
 
             llm = await self.llm_resolver.resolve("final_query")
             llm_response, usage = await llm.process_intake(llm_request, system_prompt)
@@ -1038,11 +1110,18 @@ class ChatService:
 
             cql_query = query.get("query", "")
             complexity = self._complexity_from_query(cql_query)
-            passed = complexity["score"] <= max_score
             fields = self._flatten_llm_response_fields(llm_response, probe_fields)
+            non_english_terms = self._non_english_terms(fields)
+            passed = complexity["score"] <= max_score and not non_english_terms
 
             attempts_history.append(
-                {"attempt": attempt, "query": query, "complexity": complexity, "fields": fields}
+                {
+                    "attempt": attempt,
+                    "query": query,
+                    "complexity": complexity,
+                    "fields": fields,
+                    "non_english_terms": non_english_terms,
+                }
             )
 
             logger.info(
@@ -1052,6 +1131,7 @@ class ChatService:
                 attempt=attempt,
                 score=complexity["score"],
                 max_score=max_score,
+                non_english_terms=non_english_terms,
                 passed=passed,
             )
 
@@ -1066,14 +1146,26 @@ class ChatService:
                     "ai_usage": self._aggregate_usage(usages, step),
                 }
 
-        best = min(attempts_history, key=lambda x: x["complexity"]["score"])
+        best = min(
+            attempts_history,
+            key=lambda x: (bool(x["non_english_terms"]), x["complexity"]["score"]),
+        )
         logger.warning(
             "final_variant_complexity_exceeded",
             api=api,
             variant=variant,
             best_attempt=best["attempt"],
             best_score=best["complexity"]["score"],
+            best_non_english_terms=best["non_english_terms"],
         )
+        warning = (
+            f"Query complexity ({best['complexity']['score']:.1f}/100) exceeds limit "
+            f"({max_score:.0f}) after {max_attempts} attempts. "
+            f"Returning least complex attempt."
+        )
+        if best["non_english_terms"]:
+            quoted = ", ".join(f'"{t}"' for t in best["non_english_terms"])
+            warning += f" WARNING: contains non-English terms that could not be fixed in time: {quoted}."
         return {
             "success": True,
             "query": best["query"],
@@ -1082,11 +1174,7 @@ class ChatService:
             "fields": best["fields"],
             "year_range": year_range,
             "ai_usage": self._aggregate_usage(usages, step),
-            "warning": (
-                f"Query complexity ({best['complexity']['score']:.1f}/100) exceeds limit "
-                f"({max_score:.0f}) after {max_attempts} attempts. "
-                f"Returning least complex attempt."
-            ),
+            "warning": warning,
         }
 
     async def build_final_query_variant(
@@ -1194,6 +1282,21 @@ class ChatService:
     # o count() (que usa count=1, sempre dentro do limite) reportava total
     # disponível > 0.
     _SCOPUS_FINAL_PAGE_SIZE = 25
+
+    # Teto de itens crus (raw_items) devolvidos por _run_ops_final_search/
+    # _run_scopus_final_search e persistidos como Patent/Article pra
+    # alimentar o RAG do relatório (ver ReportWriterService.ensure_session_indexed) -
+    # mesmo valor de SessionProbeQueryInput.patents/articles (max_items) em
+    # schemas/session_input.py, pra nunca mandar mais do que o backend aceita.
+    _RAG_MAX_PERSISTED_ITEMS = 200
+
+    # Quantos itens da busca final do Scopus tentam enriquecimento de
+    # abstract via OpenAlex (ver _enrich_scopus_abstracts) - separado de
+    # _RAG_MAX_PERSISTED_ITEMS porque o enriquecimento é o que custa tempo
+    # (uma chamada externa por DOI, concorrência limitada a 8): não importa
+    # se a busca achou 400 artigos, o enriquecimento fica sempre limitado a
+    # essa janela, pra não pesar no tempo total da busca final.
+    _SCOPUS_RAG_ENRICH_CAP = 100
 
     @classmethod
     def _year_buckets(cls, year_from: int, year_to: int) -> list[tuple[int, int, float]]:
@@ -1382,22 +1485,36 @@ class ChatService:
         items: list[dict[str, Any]],
     ) -> tuple[dict[str, int], list[str]]:
         """
-        Agrega os itens enxutos (title/institutions/year - ver
-        services.search.scopus_service._extract_final_fields) coletados por
-        _run_scopus_final_search em institutions/title. Compartilhado pelas
-        duas estratégias (range e ano) - só muda de onde `items` veio.
-        Equivalente a _aggregate_ops_final_items, mas sem CPC: a área de
-        estudo do Scopus não é extraída item-a-item (a API não expõe
-        subject-area por item nessa key), é contada à parte por
-        _run_scopus_area_of_study_counts.
+        Agrega os itens BRUTOS da Scopus (dc:title/affiliation/... - ver
+        docstring de ScopusService.fetch_results_page) coletados por
+        _run_scopus_final_search em institutions/title, derivando
+        title/institutions por item via
+        services.search.scopus_service.extract_scopus_final_fields (antes
+        pré-computado na extração, agora calculado aqui na agregação, já
+        que o item bruto precisa sobreviver intacto até depois - ver
+        _enrich_scopus_abstracts). Compartilhado pelas duas estratégias
+        (range e ano) - só muda de onde `items` veio. Equivalente a
+        _aggregate_ops_final_items, mas sem CPC: a área de estudo do Scopus
+        não é extraída item-a-item (a API não expõe subject-area por item
+        nessa key), é contada à parte por _run_scopus_area_of_study_counts.
         """
+        from services.search.scopus_service import extract_scopus_final_fields
+
         institutions: Counter = Counter()
         title: list[str] = []
         for item in items:
-            institutions.update(item.get("institutions") or [])
-            if item.get("title"):
-                title.append(item["title"])
+            lean = extract_scopus_final_fields(item)
+            institutions.update(lean.get("institutions") or [])
+            if lean.get("title"):
+                title.append(lean["title"])
         return self._fuzzy_group_institutions(dict(institutions)), title
+
+    # Teto de concorrência contra a API da Scopus - confirmado ao vivo (ver
+    # conversa): 8 requisições simultâneas, duas rodadas seguidas, 16/16
+    # sucesso; 10 simultâneas já derrubou 1 em 429 (rate limit). Usado tanto
+    # em _run_scopus_search_by_range quanto _run_scopus_search_by_year, pra
+    # paralelizar sem estourar o throttle da Elsevier.
+    _SCOPUS_MAX_CONCURRENCY = 8
 
     async def _run_scopus_search_by_range(
         self,
@@ -1409,10 +1526,12 @@ class ChatService:
         run_id: Optional[str] = None,
     ) -> list[dict[str, Any]]:
         """
-        Pagina a query inteira em janelas sequenciais de
-        _SCOPUS_FINAL_PAGE_SIZE (25) - 0-25, 25-50, ... - até
-        max_requests requisições ou até a API devolver menos que uma página
-        cheia (sinal de que não há mais resultados). Equivalente a
+        Pagina a query inteira em até `max_requests` janelas de
+        _SCOPUS_FINAL_PAGE_SIZE (25) - 0-25, 25-50, ... - disparadas
+        concorrentemente (teto _SCOPUS_MAX_CONCURRENCY) em vez de uma por
+        vez: `max_requests` já vem calculado a partir do total_count real
+        (ver _run_scopus_final_search), então não depende de um "página
+        curta = acabou" sequencial pra saber quando parar. Equivalente a
         _run_ops_search_by_range, mas a data é aplicada uma vez só antes do
         loop (a Scopus não tem um parâmetro `year_range` separado do corpo
         da query, como o fetch_biblio_page da OPS).
@@ -1421,19 +1540,21 @@ class ChatService:
             **query,
             "query": self._scopus_replace_date_clause(query.get("query", ""), year_from, year_to),
         }
-        collected: list[dict[str, Any]] = []
-        for page_idx in range(max_requests):
+        semaphore = asyncio.Semaphore(self._SCOPUS_MAX_CONCURRENCY)
+
+        async def _fetch_page(page_idx: int) -> list[dict[str, Any]]:
             start = page_idx * self._SCOPUS_FINAL_PAGE_SIZE
-            result = await adapter.fetch_results_page(
-                range_query, start=start, count=self._SCOPUS_FINAL_PAGE_SIZE, run_id=run_id
-            )
+            async with semaphore:
+                result = await adapter.fetch_results_page(
+                    range_query, start=start, count=self._SCOPUS_FINAL_PAGE_SIZE, run_id=run_id
+                )
             if not result.success:
                 logger.warning("scopus_final_range_page_failed", start=start, error=result.error_message)
-                continue
-            collected.extend(result.results)
-            if len(result.results) < self._SCOPUS_FINAL_PAGE_SIZE:
-                break
-        return collected
+                return []
+            return result.results
+
+        pages = await asyncio.gather(*(_fetch_page(i) for i in range(max_requests)))
+        return [item for page in pages for item in page]
 
     async def _run_scopus_search_by_year(
         self,
@@ -1449,7 +1570,10 @@ class ChatService:
         quando o volume total de resultados é grande demais pra caber num
         nº de páginas menor que o nº de anos (ver _run_scopus_final_search),
         garantindo cobertura de todo o intervalo em vez de só dos itens mais
-        recentes. Equivalente a _run_ops_search_by_year.
+        recentes. Equivalente a _run_ops_search_by_year. As requisições (uma
+        por ano) rodam concorrentemente (teto _SCOPUS_MAX_CONCURRENCY) em
+        vez de uma por vez - independentes entre si, sem motivo pra
+        serializar (mesmo raciocínio de _run_scopus_area_of_study_counts).
 
         `iteration` seleciona QUAL bloco de _SCOPUS_FINAL_PAGE_SIZE (25)
         buscar por ano (0 = 0-25, default; 1 = 25-50; ...) - não é
@@ -1460,20 +1584,27 @@ class ChatService:
         amostra de itens continua limitada a _SCOPUS_FINAL_PAGE_SIZE/ano/
         iteração).
         """
-        collected: list[dict[str, Any]] = []
-        articles_by_year: dict[int, int] = {}
         scopus_query = query.get("query", "")
         start = iteration * self._SCOPUS_FINAL_PAGE_SIZE
-        for year in range(year_from, year_to + 1):
+        semaphore = asyncio.Semaphore(self._SCOPUS_MAX_CONCURRENCY)
+
+        async def _fetch_year(year: int) -> tuple[int, list[dict[str, Any]], int]:
             year_query = {**query, "query": self._scopus_replace_date_clause(scopus_query, year, year)}
-            result = await adapter.fetch_results_page(
-                year_query, start=start, count=self._SCOPUS_FINAL_PAGE_SIZE, run_id=run_id
-            )
+            async with semaphore:
+                result = await adapter.fetch_results_page(
+                    year_query, start=start, count=self._SCOPUS_FINAL_PAGE_SIZE, run_id=run_id
+                )
             if not result.success:
                 logger.warning("scopus_final_year_page_failed", year=year, error=result.error_message)
-                continue
-            collected.extend(result.results)
-            articles_by_year[year] = result.total_count or 0
+                return year, [], 0
+            return year, result.results, result.total_count or 0
+
+        years_results = await asyncio.gather(*(_fetch_year(year) for year in range(year_from, year_to + 1)))
+        collected: list[dict[str, Any]] = []
+        articles_by_year: dict[int, int] = {}
+        for year, results, total in years_results:
+            collected.extend(results)
+            articles_by_year[year] = total
         return collected, articles_by_year
 
     async def _run_scopus_area_of_study_counts(
@@ -1537,11 +1668,24 @@ class ChatService:
         base, independente de `iteration`: range já é exaustiva, então
         `iteration` não muda nada nela.
 
+        `raw_items` no retorno: itens completos (dc:title/dc:creator/
+        affiliation/...) enriquecidos com abstract via OpenAlex por DOI (ver
+        _enrich_scopus_abstracts), capados em _SCOPUS_RAG_ENRICH_CAP - não
+        em _RAG_MAX_PERSISTED_ITEMS (maior), porque o enriquecimento é o que
+        custa tempo (uma chamada externa por DOI): não importa quantos itens
+        a busca final achou no total, o enriquecimento fica sempre limitado
+        a essa janela menor, pra não pesar no tempo total da busca. Itens
+        sem abstract disponível (ou não-inglês) são descartados por
+        _enrich_scopus_abstracts - só entra no RAG o que tem texto de
+        verdade.
+
         Returns:
             Dict com institutions, area_of_study, title, articles_by_year,
-            strategy ("range" ou "year") e total_count - o compilado
-            retornado por run_final_search para api="scopus".
+            strategy ("range" ou "year"), total_count e raw_items - o
+            compilado retornado por run_final_search para api="scopus".
         """
+        from services.search.scopus_service import extract_scopus_final_fields
+
         count_query = {
             **query,
             "query": self._scopus_replace_date_clause(query.get("query", ""), year_from, year_to),
@@ -1562,6 +1706,7 @@ class ChatService:
                 adapter, query, max_requests=1, year_from=year_from, year_to=year_to, run_id=run_id
             )
             institutions, title = self._aggregate_scopus_final_items(items)
+            raw_items = await self._enrich_scopus_abstracts(items, top_k=self._SCOPUS_RAG_ENRICH_CAP)
             return {
                 "institutions": institutions,
                 "area_of_study": area_of_study,
@@ -1569,6 +1714,7 @@ class ChatService:
                 "articles_by_year": {},
                 "strategy": "range",
                 "total_count": None,
+                "raw_items": raw_items,
             }
 
         threshold = n_years * self._SCOPUS_FINAL_PAGE_SIZE - (self._SCOPUS_FINAL_PAGE_SIZE - 1)
@@ -1576,7 +1722,8 @@ class ChatService:
             max_requests = (total_count + self._SCOPUS_FINAL_PAGE_SIZE - 1) // self._SCOPUS_FINAL_PAGE_SIZE
             items = await self._run_scopus_search_by_range(adapter, query, max_requests, year_from, year_to, run_id)
             institutions, title = self._aggregate_scopus_final_items(items)
-            articles_by_year = dict(Counter(item["year"] for item in items if item.get("year") is not None))
+            years = (extract_scopus_final_fields(item).get("year") for item in items)
+            articles_by_year = dict(Counter(year for year in years if year is not None))
             strategy = "range"
         else:
             items, articles_by_year = await self._run_scopus_search_by_year(
@@ -1585,6 +1732,8 @@ class ChatService:
             institutions, title = self._aggregate_scopus_final_items(items)
             strategy = "year"
 
+        raw_items = await self._enrich_scopus_abstracts(items, top_k=self._SCOPUS_RAG_ENRICH_CAP)
+
         return {
             "institutions": institutions,
             "area_of_study": area_of_study,
@@ -1592,6 +1741,7 @@ class ChatService:
             "articles_by_year": articles_by_year,
             "strategy": strategy,
             "total_count": total_count,
+            "raw_items": raw_items,
         }
 
     async def _run_ops_search_by_range(
@@ -1689,23 +1839,50 @@ class ChatService:
         items: list[dict[str, Any]],
     ) -> tuple[dict[str, int], dict[str, int], list[str]]:
         """
-        Agrega os itens enxutos (title/applicants/cpc/year - ver
-        OPSService._extract_final_fields) coletados por _run_ops_final_search
-        em depositants/cpc/title. Compartilhado pelas duas estratégias
-        (range e ano) - só muda de onde `items` veio.
+        Agrega os itens (formato completo de OPSService._extract_biblio_fields -
+        mesma extração da probe, ver OPSService._search_abstract_with_retry)
+        coletados por _run_ops_final_search em depositants/cpc/title.
+        Compartilhado pelas duas estratégias (range e ano) - só muda de onde
+        `items` veio. Só lê applicants/cpc_classifications(ou ipc_classifications,
+        ver abaixo)/invention_title daqui (abstract/inventors não entram na
+        agregação - esses alimentam o RAG do relatório separadamente, ver
+        ReportWriterService.ensure_session_indexed).
         """
         depositants: Counter = Counter()
         cpc: Counter = Counter()
         title: list[str] = []
         for item in items:
             depositants.update(item.get("applicants") or [])
-            # Agrupa pelos 4 primeiros caracteres (a classe CPC, ex. "B64G"
-            # em "B64G 1/2222") em vez do subgrupo completo - soma
-            # subgrupos da mesma classe num único bucket.
-            cpc.update(str(code)[:4] for code in (item.get("cpc") or []) if code)
-            if item.get("title"):
-                title.append(item["title"])
+            # O endpoint /published-data/search/biblio (usado aqui e na
+            # probe) nunca devolve "classifications-cpc" - confirmado
+            # empiricamente: 302/302 patentes persistidas com cpc_codes nulo
+            # e ipc_codes preenchido. Por isso usa ipc_classifications como
+            # fonte real (cpc_classifications fica de fallback, caso a OPS
+            # passe a devolver CPC nessa resposta no futuro) - o rótulo "IPC"
+            # (não "CPC") é usado em todo lugar que exibe isso pro usuário
+            # (ver _informacoes_tecnologicas_prompt e useChartCreation.ts).
+            # Agrupa pelos 4 primeiros caracteres (a classe, ex. "B64G" em
+            # "B64G 1/2222") em vez do subgrupo completo - soma subgrupos da
+            # mesma classe num único bucket.
+            codes = item.get("cpc_classifications") or item.get("ipc_classifications") or []
+            cpc.update(str(code)[:4] for code in codes if code)
+            if item.get("invention_title"):
+                title.append(item["invention_title"])
         return self._fuzzy_group_depositants(dict(depositants)), dict(cpc), title
+
+    @staticmethod
+    def _ops_item_year(item: dict[str, Any]) -> Optional[int]:
+        """Deriva o ano de publicação de um item completo da OPS a partir de
+        `publication_date` (formato "YYYYMMDD", ver OPSService._extract_biblio_fields) -
+        o extrator completo não tem mais uma chave "year" pronta (só a
+        extração enxuta descontinuada tinha)."""
+        publication_date = item.get("publication_date")
+        if publication_date and len(str(publication_date)) >= 4:
+            try:
+                return int(str(publication_date)[:4])
+            except ValueError:
+                return None
+        return None
 
     async def _run_ops_final_search(
         self,
@@ -1767,6 +1944,7 @@ class ChatService:
                 "patents_by_year": {},
                 "strategy": "range",
                 "total_count": None,
+                "raw_items": items[:self._RAG_MAX_PERSISTED_ITEMS],
             }
 
         threshold = n_years * 100 - 99
@@ -1774,7 +1952,8 @@ class ChatService:
             max_requests = (total_count + 99) // 100
             items = await self._run_ops_search_by_range(adapter, query, max_requests, year_from, year_to, run_id)
             depositants, cpc, title = self._aggregate_ops_final_items(items)
-            patents_by_year = dict(Counter(item["year"] for item in items if item.get("year") is not None))
+            years = (self._ops_item_year(item) for item in items)
+            patents_by_year = dict(Counter(year for year in years if year is not None))
             strategy = "range"
         else:
             items, patents_by_year = await self._run_ops_search_by_year(
@@ -1790,6 +1969,13 @@ class ChatService:
             "patents_by_year": patents_by_year,
             "strategy": strategy,
             "total_count": total_count,
+            # Itens completos (title/abstract/applicants/inventors/cpc/ipc/...
+            # - mesmo formato bruto que a probe já persiste, ver
+            # NormalizationService.normalize_from_ops) pra alimentar o RAG do
+            # relatório - ver ChatService.run_final_search/
+            # buildProbeQueryPayload no front. Cortado no mesmo teto de
+            # SessionProbeQueryInput.patents (schemas/session_input.py).
+            "raw_items": items[: self._RAG_MAX_PERSISTED_ITEMS],
         }
 
     async def run_probe_search(
@@ -1884,18 +2070,21 @@ class ChatService:
         futuro citado acima.
 
         OPS: usa _run_ops_final_search - esquema determinístico por
-        range/ano, sem filtro de idioma - devolve só o compilado agregado
-        (depositants/cpc/title/patents_by_year/strategy), não mais a lista
-        bruta de itens.
+        range/ano, sem filtro de idioma - devolve o compilado agregado
+        (depositants/cpc/title/patents_by_year/strategy) MAIS `raw_items`
+        (itens completos, cortados em _RAG_MAX_PERSISTED_ITEMS) pra
+        persistência/RAG do relatório (ver buildProbeQueryPayload no front).
 
         Scopus: usa _run_scopus_final_search - mesmo esquema determinístico
         da OPS (range/ano, o que exigir menos requisições, sem filtro de
         idioma), devolvendo o compilado agregado
-        (institutions/area_of_study/title/articles_by_year/strategy) em vez
-        da lista bruta de itens. institutions vem com fuzzy matching (mesmo
-        mecanismo de depositants da OPS); area_of_study é contado à parte
-        via SUBJAREA (a API não expõe subject-area por item nessa API key) e
-        usa o nome completo da área, não a sigla.
+        (institutions/area_of_study/title/articles_by_year/strategy) e
+        também `raw_items` (itens enriquecidos com abstract via OpenAlex,
+        ver _enrich_scopus_abstracts/_SCOPUS_RAG_ENRICH_CAP). institutions
+        vem com fuzzy matching (mesmo mecanismo de depositants da OPS);
+        area_of_study é contado à parte via SUBJAREA (a API não expõe
+        subject-area por item nessa API key) e usa o nome completo da área,
+        não a sigla.
 
         Outras APIs (lens_patent/lens_scholarly/openalex): busca simples via
         adapter.search(query), sem corte artificial de tamanho - cada
@@ -1920,6 +2109,7 @@ class ChatService:
                     "title": compiled["title"],
                     "patents_by_year": compiled["patents_by_year"],
                     "strategy": compiled["strategy"],
+                    "raw_items": compiled["raw_items"],
                     "error": None,
                 }
 
@@ -1935,6 +2125,7 @@ class ChatService:
                     "title": compiled["title"],
                     "articles_by_year": compiled["articles_by_year"],
                     "strategy": compiled["strategy"],
+                    "raw_items": compiled["raw_items"],
                     "error": None,
                 }
 

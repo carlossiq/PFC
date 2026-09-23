@@ -15,6 +15,7 @@ evitar citação inventada por LLM.
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any, Optional
 
 from config.prompts.report_prompts import REPORT_SYSTEM_PROMPT, get_section_prompt
@@ -70,12 +71,44 @@ _LATEX_ESCAPE_MAP = {
 }
 
 
+def _is_latin_renderable(ch: str) -> bool:
+    """O template (report_latex_template.py) compila com pdflatex usando
+    fontenc T1 + Latin Modern - só cobre script latino (com acentos de
+    qualquer idioma europeu, não só português) mais pontuação/dígitos/
+    símbolos comuns. Qualquer caractere fora disso (CJK, cirílico, hangul,
+    árabe etc.) faz o pdflatex parar com "Unicode character ... not set up
+    for use with LaTeX." - e nomes de inventor/autor vindos da OPS/Scopus
+    (usados nas citações "Fonte: ...", ver _build_source_citation) podem
+    vir em qualquer script."""
+    if ch.isascii():
+        return True
+    category = unicodedata.category(ch)
+    if category[0] in ("Z", "P", "N", "S"):  # espaço, pontuação, número, símbolo
+        return True
+    return "LATIN" in unicodedata.name(ch, "")
+
+
+def _strip_unrenderable_chars(text: str) -> str:
+    """Remove caracteres que o template não consegue tipografar (ver
+    _is_latin_renderable) - roda ANTES do escape de caracteres especiais do
+    LaTeX, pra não travar a montagem do .tex com um nome/trecho em script
+    não-latino. Colapsa espaços duplos deixados pela remoção."""
+    if not text:
+        return text
+    stripped = "".join(ch for ch in text if _is_latin_renderable(ch))
+    return re.sub(r" {2,}", " ", stripped)
+
+
 def escape_latex(text: str) -> str:
     """Escapa caracteres especiais do LaTeX num texto solto (ex.: devolvido
     por um LLM) - obrigatório antes de injetar no template, já que o texto
-    gerado não é LaTeX válido por si só."""
+    gerado não é LaTeX válido por si só. Também descarta caracteres fora do
+    script latino (ver _strip_unrenderable_chars) - sem isso, um nome de
+    autor/inventor em CJK/cirílico/etc. (bem comum em citações de patentes
+    internacionais) derruba a compilação do .tex inteiro."""
     if not text:
         return text
+    text = _strip_unrenderable_chars(text)
     return "".join(_LATEX_ESCAPE_MAP.get(ch, ch) for ch in text)
 
 
@@ -155,7 +188,10 @@ class ReportWriterService:
         não pagar o custo de reindexar a cada seção). `patents`/`articles`
         são dicts com pelo menos `title`/`abstract` (extraídos pelo
         chamador a partir de Patent/Article, igual ao padrão de
-        report_service.py)."""
+        report_service.py) - `inventors`/`authors` e `year`, quando
+        presentes, viram a citação em `metadata["source"]` de cada
+        documento (ver _build_source_citation), permitindo o texto gerado
+        citar o autor/inventor de onde tirou a informação."""
         if self._rag is None:
             raise RAGUnavailableError("ChromaDB indisponível - verifique o container 'chromadb'.")
 
@@ -172,11 +208,19 @@ class ReportWriterService:
         for patent in patents:
             text = _title_abstract_text(patent)
             if text:
-                documents.append({"text": text, "session_id": session_key, "document_type": "patent"})
+                doc = {"text": text, "session_id": session_key, "document_type": "patent"}
+                source = _build_source_citation(patent.get("inventors"), patent.get("year"))
+                if source:
+                    doc["source"] = source
+                documents.append(doc)
         for article in articles:
             text = _title_abstract_text(article)
             if text:
-                documents.append({"text": text, "session_id": session_key, "document_type": "article"})
+                doc = {"text": text, "session_id": session_key, "document_type": "article"}
+                source = _build_source_citation(article.get("authors"), article.get("year"))
+                if source:
+                    doc["source"] = source
+                documents.append(doc)
 
         if not documents:
             logger.warning("report_rag_no_documents_to_index session_id=%d", session_id)
@@ -249,3 +293,38 @@ def _title_abstract_text(document: dict[str, Any]) -> Optional[str]:
     if title and abstract:
         return f"{title}\n\n{abstract}"
     return title or abstract
+
+
+def _build_source_citation(names: Optional[list[str]], year: Optional[int]) -> Optional[str]:
+    """Citação curta no espírito ABNT ("SOBRENOME et al. (ano)") a partir
+    dos autores/inventores de um documento indexado no RAG - alimenta
+    `metadata["source"]` (ver ensure_session_indexed), que
+    RAGService.get_context_for_section já formata como "Fonte: {source}"
+    em cada trecho recuperado, e REPORT_SYSTEM_PROMPT (regra 6, ver
+    config/prompts/report_prompts.py) já instrui a IA a citar essa fonte
+    entre parênteses ao usar o trecho - o mecanismo de citação já existia
+    ponta a ponta, só nunca recebeu um valor de verdade (sempre "N/A").
+
+    Pega o primeiro nome da lista (autor/inventor, não depositante/empresa -
+    ver chamadas em ensure_session_indexed) e extrai o que vem antes da
+    primeira vírgula (convenção "Sobrenome, Nome" já usada nos nomes vindos
+    da OPS/Scopus) - se não houver vírgula, usa o nome inteiro. Acrescenta
+    "et al." se houver mais de um nome. `None` se não houver nome nenhum, ou
+    se o sobrenome não sobrevive a _strip_unrenderable_chars (nome em
+    CJK/cirílico/etc., comum em inventores de patentes internacionais) - o
+    template só tipografa script latino (ver escape_latex), então uma
+    citação nesses casos sairia só como "(ano)" sem nome nenhum; melhor não
+    citar do que citar vazio. Nunca inventa autor."""
+    if not names:
+        return None
+    first = names[0].strip()
+    if not first:
+        return None
+    surname = first.split(",", 1)[0].strip().upper()
+    if not surname:
+        return None
+    surname = _strip_unrenderable_chars(surname).strip()
+    if not surname:
+        return None
+    label = f"{surname} et al." if len(names) > 1 else surname
+    return f"{label} ({year})" if year else label
