@@ -111,8 +111,9 @@ def test_form_validation_rejects_placeholders():
     assert admin_reference_error("diex 2322-1")
     assert admin_reference_error("DIEx Nº 115-A3/DCT de 6 de janeiro de 2023;") is None
     assert bibliography_error("sasassas")
-    assert signer_error("Elaborado por", "sdasdsad", "dsdsd")
-    assert signer_error("Elaborado por", "RICARDO WAGNER AMORIM GUIMARÃES – TC", "Adj da Seção") is None
+    assert signer_error("Elaborado por", "sdasdsad", "dsdsd", "dsdsd")
+    assert signer_error("Elaborado por", "RICARDO WAGNER AMORIM GUIMARÃES", "TC", "Adj da Seção") is None
+    assert "função" in signer_error("Elaborado por", "RICARDO WAGNER AMORIM GUIMARÃES", "TC", "")
 
 
 def test_finalidade_and_local_data():
@@ -128,3 +129,12 @@ def test_cpc_official_titles():
     assert "PHOTOVOLTAIC" in describe_code("H02S")
     # H01L foi extinta (reorganizada em H10): cai no título da classe, sem inventar.
     assert "classe H01" in describe_code("H01L")
+
+
+def test_ordinal_indicators_survive_latex_escaping():
+    from app.core.services.report_writer_service import escape_latex
+
+    # "DIEx Nº 256" saía "DIEx N 256" e "1º Ten" saía "1 Ten".
+    assert escape_latex("DIEx Nº 256/IME") == "DIEx Nº 256/IME"
+    assert escape_latex("1º Ten e 3ª Seção") == "1º Ten e 3ª Seção"
+    assert escape_latex("华能 HUANENG") == " HUANENG"  # CJK continua removido

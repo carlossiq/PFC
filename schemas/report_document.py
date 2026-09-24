@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class SectionRagResponse(BaseModel):
@@ -52,8 +52,22 @@ class SectionGenerateRequest(BaseModel):
 
 
 class SignatureBlock(BaseModel):
+    """Assinante no formato do REPTEC: "NOME – POSTO/GRAD." numa linha e a
+    função na linha de baixo (ex.: "RICARDO W. A. GUIMARÃES – TC" /
+    "Adj da Seção de Informações Tecnológicas")."""
+
     nome: str = ""
+    posto: str = ""
+    funcao: str = ""
+    # Formato antigo (posto e função num campo só) - payloads já salvos em
+    # SessionReport.assemble_payload continuam remontáveis: vira `posto`.
     posto_funcao: str = ""
+
+    @model_validator(mode="after")
+    def _legacy_posto_funcao(self) -> "SignatureBlock":
+        if not self.posto.strip() and self.posto_funcao.strip():
+            self.posto = self.posto_funcao
+        return self
 
 
 class SignaturesInput(BaseModel):

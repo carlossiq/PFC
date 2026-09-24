@@ -52,14 +52,16 @@ def bibliography_error(ref: str) -> Optional[str]:
     return None
 
 
-def signer_error(role: str, nome: str, posto: str) -> Optional[str]:
-    nome, posto = nome.strip(), posto.strip()
-    if not nome and not posto:
+def signer_error(role: str, nome: str, posto: str, funcao: str = "") -> Optional[str]:
+    nome, posto, funcao = nome.strip(), posto.strip(), funcao.strip()
+    if not nome and not posto and not funcao:
         return None  # bloco vazio é filtrado depois (ver _merge_signatures)
     if len(nome.split()) < 2 or looks_like_placeholder(nome):
         return f'{role}: "{nome}" não parece um nome completo.'
     if len(posto) < 2 or looks_like_placeholder(posto):
-        return f'{role}: posto/função "{posto}" inválido.'
+        return f'{role}: posto/graduação "{posto}" inválido.'
+    if not funcao or looks_like_placeholder(funcao):
+        return f'{role}: informe a função (ex.: "Chefe da Seção de Informações Tecnológicas").'
     return None
 
 

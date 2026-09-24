@@ -33,8 +33,9 @@ gerada]" em vez de quebrar a renderização):
     conclusao: str - seção 7, seção de IA
     referencias_bibliograficas: list[str] - seção 8, fixa + usuário
     assinaturas: dict com elaborado_por/revisado_por/aprovado_por, cada um
-        uma LISTA de {"nome": str, "posto_funcao": str} (1+ assinantes por
-        papel - ver ReportGeneration.tsx)
+        uma LISTA de {"nome", "posto", "funcao"} (1+ assinantes por papel -
+        ver ReportGeneration.tsx) - sai como "NOME -- POSTO" (negrito) e a
+        função na linha de baixo, como no REPTEC
 """
 
 from __future__ import annotations
@@ -286,8 +287,8 @@ Nenhuma referência bibliográfica informada.
 \begin{center}
 \vspace{1cm}
 \rule{8cm}{0.4pt}\\
-\textbf{\VAR{signer.nome}}\\
-\textbf{\VAR{signer.posto_funcao}}
+\textbf{\VAR{signer.nome} -- \VAR{signer.posto}}\BLOCK{ if signer.funcao }\\
+\VAR{signer.funcao}\BLOCK{ endif }
 \end{center}
 \BLOCK{ endfor }
 
@@ -298,8 +299,8 @@ Nenhuma referência bibliográfica informada.
 \begin{center}
 \vspace{1cm}
 \rule{8cm}{0.4pt}\\
-\textbf{\VAR{signer.nome}}\\
-\textbf{\VAR{signer.posto_funcao}}
+\textbf{\VAR{signer.nome} -- \VAR{signer.posto}}\BLOCK{ if signer.funcao }\\
+\VAR{signer.funcao}\BLOCK{ endif }
 \end{center}
 \BLOCK{ endfor }
 \BLOCK{ else }
@@ -313,8 +314,8 @@ Nenhuma referência bibliográfica informada.
 \begin{center}
 \vspace{1cm}
 \rule{8cm}{0.4pt}\\
-\textbf{\VAR{signer.nome}}\\
-\textbf{\VAR{signer.posto_funcao}}
+\textbf{\VAR{signer.nome} -- \VAR{signer.posto}}\BLOCK{ if signer.funcao }\\
+\VAR{signer.funcao}\BLOCK{ endif }
 \end{center}
 \BLOCK{ endfor }
 \BLOCK{ else }
@@ -356,7 +357,7 @@ _DEFAULT_CONTEXT: dict[str, Any] = {
     "referencias_bibliograficas": [],
     "local_data": None,
     "assinaturas": {
-        "elaborado_por": [{"nome": "", "posto_funcao": ""}],
+        "elaborado_por": [{"nome": "", "posto": "", "funcao": ""}],
         "revisado_por": [],
         "revisado_por_comment": "% Revisado por: não informado",
         "aprovado_por": [],

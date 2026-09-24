@@ -373,7 +373,7 @@ def _signature_errors(payload: Optional[SignaturesInput]) -> list[str]:
     if payload is None:
         return []
     return collect_errors(
-        signer_error(_SIGNATURE_ROLE_LABELS[field], block.nome, block.posto_funcao)
+        signer_error(_SIGNATURE_ROLE_LABELS[field], block.nome, block.posto, block.funcao)
         for field in ("elaborado_por", "revisado_por", "aprovado_por")
         for block in getattr(payload, field)
     )
@@ -384,7 +384,7 @@ def _merge_signatures(payload: Optional[SignaturesInput]) -> dict[str, Any]:
     (config/prompts/report_static_sections.py), sobrescrevíveis por
     requisição - cada papel aceita 1+ assinantes (ver SignaturesInput).
 
-    Blocos em branco (nome OU posto/função vazios - inclusive o bloco
+    Blocos em branco (nome OU posto vazios - inclusive o bloco
     default acima, nunca preenchido) são filtrados fora: "elaborado_por"
     nunca deveria sobrar vazio depois disso (o front bloqueia "Montar .tex"
     até ter pelo menos um assinante válido, ver ReportGeneration.tsx), mas
@@ -398,12 +398,16 @@ def _merge_signatures(payload: Optional[SignaturesInput]) -> dict[str, Any]:
             blocks = getattr(payload, field)
             if blocks:
                 merged[field] = [
-                    {"nome": escape_latex(block.nome), "posto_funcao": escape_latex(block.posto_funcao)}
+                    {
+                        "nome": escape_latex(block.nome.strip()),
+                        "posto": escape_latex(block.posto.strip()),
+                        "funcao": escape_latex(block.funcao.strip()),
+                    }
                     for block in blocks
                 ]
 
     for field, label in _SIGNATURE_ROLE_LABELS.items():
-        merged[field] = [block for block in merged[field] if block["nome"].strip() and block["posto_funcao"].strip()]
+        merged[field] = [block for block in merged[field] if block["nome"].strip() and block["posto"].strip()]
         merged[f"{field}_comment"] = latex_comment(label) if not merged[field] else None
 
     return merged

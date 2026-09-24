@@ -2166,6 +2166,11 @@ class ChatService:
                     "patents_by_year": compiled["patents_by_year"],
                     "strategy": compiled["strategy"],
                     "raw_items": compiled["raw_items"],
+                    # Total REAL de documentos que a base encontrou (não o
+                    # tamanho da amostra baixada) - é o que vai pro Quadro de
+                    # busca e pro texto do relatório. Sem a contagem, soma a
+                    # série anual (mesma base da curva S).
+                    "total_count": compiled.get("total_count") or sum(compiled["patents_by_year"].values()) or None,
                     "error": None,
                 }
 
@@ -2182,6 +2187,7 @@ class ChatService:
                     "articles_by_year": compiled["articles_by_year"],
                     "strategy": compiled["strategy"],
                     "raw_items": compiled["raw_items"],
+                    "total_count": compiled.get("total_count") or sum(compiled["articles_by_year"].values()) or None,
                     "error": None,
                 }
 

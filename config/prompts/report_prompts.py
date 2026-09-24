@@ -89,11 +89,17 @@ def _figures_block(data: dict) -> str:
     return f"""FIGURAS E QUADROS DESTA SEÇÃO (os números abaixo são os mesmos desenhados em cada imagem):
 {catalog}
 
-COMO POSICIONAR AS FIGURAS/QUADROS:
-- Para citar no texto, escreva a palavra (Figura ou Quadro) seguida do marcador [[REF:id]]. Ex.: "A Figura [[REF:{figures[0]['id']}]] mostra ...".
-- Logo depois do parágrafo que discute a figura/quadro, escreva [[FIG:id]] sozinho numa linha - nunca no meio de um parágrafo.
-- Use cada figura/quadro exatamente uma vez e não invente ids.
-- Todo número citado sobre uma figura deve vir dos "Dados" dela.
+COMO APRESENTAR CADA FIGURA/QUADRO (padrão do REPTEC - obrigatório para TODOS os itens da lista acima):
+1. Um parágrafo que APRESENTA a figura e cita pelo marcador [[REF:id]], precedido da palavra Figura ou Quadro. Ex.: "A Figura [[REF:{figures[0]['id']}]] mostra a distribuição das publicações científicas ao longo do tempo."
+2. Na linha seguinte, sozinho, o marcador [[FIG:id]] - é onde a imagem entra.
+3. Logo depois, um parágrafo que INTERPRETA os dados da figura: cite os números dela (totais, pico e ano do pico, primeiros colocados e suas quantidades), descreva a tendência (crescimento, estabilização, queda) e o que isso indica sobre o tema.
+Exemplo de estrutura:
+"No total, foram identificadas 321 publicações científicas entre 1992 e 2022. A Figura [[REF:article_yearly_volume]] mostra a distribuição dessas publicações ao longo do tempo.
+
+[[FIG:article_yearly_volume]]
+
+Entre 1993 e 2013, observa-se crescimento gradual, com o pico de 25 publicações em 2013; a partir de então, nota-se queda sustentada, chegando a 2 publicações em 2022, o que sugere redução do interesse acadêmico pela tecnologia."
+Regras: use cada figura exatamente uma vez; nunca coloque duas figuras seguidas sem texto entre elas; nunca termine a seção com figuras; não invente ids; todo número sobre uma figura deve vir dos "Dados" dela.
 
 """
 

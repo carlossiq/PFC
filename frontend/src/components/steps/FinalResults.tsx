@@ -130,7 +130,16 @@ function OpsFinalAggregatePanel({
         </div>
         {results && (
           <div className="text-right shrink-0">
-            <div className="text-lg font-bold text-gray-900 leading-none">{results.resultsCount}</div>
+            {/* Total real encontrado na base (o número do Quadro de busca do
+                relatório); a amostra baixada pra análise vem logo abaixo. */}
+            <div className="text-lg font-bold text-gray-900 leading-none">
+              {(results.totalCount ?? results.resultsCount).toLocaleString('pt-BR')}
+            </div>
+            {(results.totalCount ?? results.resultsCount) !== results.resultsCount && (
+              <div className="text-[10px] text-gray-500 mt-0.5">
+                amostra analisada: {results.resultsCount.toLocaleString('pt-BR')}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -188,7 +197,16 @@ function ScopusFinalAggregatePanel({
         </div>
         {results && (
           <div className="text-right shrink-0">
-            <div className="text-lg font-bold text-gray-900 leading-none">{results.resultsCount}</div>
+            {/* Total real encontrado na base (o número do Quadro de busca do
+                relatório); a amostra baixada pra análise vem logo abaixo. */}
+            <div className="text-lg font-bold text-gray-900 leading-none">
+              {(results.totalCount ?? results.resultsCount).toLocaleString('pt-BR')}
+            </div>
+            {(results.totalCount ?? results.resultsCount) !== results.resultsCount && (
+              <div className="text-[10px] text-gray-500 mt-0.5">
+                amostra analisada: {results.resultsCount.toLocaleString('pt-BR')}
+              </div>
+            )}
           </div>
         )}
       </div>

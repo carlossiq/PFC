@@ -202,5 +202,6 @@ async def test_run_final_search_ops_returns_aggregated_shape_with_strategy():
     assert result["api"] == "ops"
     assert set(result) == {
         "success", "api", "depositants", "cpc", "title", "patents_by_year", "strategy", "raw_items", "error",
+        "total_count",  # total real da base (Quadro de busca), não o tamanho da amostra
     }
     assert "results" not in result

@@ -246,7 +246,12 @@ export async function validateFinalQuery(query: string, api: ProbeApi = 'ops'): 
 // campo "amigável" aqui, só repassado como veio do backend.
 export interface OpsFinalAggregateResult {
   success: boolean
+  // Tamanho da AMOSTRA baixada/analisada (itens com título) - usado pra
+  // saber se há dados; o total que a base encontrou é `totalCount`.
   resultsCount: number
+  // Total REAL de patentes que a base encontrou pra query (é o número do
+  // Quadro de busca e do texto do relatório, como no REPTEC).
+  totalCount: number
   depositants: Record<string, number>
   cpc: Record<string, number>
   title: string[]
@@ -261,7 +266,9 @@ export interface OpsFinalAggregateResult {
 // ChatService._enrich_scopus_abstracts), quando disponível.
 export interface ScopusFinalAggregateResult {
   success: boolean
+  // Ver OpsFinalAggregateResult: amostra x total real.
   resultsCount: number
+  totalCount: number
   institutions: Record<string, number>
   areaOfStudy: Record<string, number>
   title: string[]
@@ -270,6 +277,14 @@ export interface ScopusFinalAggregateResult {
 }
 
 // Roda a busca final real com a query escolhida entre as variantes geradas.
+// Total real da busca; sem ele (resposta antiga), soma a série anual; em
+// último caso, o tamanho da amostra.
+function totalFrom(total: number | null | undefined, byYear: Record<string, number> | undefined, sample: number): number {
+  if (typeof total === 'number' && total > 0) return total
+  const summed = Object.values(byYear ?? {}).reduce((sum, n) => sum + n, 0)
+  return summed > 0 ? summed : sample
+}
+
 // OPS: devolve o compilado agregado (depositants/cpc/title/patentsByYear).
 // Scopus: devolve o compilado agregado equivalente
 // (institutions/areaOfStudy/title/articlesByYear) - mesmo esquema da OPS.
@@ -315,6 +330,7 @@ export async function runFinalSearch(
     return {
       success: result.success,
       resultsCount: title.length,
+      totalCount: totalFrom(result.total_count, result.patents_by_year, title.length),
       depositants: result.depositants ?? {},
       cpc: result.cpc ?? {},
       title,
@@ -328,6 +344,7 @@ export async function runFinalSearch(
     return {
       success: result.success,
       resultsCount: title.length,
+      totalCount: totalFrom(result.total_count, result.articles_by_year, title.length),
       institutions: result.institutions ?? {},
       areaOfStudy: result.area_of_study ?? {},
       title,

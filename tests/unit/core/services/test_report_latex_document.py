@@ -127,18 +127,30 @@ def test_template_quadro_table():
     assert r"Patentes (1.800) = q1 & Artigos (444) = q2 \\" in tex
 
 
-def test_template_signatures_are_centered_and_bold():
+def test_template_signature_is_name_dash_rank_then_function():
+    # Formato do REPTEC: "NOME – POSTO" (negrito) e a função na linha de baixo.
     tex = _render(
         assinaturas={
-            "elaborado_por": [{"nome": "FULANO", "posto_funcao": "TC"}],
-            "revisado_por": [],
-            "revisado_por_comment": "%",
+            "elaborado_por": [{"nome": "FULANO DE TAL", "posto": "TC", "funcao": "Adj da Seção"}],
+            "revisado_por": [{"nome": "CICLANO DA SILVA", "posto": "Cel", "funcao": ""}],
             "aprovado_por": [],
             "aprovado_por_comment": "%",
         }
     )
 
-    assert "\\begin{center}\n\\vspace{1cm}\n\\rule{8cm}{0.4pt}\\\\\n\\textbf{FULANO}\\\\\n\\textbf{TC}\n\\end{center}" in tex
+    assert (
+        "\\begin{center}\n\\vspace{1cm}\n\\rule{8cm}{0.4pt}\\\\\n"
+        "\\textbf{FULANO DE TAL -- TC}\\\\\nAdj da Seção\\end{center}"
+    ) in tex
+    # Sem função: nada de "\\" solto antes do \end{center}.
+    assert "\\textbf{CICLANO DA SILVA -- Cel}\\end{center}" in tex
+
+
+def test_legacy_signature_payload_is_still_accepted():
+    from schemas.report_document import SignatureBlock
+
+    block = SignatureBlock.model_validate({"nome": "FULANO DE TAL", "posto_funcao": "TC"})
+    assert (block.posto, block.funcao) == ("TC", "")
 
 
 # ---------------------------------------------------------------- router helpers

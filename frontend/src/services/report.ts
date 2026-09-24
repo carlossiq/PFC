@@ -344,7 +344,10 @@ export async function generateSectionText(
 
 export interface SignatureBlockInput {
   nome: string
-  postoFuncao: string
+  // Assinatura no formato do REPTEC: "NOME – POSTO" numa linha, função
+  // na de baixo.
+  posto: string
+  funcao: string
 }
 
 // Cada papel aceita 1+ assinantes - ReportGeneration.tsx sempre manda pelo
@@ -356,7 +359,7 @@ export interface SignaturesFormInput {
 }
 
 function mapSignatureBlocks(blocks: SignatureBlockInput[]) {
-  return blocks.map((b) => ({ nome: b.nome, posto_funcao: b.postoFuncao }))
+  return blocks.map((b) => ({ nome: b.nome, posto: b.posto, funcao: b.funcao }))
 }
 
 function mapSignaturesToPayload(sig?: SignaturesFormInput) {

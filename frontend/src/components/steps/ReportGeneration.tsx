@@ -22,6 +22,7 @@ import {
 import {
   adminReferenceError,
   bibliographyError,
+  signerFuncaoError,
   signerNameError,
   signerPostoError,
   textFieldError,
@@ -152,8 +153,9 @@ function ListEditor({
 }
 
 // Lista de assinantes de um papel (Elaborado/Revisado/Aprovado por) - 1+
-// blocos nome/posto, com "+ Adicionar" e um X por bloco (some quando só
-// resta um - esse nunca pode ser removido).
+// blocos nome / posto-graduação / função (sai como "NOME – POSTO" e a
+// função embaixo, como no REPTEC), com "+ Adicionar" e um X por bloco (some
+// quando só resta um - esse nunca pode ser removido).
 function SignatureListEditor({
   title,
   values,
@@ -175,24 +177,26 @@ function SignatureListEditor({
         <p className="text-xs text-gray-600 font-medium">{title}</p>
         <button
           type="button"
-          onClick={() => onChange([...values, { nome: '', postoFuncao: '' }])}
+          onClick={() => onChange([...values, { nome: '', posto: '', funcao: '' }])}
           className="text-xs font-semibold text-[#0f9448] hover:text-[#0d843f]"
         >
           + Adicionar
         </button>
       </div>
-      {error && <p className="text-red-500 text-xs mb-2">Pelo menos um assinante (nome e posto/função) é obrigatório.</p>}
+      {error && (
+        <p className="text-red-500 text-xs mb-2">Pelo menos um assinante (nome, posto/graduação e função) é obrigatório.</p>
+      )}
       <div className="space-y-2">
         {values.map((value, index) => (
           <div key={index} className="flex items-start gap-2">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1">
+            <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr_2fr] gap-3 flex-1">
               <div>
                 <FloatingLabelInput
                   label="Nome"
                   name={`${title}-nome-${index}`}
                   value={value.nome}
                   onChange={(e) => updateAt(index, { nome: e.target.value })}
-                  placeholder="Ex.: RICARDO WAGNER AMORIM GUIMARÃES – TC"
+                  placeholder="Ex.: RICARDO WAGNER AMORIM GUIMARÃES"
                   error={!!signerNameError(value.nome)}
                 />
                 {signerNameError(value.nome) && (
@@ -201,15 +205,28 @@ function SignatureListEditor({
               </div>
               <div>
                 <FloatingLabelInput
-                  label="Posto/Função"
+                  label="Posto/Graduação"
                   name={`${title}-posto-${index}`}
-                  value={value.postoFuncao}
-                  onChange={(e) => updateAt(index, { postoFuncao: e.target.value })}
-                  placeholder="Ex.: Adj da Seção de Informações Tecnológicas"
-                  error={!!signerPostoError(value.postoFuncao)}
+                  value={value.posto}
+                  onChange={(e) => updateAt(index, { posto: e.target.value })}
+                  placeholder="Ex.: TC"
+                  error={!!signerPostoError(value.posto)}
                 />
-                {signerPostoError(value.postoFuncao) && (
-                  <p className="text-red-500 text-xs mt-1">{signerPostoError(value.postoFuncao)}</p>
+                {signerPostoError(value.posto) && (
+                  <p className="text-red-500 text-xs mt-1">{signerPostoError(value.posto)}</p>
+                )}
+              </div>
+              <div>
+                <FloatingLabelInput
+                  label="Função"
+                  name={`${title}-funcao-${index}`}
+                  value={value.funcao}
+                  onChange={(e) => updateAt(index, { funcao: e.target.value })}
+                  placeholder="Ex.: Adj da Seção de Informações Tecnológicas"
+                  error={!!signerFuncaoError(value)}
+                />
+                {signerFuncaoError(value) && (
+                  <p className="text-red-500 text-xs mt-1">{signerFuncaoError(value)}</p>
                 )}
               </div>
             </div>
@@ -277,7 +294,7 @@ interface ReportGenerationProps {
   onAssembled: (texContent: string) => void
 }
 
-const EMPTY_SIGNATURE_LIST: SignatureBlockInput[] = [{ nome: '', postoFuncao: '' }]
+const EMPTY_SIGNATURE_LIST: SignatureBlockInput[] = [{ nome: '', posto: '', funcao: '' }]
 
 export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGenerationProps) {
   const [numero, setNumero] = useState('')
@@ -329,12 +346,12 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
   const numeroError = !numero.trim()
   const anoError = !ano.trim()
   const referenciasAdministrativasError = referenciasAdministrativas.length === 0
-  const elaboradoPorError = !signatures.elaboradoPor.some((s) => s.nome.trim() && s.postoFuncao.trim())
+  const elaboradoPorError = !signatures.elaboradoPor.some((s) => s.nome.trim() && s.posto.trim() && s.funcao.trim())
   const destinatarioError = !destinatario.trim() || !!textFieldError(destinatario)
   const objetivoError = !!textFieldError(objetivo, 5)
   const localError = !local.trim()
   const signatureFieldErrors = [...signatures.elaboradoPor, ...signatures.revisadoPor, ...signatures.aprovadoPor].some(
-    (s) => !!signerNameError(s.nome) || !!signerPostoError(s.postoFuncao)
+    (s) => !!signerNameError(s.nome) || !!signerPostoError(s.posto) || !!signerFuncaoError(s)
   )
   const hasRequiredFieldErrors =
     numeroError ||
@@ -378,8 +395,8 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
   function buildSectionOverrides(): SectionGenerateOverrides {
     const formState = useFormStore.getState()
     return {
-      articleCount: formState.step4ArticleResults?.resultsCount,
-      patentCount: formState.step4PatentResults?.resultsCount,
+      articleCount: (formState.step4ArticleResults?.totalCount ?? formState.step4ArticleResults?.resultsCount),
+      patentCount: (formState.step4PatentResults?.totalCount ?? formState.step4PatentResults?.resultsCount),
     }
   }
 
@@ -482,9 +499,9 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
       const tema = currentTema()
       const quadroBusca = {
         patenteQuery: formState.step4PatentQuery?.query?.query ?? null,
-        patenteCount: formState.step4PatentResults?.resultsCount ?? null,
+        patenteCount: (formState.step4PatentResults?.totalCount ?? formState.step4PatentResults?.resultsCount) ?? null,
         artigoQuery: formState.step4ArticleQuery?.query?.query ?? null,
-        artigoCount: formState.step4ArticleResults?.resultsCount ?? null,
+        artigoCount: (formState.step4ArticleResults?.totalCount ?? formState.step4ArticleResults?.resultsCount) ?? null,
       }
       const result = await assembleReport(sessionId, {
         numero,

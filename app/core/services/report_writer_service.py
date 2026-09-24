@@ -71,6 +71,12 @@ _LATEX_ESCAPE_MAP = {
 }
 
 
+# Ordinais (º/ª, categoria "Lo" e sem "LATIN" no nome Unicode) - usados em
+# "Nº 115", "1º Ten", "3ª Seção"; o pdflatex com T1 renderiza normalmente.
+# Sem isso eram removidos: "DIEx Nº 256" saía "DIEx N 256".
+_LATIN_EXTRAS = {"º", "ª"}
+
+
 def _is_latin_renderable(ch: str) -> bool:
     """O template (report_latex_template.py) compila com pdflatex usando
     fontenc T1 + Latin Modern - só cobre script latino (com acentos de
@@ -80,7 +86,7 @@ def _is_latin_renderable(ch: str) -> bool:
     for use with LaTeX." - e nomes de inventor/autor vindos da OPS/Scopus
     (usados nas citações "(SOBRENOME et al., ano)", ver report_citations.py) podem
     vir em qualquer script."""
-    if ch.isascii():
+    if ch.isascii() or ch in _LATIN_EXTRAS:
         return True
     category = unicodedata.category(ch)
     if category[0] in ("Z", "P", "N", "S"):  # espaço, pontuação, número, símbolo

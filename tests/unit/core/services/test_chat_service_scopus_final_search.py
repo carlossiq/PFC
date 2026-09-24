@@ -291,7 +291,7 @@ async def test_run_final_search_scopus_returns_aggregated_shape_and_raw_items():
     # mudança intencional deste plano.
     assert set(result) == {
         "success", "api", "institutions", "area_of_study", "title", "articles_by_year",
-        "strategy", "raw_items", "error",
+        "strategy", "raw_items", "error", "total_count",
     }
     assert "results" not in result
     assert "results_count" not in result

@@ -42,7 +42,16 @@ export function signerNameError(nome: string): string | null {
 export function signerPostoError(posto: string): string | null {
   const trimmed = posto.trim()
   if (!trimmed) return null
-  return trimmed.length >= 2 && !looksLikePlaceholder(trimmed) ? null : 'Posto/função inválido.'
+  return trimmed.length >= 2 && !looksLikePlaceholder(trimmed) ? null : 'Posto/graduação inválido.'
+}
+
+// Função do assinante - obrigatória num bloco preenchido (só cobrada depois
+// que nome e posto já foram digitados, pra não acusar erro no meio do
+// preenchimento).
+export function signerFuncaoError(signer: { nome: string; posto: string; funcao: string }): string | null {
+  const funcao = signer.funcao.trim()
+  if (!funcao) return signer.nome.trim() && signer.posto.trim() ? 'Informe a função.' : null
+  return looksLikePlaceholder(funcao) ? 'Função inválida.' : null
 }
 
 export function textFieldError(value: string, minWords = 2): string | null {

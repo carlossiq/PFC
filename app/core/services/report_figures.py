@@ -117,14 +117,53 @@ def _marker_id(raw: str) -> str:
     return raw.replace("\\_", "_")
 
 
+# Artigo/contração antes do nome: "a Figura" <-> "o Quadro" etc.
+_ARTICLE_FEM_TO_MASC = {"a": "o", "da": "do", "na": "no", "pela": "pelo", "à": "ao", "numa": "num", "uma": "um"}
+_ARTICLE_MASC_TO_FEM = {v: k for k, v in _ARTICLE_FEM_TO_MASC.items()}
+
+
+def _swap_article(article: str, mapping: dict[str, str]) -> str:
+    swapped = mapping.get(article.lower())
+    if swapped is None:
+        return article
+    return swapped[:1].upper() + swapped[1:] if article[:1].isupper() else swapped
+
+
+def _fix_figure_word(text: str) -> str:
+    """O LLM às vezes chama um Quadro de "Figura" (e vice-versa): a palavra
+    antes do \\ref segue o tipo do rótulo (quadro:/fig:), com o artigo ou a
+    contração anterior concordando ("a Figura" -> "o Quadro", "da" -> "do")."""
+    def to_quadro(match: re.Match[str]) -> str:
+        article = _swap_article(match.group(1), _ARTICLE_FEM_TO_MASC) if match.group(1) else ""
+        word = "Quadro" if match.group(3) == "F" else "quadro"
+        return f"{article}{match.group(2)}{word}{match.group(4)}"
+
+    def to_figura(match: re.Match[str]) -> str:
+        article = _swap_article(match.group(1), _ARTICLE_MASC_TO_FEM) if match.group(1) else ""
+        word = "Figura" if match.group(3) == "Q" else "figura"
+        return f"{article}{match.group(2)}{word}{match.group(4)}"
+
+    fem = "|".join(sorted(_ARTICLE_FEM_TO_MASC, key=len, reverse=True))
+    masc = "|".join(sorted(_ARTICLE_MASC_TO_FEM, key=len, reverse=True))
+    text = re.sub(
+        rf"(?:\b({fem})\b)?(\s*)\b([Ff])igura(\s*~?\s*\\ref\{{quadro:)", to_quadro, text, flags=re.IGNORECASE
+    )
+    return re.sub(
+        rf"(?:\b({masc})\b)?(\s*)\b([Qq])uadro(\s*~?\s*\\ref\{{fig:)", to_figura, text, flags=re.IGNORECASE
+    )
+
+
 def place_figures(text: str, catalog: list[CatalogEntry], section_key: Optional[str] = None) -> tuple[str, list[str]]:
     """Troca `[[REF:id]]` por `\\ref{...}` e `[[FIG:id]]` pelo bloco LaTeX
     da figura; devolve (texto, avisos).
 
     - id desconhecido: marcador removido (+ aviso);
     - figura posicionada mais de uma vez: só a primeira ocorrência fica;
-    - figura do catálogo não posicionada (inclusive a que só tem
-      [[REF:id]], sem [[FIG:id]]): vai pro fim da seção (+ aviso).
+    - figura sem [[FIG:id]] mas CITADA no texto ([[REF:id]]/\\ref): entra
+      logo depois do parágrafo que a cita pela primeira vez - o padrão do
+      REPTEC (parágrafo que apresenta, figura, parágrafo que interpreta), em
+      vez de todas empilhadas no fim da seção sem texto ao redor;
+    - figura nunca citada: vai pro fim da seção (+ aviso).
     """
     by_id = {entry.id: entry for entry in catalog}
     warnings: list[str] = []
@@ -149,10 +188,29 @@ def place_figures(text: str, catalog: list[CatalogEntry], section_key: Optional[
     result = _MARKER_RE.sub(replace, text)
 
     leftovers = [entry for entry in sort_catalog(catalog) if entry.id not in placed]
+
+    # Citadas mas não posicionadas: depois do parágrafo da 1ª citação.
+    # Inserção de trás pra frente pra não deslocar as posições calculadas;
+    # várias figuras citadas no mesmo parágrafo entram na ordem de citação.
+    insertions: list[tuple[int, int, CatalogEntry]] = []
+    uncited: list[CatalogEntry] = []
     for entry in leftovers:
-        warnings.append(f"figura {entry.id} não posicionada no texto - inserida no fim da seção")
-    if leftovers:
-        result = result.rstrip() + "\n\n" + "\n\n".join(figure_latex(entry) for entry in leftovers)
+        ref_pos = result.find(f"\\ref{{{entry.label}}}")
+        if ref_pos == -1:
+            uncited.append(entry)
+            continue
+        paragraph_end = result.find("\n\n", ref_pos)
+        insertions.append((len(result) if paragraph_end == -1 else paragraph_end, ref_pos, entry))
+        warnings.append(f"figura {entry.id} sem marcador [[FIG]] - inserida após o parágrafo que a cita")
+    for position, _, entry in sorted(insertions, key=lambda item: (item[0], item[1]), reverse=True):
+        result = result[:position] + f"\n\n{figure_latex(entry)}" + result[position:]
+
+    for entry in uncited:
+        warnings.append(f"figura {entry.id} não citada no texto - inserida no fim da seção")
+    if uncited:
+        result = result.rstrip() + "\n\n" + "\n\n".join(figure_latex(entry) for entry in uncited)
+
+    result = _fix_figure_word(result)
 
     # Colapsa linhas em branco extras deixadas pelas trocas acima.
     result = re.sub(r"\n{3,}", "\n\n", result).strip()

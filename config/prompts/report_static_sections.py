@@ -69,9 +69,9 @@ DEFAULT_BIBLIOGRAPHY: list[str] = [
 # permite adicionar mais de um colaborador/revisor/aprovador por papel (ver
 # ReportGeneration.tsx), sempre com pelo menos um item.
 DEFAULT_SIGNATURES: dict[str, list[dict[str, str]]] = {
-    "elaborado_por": [{"nome": "", "posto_funcao": ""}],
-    "revisado_por": [{"nome": "", "posto_funcao": ""}],
-    "aprovado_por": [{"nome": "", "posto_funcao": ""}],
+    "elaborado_por": [{"nome": "", "posto": "", "funcao": ""}],
+    "revisado_por": [{"nome": "", "posto": "", "funcao": ""}],
+    "aprovado_por": [{"nome": "", "posto": "", "funcao": ""}],
 }
 
 
