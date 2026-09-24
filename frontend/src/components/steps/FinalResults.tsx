@@ -33,7 +33,20 @@ function SCurveSection({ kind, yearlyByYear }: { kind: SCurveKind; yearlyByYear:
     isApplyingProjection,
   } = useFinalSCurve(kind, yearlyByYear)
 
-  if (!hasData) return null
+  // Sem contagem por ano (ex.: a API da fonte falhou em todas as consultas
+  // por ano) - antes a seção simplesmente sumia, sem explicar por que não
+  // havia curva S.
+  if (!hasData) {
+    return (
+      <div className="mt-3 pt-3 border-t border-gray-100">
+        <h5 className="text-xs font-semibold text-gray-600 mb-2">Curva S (evolução temporal)</h5>
+        <p className="text-sm text-gray-500">
+          A busca não retornou a contagem de {kind === 'patent' ? 'patentes' : 'artigos'} por ano, então a curva S não
+          pôde ser gerada. Refaça a busca final para tentar novamente.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="mt-3 pt-3 border-t border-gray-100">

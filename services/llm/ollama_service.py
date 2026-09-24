@@ -22,7 +22,7 @@ from app.core.domain.types import LLMUsage
 from core.logging import get_logger
 from schemas.intake import InputIntake
 from schemas.llm import LLMOutput
-from services.llm.base import BaseLLMService, LLMJSONParseError
+from services.llm.base import BaseLLMService, LLMJSONParseError, parse_llm_json
 
 logger = get_logger(__name__)
 
@@ -172,7 +172,7 @@ class OllamaLLMService(BaseLLMService):
             if end > start:
                 json_str = response[start:end].strip()
                 try:
-                    return json.loads(json_str)
+                    return parse_llm_json(json_str)
                 except json.JSONDecodeError as exc:
                     raise LLMJSONParseError(f"Invalid JSON in ```json block: {exc}", raw_response=response)
 
@@ -182,12 +182,12 @@ class OllamaLLMService(BaseLLMService):
             if end > start:
                 json_str = response[start:end].strip()
                 try:
-                    return json.loads(json_str)
+                    return parse_llm_json(json_str)
                 except json.JSONDecodeError as exc:
                     raise LLMJSONParseError(f"Invalid JSON in ``` block: {exc}", raw_response=response)
 
         try:
-            return json.loads(response)
+            return parse_llm_json(response)
         except json.JSONDecodeError as exc:
             raise LLMJSONParseError(
                 f"Could not parse response as JSON: {exc}. Response preview: {response[:200]}",

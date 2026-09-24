@@ -94,6 +94,16 @@ class StaticSectionsRequest(BaseModel):
         "não no Step1) quando informado.",
     )
     period_end: Optional[int] = None
+    tema: str = Field(default="", description="Tema do relatório - entra na Finalidade (texto fixo).")
+    destinatario: str = Field(
+        default="",
+        description='Para quem é o relatório, ex.: "Indústria de Material Bélico do Brasil (IMBEL)" - completa a '
+        "frase fixa da Finalidade (ver report_static_sections.render_finalidade).",
+    )
+    objetivo: Optional[str] = Field(
+        default=None,
+        description="Objetivo escrito pelo usuário - quando vem preenchido substitui a seção de IA 'objetivo'.",
+    )
 
 
 class StaticSectionsResponse(BaseModel):
@@ -130,6 +140,9 @@ class AssembleRequest(BaseModel):
     referencias_administrativas: list[str] = Field(default_factory=list)
     assinaturas: Optional[SignaturesInput] = None
     quadro_busca: Optional[QuadroBuscaInput] = None
+    # Linha "Rio de Janeiro, 10 de agosto de 2023." antes das assinaturas -
+    # a data é a da montagem (ver _local_data).
+    local: str = "Rio de Janeiro"
 
 
 class AssembleResponse(BaseModel):

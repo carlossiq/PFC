@@ -28,11 +28,8 @@ gerada]" em vez de quebrar a renderização):
     quadro_busca: dict com patente/artigo (conteúdo já escapado de cada
         célula do Quadro de estratégias de busca) ou None
     informacoes_cientificas, informacoes_tecnologicas, tendencias_ciclo_vida: str
-        - subseções 6.1/6.2/6.3, seções de IA
-    charts_cientificas, charts_tecnologicas, charts_ciclo_vida: list[dict]
-        com {"filename": str, "caption": str} (caption = título da figura,
-        acima dela - a imagem em si não tem título) - gráficos já baixados do
-        MinIO (ver ReportLatexService), agrupados por subseção de Resultados
+        - subseções 6.1/6.2/6.3, seções de IA JÁ com as figuras/quadros
+        inseridos no lugar (ver app/core/services/report_figures.py)
     conclusao: str - seção 7, seção de IA
     referencias_bibliograficas: list[str] - seção 8, fixa + usuário
     assinaturas: dict com elaborado_por/revisado_por/aprovado_por, cada um
@@ -50,8 +47,11 @@ REPORT_LATEX_TEMPLATE = r"""
 \documentclass[12pt,a4paper]{article}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
-\usepackage[brazil]{babel}
+\usepackage[brazilian]{babel}
 \usepackage[margin=2.5cm]{geometry}
+\usepackage{tgtermes}
+\usepackage{setspace}
+\onehalfspacing
 \usepackage{graphicx}
 \usepackage{float}
 \usepackage{indentfirst}
@@ -64,7 +64,7 @@ REPORT_LATEX_TEMPLATE = r"""
 \usepackage{tocloft}
 \usepackage{caption}
 \usepackage{enumitem}
-\usepackage{hyperref}
+\usepackage[hidelinks]{hyperref}
 
 \setlength{\parindent}{1.25cm}
 \setlength{\headheight}{15pt}
@@ -72,35 +72,47 @@ REPORT_LATEX_TEMPLATE = r"""
 % Cabeçalho/rodapé em toda página exceto a capa (titlepage já é "empty").
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[C]{\small REPTEC \VAR{numero}/\VAR{ano} -- \MakeUppercase{\VAR{tema}}}
-\fancyfoot[C]{\small Página \thepage\ de \pageref*{LastPage}}
+\fancyhead[R]{REPTEC \VAR{numero}/\VAR{ano} -- \MakeUppercase{\VAR{tema}}}
+\fancyfoot[R]{Página \thepage\ de \pageref*{LastPage}}
 \renewcommand{\headrulewidth}{0pt}
 
-% Títulos: "1 FINALIDADE" em negrito (o texto já vem em caixa alta do
-% próprio template, então o sumário também sai em caixa alta).
+% Títulos: "1 FINALIDADE" (seções em caixa alta, escrita no próprio
+% template) e "5.1 Informações Científicas" (subseções em caixa mista),
+% ambos em negrito - igual ao REPTEC de referência.
 \titleformat{\section}{\normalfont\normalsize\bfseries}{\thesection}{0.5em}{}
 \titleformat{\subsection}{\normalfont\normalsize\bfseries}{\thesubsection}{0.5em}{}
 \titlespacing*{\section}{0pt}{12pt}{6pt}
 \titlespacing*{\subsection}{0pt}{12pt}{6pt}
 
-% Sumário: pontilhado até o número da página em todas as entradas.
-\renewcommand{\cfttoctitlefont}{\hfill\normalsize\bfseries}
-\renewcommand{\cftaftertoctitle}{\hfill}
+% Sumário: só as seções principais (sempre em caixa alta), título à
+% esquerda, pontilhado até o número da página em todas as entradas.
+\setcounter{tocdepth}{1}
+\renewcommand{\cfttoctitlefont}{\normalsize\bfseries}
+\renewcommand{\cftaftertoctitle}{}
 \renewcommand{\cftsecfont}{\normalfont}
 \renewcommand{\cftsecpagefont}{\normalfont}
 \renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
 
 % Figuras: "Figura N: título" acima, "Fonte: ..." abaixo - o título nunca
 % vem desenhado dentro da imagem (ver report_service.py).
-\captionsetup{labelsep=colon, font=small, justification=centering}
+\captionsetup{labelsep=colon, font=normalsize, justification=centering}
 \DeclareCaptionType{quadro}[Quadro][Lista de Quadros]
 \newcommand{\figura}[3][O autor.]{%
   \begin{figure}[H]
     \centering
     \caption{#2}
     \includegraphics[width=0.85\textwidth,height=0.55\textheight,keepaspectratio]{#3}\par
-    \vspace{0.2cm}{\small Fonte: #1}
+    \vspace{0.2cm}Fonte: #1
   \end{figure}}
+% Imagem apresentada como Quadro (ex.: heatmaps de CPC/áreas de estudo -
+% no REPTEC são "Quadro 2"/"Quadro 3", não Figura). minipage: legenda,
+% imagem e fonte nunca se separam numa quebra de página.
+\newcommand{\quadroimg}[3][O autor.]{%
+  \par\vspace{0.5cm}\noindent\begin{minipage}{\textwidth}\centering
+    \captionof{quadro}{#2}
+    \includegraphics[width=0.85\textwidth,height=0.5\textheight,keepaspectratio]{#3}\par
+    \vspace{0.2cm}Fonte: #1
+  \end{minipage}\par\vspace{0.5cm}}
 
 \begin{document}
 
@@ -113,9 +125,9 @@ REPORT_LATEX_TEMPLATE = r"""
     \BLOCK{ endif }
     {\LARGE\bfseries RELATÓRIO DE PROSPECÇÃO TECNOLÓGICA\par}
     \vspace{0.5cm}
-    {\Large \VAR{numero}/\VAR{ano} -- AGITEC\par}
+    {\Large\bfseries \VAR{numero}/\VAR{ano} -- AGITEC\par}
     \vspace{1.5cm}
-    {\Large \MakeUppercase{\VAR{tema}}\par}
+    {\Large\bfseries \MakeUppercase{\VAR{tema}}\par}
     \vfill
 \end{titlepage}
 % A capa conta como página 1 (igual ao REPTEC de referência).
@@ -132,7 +144,7 @@ REPORT_LATEX_TEMPLATE = r"""
 
 \section{REFERÊNCIAS}
 \BLOCK{ if referencias_administrativas }
-\begin{itemize}[leftmargin=*]
+\begin{itemize}[label=-, leftmargin=*]
 \BLOCK{ for ref in referencias_administrativas }
     \item \VAR{ref}
 \BLOCK{ endfor }
@@ -166,7 +178,7 @@ Cabe ressaltar a necessidade de estabelecer estratégias de buscas adequadas e a
 
 Como principal consequência do método, pode-se listar a elaboração mais consistente do Estado da arte, da escolha do repositório de artigos científicos, de patentes, de fontes de notícias, além da melhor estruturação de taxonomias e as curvas de extrapolação que auxiliam a visualizar perspectivas da evolução tecnológica futura. Nas Seções a seguir, serão detalhadas as etapas percorridas na execução do presente estudo prospectivo.
 
-\subsection{INFORMAÇÕES CIENTÍFICAS}
+\subsection{Informações Científicas}
 A informação científica é o conhecimento que constituiu, em certo momento da evolução da ciência, um acréscimo ao entendimento universal então existente sobre algum fato ou fenômeno, tendo-se tornado disponível como resultado de uma pesquisa científica, ou seja, de um trabalho de investigação conduzido segundo o método científico (BORSCHIVER; LEMOS, 2016).
 
 O elemento primordial para o desempenho da atividade científica reside na informação que se encontra codificada de maneira verbal, manifesta em fontes como periódicos científicos e registros de conferências acadêmicas. Por conseguinte, o produto fundamental gerado por essa atividade, ou seja, o artigo científico veiculado em uma revista especializada, também assume esse viés. Tal produto desempenha um papel fundamental como matéria-prima para investigações científicas subsequentes, formando, dessa forma, um ciclo contínuo (BORSCHIVER; LEMOS, 2016).
@@ -175,14 +187,14 @@ O Perfil Científico reflete a visão da academia sobre o assunto, envolvendo re
 
 Em amplo senso, entende-se que no início do ciclo de geração de uma nova tecnologia, o artigo científico é uma das primeiras expressões de codificação do conhecimento, período que usualmente reflete a baixa maturidade da tecnologia analisada. Ademais, a publicação de artigos acompanha grande parte do ciclo de vida de tecnologias em seus diferentes estágios de maturidade tecnológica, o que permite estabelecer interessantes associações e extrapolações, restritas às áreas que dependem de pesquisa básica e aplicada (LINDEN; BARBOSA; DIGIAMPIETRI, 2017; ERNST, 1997; NIETO; LOPÉZ; CRUZ, 1998).
 
-\subsection{INFORMAÇÕES TECNOLÓGICAS}
+\subsection{Informações Tecnológicas}
 As patentes apresentam-se como excelentes indicadores de inovação, na medida em que servem para mensurar o resultado de P\&D, a produtividade, a estrutura e o desenvolvimento de uma tecnologia/indústria específica (BORSCHIVER; LEMOS, 2016).
 
 A busca em repositório estruturado que proporcione o acesso a informações de patentes, sobre a qual recai a expectativa de maior potencial para converter a pesquisa em produto, ou ainda, se constitui em forte indício de aplicação comercial, é uma estratégia essencial para direcionar a inovação e maximizar as oportunidades de desenvolvimento de novos produtos e tecnologias. Através desse tipo de busca em um repositório estruturado de patentes, é possível identificar padrões, tendências e \textit{gaps} no mercado, permitindo uma análise mais precisa das oportunidades e ameaças presentes no cenário tecnológico. Com base nessa abordagem, é possível tomar decisões assertivas sobre investimentos em P\&D, parcerias estratégicas e ações de propriedade intelectual, visando tanto o crescimento operacional quanto a consolidação de uma posição estratégica.
 
 Integram essa fonte as patentes indexadas em bases de abrangência internacional, que espelham jurisdições da maior parte dos países. O Perfil Tecnológico permite analisar informações contidas em portfólio de empresas e áreas de atuação de \textit{startups}, recursos voltados para P\&D e depósitos de patentes (fontes mais vocacionadas à geração de inovação), tais como produção e interesse pela tecnologia, depositantes, possíveis parcerias, tecnologias associadas entre outros. Há robusto pressuposto de que o aumento do interesse por novas tecnologias reflete-se no aumento da atividade de P\&D que, por sua vez, acarreta o aumento de depósito de patentes (DAIM; RUEDA; MARTIN, 2005; PORTER, 2005). Pode-se inferir também que as tecnologias que figuram neste repositório, em amplo senso, já atingiram um nível de maturidade tecnológica mais elevado, portanto, mais propensos, na iminência, ou mesmo já se encontram em uso ou em operação no mercado (ANDRADE; MOURA; BORSCHIVER, 2018; LEZAMA-NICOLÁS et al., 2018).
 
-\subsection{ANÁLISE DE TENDÊNCIAS E O CICLO DE VIDA (CVT) DE UMA TECNOLOGIA}
+\subsection{Análise de Tendências e o Ciclo de Vida (CVT) de uma Tecnologia}
 A análise de tendências se baseia no pressuposto de que os comportamentos do passado serão mantidos no futuro. Esta análise utiliza técnicas matemáticas e estatísticas para extrapolar séries temporais para o futuro (BORSCHIVER; LEMOS, 2016).
 
 A extrapolação por meio de regressão logística abarca métodos de previsão a partir de robustas ferramentas matemáticas e estatísticas, como Loglet\footnote{Disponível em \url{https://logletlab.com/loglet/documentation/index}.} e Sigmaplot\footnote{Disponível em \url{https://osbsoftware.com.br/produto/sigmaplot/}.}. Permitem, ainda, acompanhar, em grande medida a evolução científico-tecnológica, e gerar curvas S, para avaliar o desempenho de tecnologias, prever mudanças populacionais, analisar a penetração de mercado, elaborar estudos micro e macroeconômicos, verificar mecanismos de difusão de invenções tecnológicas e sociais, processos de modelagem ecológica, entre outros fins, o que fora confirmado por outros autores (KUCHARAVY; DE GUIO, 2011; LEZAMA-NICOLÁS et al., 2018; NIETO; LOPÉZ; CRUZ, 1998).
@@ -190,10 +202,10 @@ A extrapolação por meio de regressão logística abarca métodos de previsão 
 Ernst foi um dos precursores em evidenciar a relação entre o desenvolvimento de pedidos de patentes ao longo do tempo e o processo de difusão tecnológica, empregando para tanto, um controle numérico computadorizado (CNC) (ERNST, 1997, p. 363). O autor descreve os quatro estágios do ciclo de vida da tecnologia que abarcam o seu desenvolvimento:
 
 \begin{enumerate}[label=\alph*.]
-    \item estágio emergente: caracterizado por um crescimento relativamente baixo do desempenho tecnológico em comparação com a quantidade de esforços de P\&D;
-    \item estágio de crescimento: na qual o progresso tecnológico marginal sobre os gastos cumulativos de P\&D é positivo;
-    \item estágio de maturidade: onde a relação anterior torna-se negativa; e o
-    \item estágio de saturação: no qual pequenas melhorias de desempenho tecnológico são obtidas por meio de esforços de P\&D muito elevados.
+    \item \textbf{estágio emergente}: caracterizado por um crescimento relativamente baixo do desempenho tecnológico em comparação com a quantidade de esforços de P\&D;
+    \item \textbf{estágio de crescimento}: na qual o progresso tecnológico marginal sobre os gastos cumulativos de P\&D é positivo;
+    \item \textbf{estágio de maturidade}: onde a relação anterior torna-se negativa; e o
+    \item \textbf{estágio de saturação}: no qual pequenas melhorias de desempenho tecnológico são obtidas por meio de esforços de P\&D muito elevados.
 \end{enumerate}
 
 A Figura \ref{fig:madeo} apresenta os quatro estágios do ciclo de vida de uma tecnologia.
@@ -212,6 +224,13 @@ Como apresentado brevemente, o ciclo de vida da tecnologia pode ser monitorado, 
 
 \VAR{metodologia}
 
+\subsection{Apoio Computacional à Prospecção}
+As etapas descritas nesta seção foram conduzidas com o apoio de ferramentas computacionais que integram técnicas de Inteligência Artificial (IA) e de Processamento de Linguagem Natural (PLN) à análise bibliométrica, sempre com a revisão e a validação do analista de prospecção em cada etapa.
+
+Inicialmente, modelos de linguagem de grande porte (\textit{Large Language Models} -- LLM) propõem estratégias de busca a partir do tema e das palavras-chave informados, respeitando a sintaxe de cada base de dados e um índice de complexidade que evita consultas excessivamente restritivas. Essas estratégias são executadas em buscas exploratórias (\textit{probe}), cujos documentos fornecem o vocabulário efetivamente empregado na literatura e nas patentes sobre o tema. Desse conjunto são extraídos termos candidatos por padrões gramaticais, posteriormente ranqueados por dois critérios complementares: um estatístico-lexical, pelo algoritmo BM25F, e um semântico, pelo método KeyBERT, cujos resultados são combinados por fusão de rankings (\textit{Reciprocal Rank Fusion}). Os termos mais representativos orientam a construção da estratégia de busca final, em três níveis de abrangência (específica, balanceada ou ampla), selecionada pelo analista.
+
+A busca final é realizada ano a ano, preservando a série histórica completa, e a amostra analisada é ampliada até que um critério estatístico indique sua saturação, conferindo robustez aos rankings de depositantes, instituições e classificações. As curvas S são ajustadas automaticamente pelo modelo logístico, com a identificação dos pontos GP, MP e SP e do estágio correspondente do ciclo de vida. Por fim, a redação das seções analíticas deste relatório contou com o apoio de LLM, fundamentada exclusivamente nos documentos recuperados nas buscas e nos indicadores calculados, com a citação das respectivas fontes e submetida à revisão final do analista.
+
 \section{RESULTADOS}
 
 \BLOCK{ if quadro_busca }
@@ -221,7 +240,6 @@ As estratégias de busca utilizadas para identificar a produção científica e 
 \noindent\begin{minipage}{\textwidth}
 \centering
 \captionof{quadro}{Estratégias de busca.\label{quadro:busca}}
-\small
 \begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}X|}
 \hline
 \textbf{Depósito de Patentes} & \textbf{Publicações Científicas} \\
@@ -229,31 +247,19 @@ As estratégias de busca utilizadas para identificar a produção científica e 
 \VAR{quadro_busca.patente} & \VAR{quadro_busca.artigo} \\
 \hline
 \end{tabularx}
-\par\vspace{0.2cm}{\small Fonte: O autor.}
+\par\vspace{0.2cm}Fonte: O autor.
 \end{minipage}
 \vspace{0.5cm}
 \BLOCK{ endif }
 
-\subsection{INFORMAÇÕES CIENTÍFICAS}
+\subsection{Informações Científicas}
 \VAR{informacoes_cientificas}
 
-\BLOCK{ for chart in charts_cientificas }
-\figura{\VAR{chart.caption}}{\VAR{chart.filename}}
-\BLOCK{ endfor }
-
-\subsection{INFORMAÇÕES TECNOLÓGICAS}
+\subsection{Informações Tecnológicas}
 \VAR{informacoes_tecnologicas}
 
-\BLOCK{ for chart in charts_tecnologicas }
-\figura{\VAR{chart.caption}}{\VAR{chart.filename}}
-\BLOCK{ endfor }
-
-\subsection{TENDÊNCIAS E CICLO DE VIDA DA TECNOLOGIA}
+\subsection{Tendências e Ciclo de Vida da Tecnologia}
 \VAR{tendencias_ciclo_vida}
-
-\BLOCK{ for chart in charts_ciclo_vida }
-\figura{\VAR{chart.caption}}{\VAR{chart.filename}}
-\BLOCK{ endfor }
 
 \section{CONCLUSÃO}
 \VAR{conclusao}
@@ -269,7 +275,12 @@ As estratégias de busca utilizadas para identificar a produção científica e 
 Nenhuma referência bibliográfica informada.
 \BLOCK{ endif }
 
-\vspace{2cm}
+\vspace{1cm}
+\BLOCK{ if local_data }
+\noindent \VAR{local_data}
+
+\BLOCK{ endif }
+\vspace{1cm}
 \noindent Elaborado por:
 \BLOCK{ for signer in assinaturas.elaborado_por }
 \begin{center}
@@ -341,11 +352,9 @@ _DEFAULT_CONTEXT: dict[str, Any] = {
     "informacoes_cientificas": "[Seção ainda não gerada]",
     "informacoes_tecnologicas": "[Seção ainda não gerada]",
     "tendencias_ciclo_vida": "[Seção ainda não gerada]",
-    "charts_cientificas": [],
-    "charts_tecnologicas": [],
-    "charts_ciclo_vida": [],
     "conclusao": "[Seção ainda não gerada]",
     "referencias_bibliograficas": [],
+    "local_data": None,
     "assinaturas": {
         "elaborado_por": [{"nome": "", "posto_funcao": ""}],
         "revisado_por": [],

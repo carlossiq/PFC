@@ -93,6 +93,7 @@ async def _upsert_session_chart(
     content_type: str = "image/png",
     projection_years: Optional[int] = None,
     fit_quality: Optional[dict[str, Any]] = None,
+    summary: Optional[dict[str, Any]] = None,
 ) -> None:
     """Grava (ou sobrescreve) a linha session_chart pra essa
     (probe_query_id, chart_type) - mesmo padrão de upsert por chave natural
@@ -115,6 +116,7 @@ async def _upsert_session_chart(
     row.content_type = content_type
     row.projection_years = projection_years
     row.fit_quality = fit_quality
+    row.summary = summary
     await session.commit()
 
 
@@ -124,6 +126,7 @@ async def get_existing_chart(
     request: Request,
     fonte: str = Query(..., pattern="^(ops|scopus)$"),
     chart_type: str = Query(...),
+    require_summary: bool = Query(False),
     session: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[ExistingChartResponse]:
     """Devolve um gráfico já persistido pra query final ATUAL de `fonte`
@@ -149,7 +152,10 @@ async def get_existing_chart(
         )
     )
     row = result.scalar_one_or_none()
-    if row is None:
+    # require_summary: gráfico gerado antes de SessionChart.summary existir
+    # conta como "não gerado" pro fluxo do relatório (o chamador regenera e
+    # o resumo numérico passa a existir - ver report_lifecycle.py).
+    if row is None or (require_summary and row.summary is None):
         return SuccessResponse(data=ExistingChartResponse(chart=None))
 
     try:
@@ -235,6 +241,7 @@ async def generate_session_graphics(
                 object_key,
                 projection_years=payload.projection_years,
                 fit_quality=patent_curve["chart"].get("fit_quality"),
+                summary=patent_curve.get("summary"),
             )
     else:
         result["skipped"].append(f"patent:s_curve ({patent_curve['skipped_reason']})")
@@ -303,6 +310,7 @@ async def generate_article_s_curve(
                 object_key,
                 projection_years=payload.projection_years,
                 fit_quality=result["chart"].get("fit_quality"),
+                summary=result.get("summary"),
             )
 
     logger.info(
@@ -346,7 +354,9 @@ async def generate_patent_yearly_volume(
 
     object_key = (result["chart"] or {}).get("object_key")
     if object_key:
-        await _upsert_session_chart(session, ops_probe_query_id, "patent", "yearly_volume", object_key)
+        await _upsert_session_chart(
+            session, ops_probe_query_id, "patent", "yearly_volume", object_key, summary=result.get("summary")
+        )
 
     logger.info(
         "report_patent_yearly_volume_requested",
@@ -394,7 +404,9 @@ async def generate_top10_heatmap(
 
     object_key = (result["chart"] or {}).get("object_key")
     if object_key:
-        await _upsert_session_chart(session, probe_query_id, payload.document_type, "top10_heatmap", object_key)
+        await _upsert_session_chart(
+            session, probe_query_id, payload.document_type, "top10_heatmap", object_key, summary=result.get("summary")
+        )
 
     logger.info(
         "report_top10_heatmap_requested",
@@ -444,7 +456,9 @@ async def generate_top_entities(
 
     object_key = (result["chart"] or {}).get("object_key")
     if object_key:
-        await _upsert_session_chart(session, probe_query_id, payload.document_type, payload.chart_type, object_key)
+        await _upsert_session_chart(
+            session, probe_query_id, payload.document_type, payload.chart_type, object_key, summary=result.get("summary")
+        )
 
     logger.info(
         "report_top_entities_requested",
@@ -488,7 +502,9 @@ async def generate_yearly_volume(
 
     object_key = (result["chart"] or {}).get("object_key")
     if object_key:
-        await _upsert_session_chart(session, probe_query_id, payload.document_type, "yearly_volume", object_key)
+        await _upsert_session_chart(
+            session, probe_query_id, payload.document_type, "yearly_volume", object_key, summary=result.get("summary")
+        )
 
     logger.info(
         "report_yearly_volume_requested",

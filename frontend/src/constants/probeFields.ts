@@ -1,5 +1,6 @@
 // Campos exibidos/editáveis no Step3 por API de busca. Espelha
-// ChatService._PROBE_FIELDS_BY_API no backend - IPC é o campo extra pra
+// ChatService._PROBE_FIELDS_BY_API no backend - IPC (exibido como "CPC",
+// mesma nomenclatura do relatório) é o campo extra pra
 // patentes (classificação ampla de tecnologia), Field of Study é o
 // equivalente pra artigos (classificação ampla de área/assunto).
 // Só ops/scopus por enquanto DE PROPÓSITO: várias partes do front (ver
@@ -17,7 +18,7 @@ export const PROBE_FIELDS_BY_API = {
     labels: {
       title: 'Title',
       abstract: 'Abstract',
-      ipc: 'IPC',
+      ipc: 'CPC',
       year: 'Year',
     } as Record<string, string>,
   },

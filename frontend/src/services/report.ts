@@ -235,13 +235,17 @@ export async function generateYearlyVolumeChart(
 // Usado tanto por useFinalSCurve.ts (evita re-render/re-upload quando nada
 // mudou desde a última geração) quanto pelo card de sessão na busca (ver
 // SessionCard em Workflow.tsx), pra exibir uma curva S já gerada.
+// `requireSummary`: trata como inexistente um gráfico salvo sem o resumo
+// numérico (gerado antes de SessionChart.summary existir) - usado pelo
+// fluxo do relatório, que precisa desse resumo pros textos de Resultados.
 export async function getExistingChart(
   sessionId: number,
   fonte: 'ops' | 'scopus',
-  chartType: string
+  chartType: string,
+  requireSummary = false
 ): Promise<GeneratedChart | null> {
   const { data } = await apiClient.get(`/report/${sessionId}/existing-chart`, {
-    params: { fonte, chart_type: chartType },
+    params: { fonte, chart_type: chartType, require_summary: requireSummary },
   })
   if (!data.success) {
     throw new Error(data.message || 'Falha ao buscar o gráfico já gerado.')
@@ -282,9 +286,9 @@ export function downloadReportChart(chart: GeneratedChart): void {
 
 // Espelha ReportWriterService.AI_SECTIONS (chat_service.py não expõe isso
 // por rota, então é mantido em sincronia manualmente aqui) - ordem em que o
-// checklist gera/exibe as 7 seções de IA.
+// checklist gera/exibe as 6 seções de IA. Finalidade não é mais de IA: é
+// uma frase fixa montada com tema + destinatário (ver buildStaticSections).
 export type AiSectionKey =
-  | 'finalidade'
   | 'objetivo'
   | 'introducao'
   | 'informacoes_cientificas'
@@ -293,7 +297,6 @@ export type AiSectionKey =
   | 'conclusao'
 
 export const AI_SECTION_ORDER: AiSectionKey[] = [
-  'finalidade',
   'objetivo',
   'introducao',
   'informacoes_cientificas',
@@ -303,7 +306,6 @@ export const AI_SECTION_ORDER: AiSectionKey[] = [
 ]
 
 export const AI_SECTION_LABELS: Record<AiSectionKey, string> = {
-  finalidade: 'Finalidade',
   objetivo: 'Objetivo',
   introducao: 'Introdução',
   informacoes_cientificas: 'Resultados — Informações Científicas',
@@ -318,22 +320,13 @@ export async function computeSectionRagContext(sessionId: number, sectionKey: Ai
   return data.data.rag_context
 }
 
-// Estatísticas agregadas que o front já tem em memória (step4PatentResults/
-// step4ArticleResults + a curva S recalculada na hora, ver
-// ReportGeneration.tsx) - só existe porque os documentos da busca FINAL
-// nunca são persistidos no banco (diferente dos da probe), então o backend
-// sozinho não tem como calcular isso (ver SectionGenerateRequest). Só as
-// 3 seções de Resultados usam algum desses campos.
+// Totais de resultados da busca final (step4PatentResults/step4ArticleResults)
+// - os únicos fatos que não ficam no banco. O resto (resumo de cada gráfico,
+// estágio do ciclo de vida, CPC oficial) o backend lê do que já está
+// persistido (ver _build_section_data em report_document_router.py).
 export interface SectionGenerateOverrides {
   articleCount?: number
-  topJournals?: string[]
-  topFields?: string[]
   patentCount?: number
-  topApplicants?: string[]
-  topCpcCodes?: string[]
-  sCurvePhase?: string
-  growthRate?: string
-  peakYear?: number
 }
 
 export async function generateSectionText(
@@ -343,14 +336,7 @@ export async function generateSectionText(
 ): Promise<string> {
   const { data } = await apiClient.post(`/report/${sessionId}/sections/${sectionKey}/generate`, {
     article_count: overrides?.articleCount ?? null,
-    top_journals: overrides?.topJournals ?? [],
-    top_fields: overrides?.topFields ?? [],
     patent_count: overrides?.patentCount ?? null,
-    top_applicants: overrides?.topApplicants ?? [],
-    top_cpc_codes: overrides?.topCpcCodes ?? [],
-    s_curve_phase: overrides?.sCurvePhase ?? null,
-    growth_rate: overrides?.growthRate ?? null,
-    peak_year: overrides?.peakYear ?? null,
   })
   if (!data.success) throw new Error(data.message || `Falha ao gerar o texto da seção (${sectionKey}).`)
   return data.data.generated_text
@@ -396,6 +382,13 @@ export interface StaticSectionsPayload {
   // null, o ano é escolhido por query, não no wizard inteiro.
   periodStart?: number | null
   periodEnd?: number | null
+  // Finalidade (frase fixa): "Apresentar o relatório ... sobre {tema} ...
+  // para {destinatario}."
+  tema: string
+  destinatario: string
+  // Objetivo escrito pelo usuário - quando preenchido, substitui a seção de
+  // IA "objetivo" (o checklist pula a geração dela).
+  objetivo?: string
 }
 
 export interface StaticSectionsResult {
@@ -418,6 +411,9 @@ export async function buildStaticSections(
     assinaturas: mapSignaturesToPayload(payload.assinaturas),
     period_start: payload.periodStart ?? null,
     period_end: payload.periodEnd ?? null,
+    tema: payload.tema,
+    destinatario: payload.destinatario,
+    objetivo: payload.objetivo?.trim() ? payload.objetivo.trim() : null,
   })
   if (!data.success) throw new Error(data.message || 'Falha ao montar as seções estáticas.')
   return {
@@ -445,6 +441,9 @@ export interface AssemblePayload {
   referenciasAdministrativas: string[]
   assinaturas?: SignaturesFormInput
   quadroBusca?: QuadroBusca
+  // "Rio de Janeiro" -> "Rio de Janeiro, 10 de agosto de 2023." antes das
+  // assinaturas (data da montagem).
+  local: string
 }
 
 export interface AssembleResult {
@@ -461,6 +460,7 @@ export async function assembleReport(sessionId: number, payload: AssemblePayload
     tema: payload.tema,
     referencias_administrativas: payload.referenciasAdministrativas,
     assinaturas: mapSignaturesToPayload(payload.assinaturas),
+    local: payload.local,
     quadro_busca: payload.quadroBusca
       ? {
           patente_query: payload.quadroBusca.patenteQuery ?? null,

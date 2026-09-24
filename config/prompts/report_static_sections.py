@@ -75,6 +75,28 @@ DEFAULT_SIGNATURES: dict[str, list[dict[str, str]]] = {
 }
 
 
+FINALIDADE_TEMPLATE = (
+    "Apresentar o relatório de Prospecção Tecnológica sobre {tema} a fim de fornecer informações "
+    "de tendências e ciclo de vida da tecnologia para {destinatario}."
+)
+
+_MESES = [
+    "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+    "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+]
+
+
+def render_finalidade(tema: str, destinatario: str) -> str:
+    """Finalidade do REPTEC: sempre UMA frase fixa (nunca gerada por IA -
+    a versão por IA repetia o Objetivo em três parágrafos)."""
+    return FINALIDADE_TEMPLATE.format(tema=tema.strip(), destinatario=destinatario.strip().rstrip("."))
+
+
+def render_local_data(local: str, when) -> str:
+    """"Rio de Janeiro, 10 de agosto de 2023." (antes das assinaturas)."""
+    return f"{local.strip()}, {when.day} de {_MESES[when.month - 1]} de {when.year}."
+
+
 def _join_pt(items: list[str]) -> str:
     """"a", "a e b", "a, b e c"."""
     if len(items) <= 1:

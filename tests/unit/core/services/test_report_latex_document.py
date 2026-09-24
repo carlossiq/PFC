@@ -4,9 +4,9 @@ from fastapi import HTTPException
 from app.adapters.driving.http.report_document_router import (
     _attachment_filename,
     _ATTACHMENT_FILENAME_RE,
-    _CHART_CAPTIONS,
     _quadro_busca_cell,
 )
+from app.core.services.report_figures import FIGURE_SPECS
 from config.prompts.report_latex_template import render_report_latex
 from config.prompts.report_static_sections import (
     DEFAULT_BIBLIOGRAPHY,
@@ -82,11 +82,13 @@ def _render(**overrides):
 def test_template_header_footer_and_uppercase_sections():
     tex = _render()
 
-    assert r"\fancyhead[C]{\small REPTEC 001/2026 -- \MakeUppercase{placas solares}}" in tex
-    assert r"Página \thepage\ de \pageref*{LastPage}" in tex
+    assert r"\fancyhead[R]{REPTEC 001/2026 -- \MakeUppercase{placas solares}}" in tex
+    assert r"\fancyfoot[R]{Página \thepage\ de \pageref*{LastPage}}" in tex
+    assert r"\setcounter{tocdepth}{1}" in tex
     for title in ("FINALIDADE", "METODOLOGIA", "RESULTADOS", "CONCLUSÃO", "REFERÊNCIAS BIBLIOGRÁFICAS"):
         assert rf"\section{{{title}}}" in tex
-    for title in ("INFORMAÇÕES CIENTÍFICAS", "INFORMAÇÕES TECNOLÓGICAS"):
+    # Subseções em caixa mista, como no REPTEC.
+    for title in ("Informações Científicas", "Informações Tecnológicas"):
         assert tex.count(rf"\subsection{{{title}}}") == 2  # 5.x e 6.x
 
 
@@ -98,10 +100,24 @@ def test_template_fixed_metodologia_figures():
     assert "Fonte: #1" in tex  # macro \figura: "Fonte" abaixo de toda figura
 
 
-def test_template_charts_use_figura_macro_with_caption():
-    tex = _render(charts_cientificas=[{"filename": "article_yearly_volume.png", "caption": "Artigos por Ano"}])
+def test_template_metodologia_describes_computational_support_without_naming_tools():
+    tex = _render(metodologia="PARAGRAFO-INTERPOLADO")
 
-    assert r"\figura{Artigos por Ano}{article_yearly_volume.png}" in tex
+    assert r"\subsection{Apoio Computacional à Prospecção}" in tex
+    for technique in ("BM25F", "KeyBERT", r"\textit{probe}", r"\textit{Reciprocal Rank Fusion}", "LLM"):
+        assert technique in tex
+    # 5.4 vem depois do parágrafo interpolado da 5.3 e antes dos Resultados.
+    assert tex.index("PARAGRAFO-INTERPOLADO") < tex.index("Apoio Computacional") < tex.index(r"\section{RESULTADOS}")
+    # Sem nome de plataforma nem de modelo.
+    assert "AGIA" not in tex.split(r"\begin{document}")[1].replace("AGITEC", "")
+    assert "gemma" not in tex.lower() and "ollama" not in tex.lower()
+
+
+def test_template_defines_figura_and_quadroimg_macros():
+    tex = _render()
+
+    assert r"\newcommand{\figura}" in tex
+    assert r"\newcommand{\quadroimg}" in tex
 
 
 def test_template_quadro_table():
@@ -135,11 +151,12 @@ def test_quadro_cell_formats_count_pt_br_and_escapes_query():
 
 
 def test_chart_whitelist_excludes_legacy_charts():
-    allowed = {chart_type for _, chart_type in _CHART_CAPTIONS}
+    allowed = {chart_type for _, chart_type in FIGURE_SPECS}
 
     assert allowed == {"s_curve", "top_depositants", "top_institutions", "yearly_volume", "top10_heatmap"}
-    assert _CHART_CAPTIONS[("article", "yearly_volume")] == "Artigos por Ano"
-    assert "CPC" in _CHART_CAPTIONS[("patent", "top10_heatmap")]
+    assert "CPC" in FIGURE_SPECS[("patent", "top10_heatmap")].caption
+    assert FIGURE_SPECS[("patent", "top10_heatmap")].kind == "quadro"
+    assert all(spec.caption.endswith(".") for spec in FIGURE_SPECS.values())
 
 
 def test_attachment_filename_is_latex_safe_and_unique():

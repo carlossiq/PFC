@@ -18,7 +18,9 @@ import re
 import unicodedata
 from typing import Any, Optional
 
-from config.prompts.report_prompts import REPORT_SYSTEM_PROMPT, get_section_prompt
+from app.core.services.report_citations import build_citation, build_reference, disambiguate, filter_citations
+from app.core.services.report_text_quality import fix_number_formatting, find_text_issues
+from config.prompts.report_prompts import REPORT_SYSTEM_PROMPT, get_section_prompt, retry_instruction
 from core.config import Settings
 from core.logging import get_logger
 
@@ -26,11 +28,9 @@ logger = get_logger(__name__)
 
 # section_key -> (nome de exibição, descrição usada na busca RAG). As chaves
 # batem exatamente com `section_type` de report_prompts.get_section_prompt.
+# Finalidade não é mais seção de IA: é uma frase fixa com tema + destinatário
+# (ver report_static_sections.render_finalidade), como no REPTEC.
 AI_SECTIONS: dict[str, tuple[str, str]] = {
-    "finalidade": (
-        "Finalidade",
-        "objetivo geral do estudo de prospecção tecnológica e para quem é destinado",
-    ),
     "objetivo": (
         "Objetivo",
         "objetivo específico, escopo temporal, geográfico e técnico desta prospecção",
@@ -45,7 +45,7 @@ AI_SECTIONS: dict[str, tuple[str, str]] = {
     ),
     "informacoes_tecnologicas": (
         "Resultados - Informações Tecnológicas",
-        "depósitos de patentes: volume, principais depositantes e classificações CPC/IPC",
+        "depósitos de patentes: volume, principais depositantes e classificações CPC",
     ),
     "tendencias_ciclo_vida": (
         "Resultados - Tendências e Ciclo de Vida da Tecnologia",
@@ -78,7 +78,7 @@ def _is_latin_renderable(ch: str) -> bool:
     símbolos comuns. Qualquer caractere fora disso (CJK, cirílico, hangul,
     árabe etc.) faz o pdflatex parar com "Unicode character ... not set up
     for use with LaTeX." - e nomes de inventor/autor vindos da OPS/Scopus
-    (usados nas citações "Fonte: ...", ver _build_source_citation) podem
+    (usados nas citações "(SOBRENOME et al., ano)", ver report_citations.py) podem
     vir em qualquer script."""
     if ch.isascii():
         return True
@@ -156,6 +156,23 @@ class RAGUnavailableError(RuntimeError):
     app/container.py (rag_service fica None nesse caso)."""
 
 
+class SectionQualityError(RuntimeError):
+    """Texto gerado continuou com termos internos do pipeline ("[Informação
+    não disponível]", "Relevância", "contexto fornecido"...) mesmo depois de
+    uma regeneração - ver report_text_quality.find_text_issues."""
+
+
+# Versão do formato dos metadados indexados no ChromaDB - sessões indexadas
+# numa versão anterior (sem `citation`/`reference`) são reindexadas
+# automaticamente na próxima seção (ver ensure_session_indexed).
+_INDEX_VERSION = "2"
+
+# Fração do score do documento mais relevante abaixo da qual um trecho é
+# descartado - corta documentos periféricos (ex.: "artificial stone" num
+# relatório sobre placas solares) que o top_k traria de qualquer jeito.
+_RELATIVE_MIN_RELEVANCE = 0.75
+
+
 class ReportWriterService:
     def __init__(self, rag: Any, llm_resolver: Any, settings: Settings) -> None:
         self._rag = rag
@@ -185,13 +202,10 @@ class ReportWriterService:
     ) -> None:
         """Indexa título+resumo dos documentos da busca final dessa sessão,
         se ainda não indexados (idempotente - checa antes de reindexar, pra
-        não pagar o custo de reindexar a cada seção). `patents`/`articles`
-        são dicts com pelo menos `title`/`abstract` (extraídos pelo
-        chamador a partir de Patent/Article, igual ao padrão de
-        report_service.py) - `inventors`/`authors` e `year`, quando
-        presentes, viram a citação em `metadata["source"]` de cada
-        documento (ver _build_source_citation), permitindo o texto gerado
-        citar o autor/inventor de onde tirou a informação."""
+        não pagar o custo de reindexar a cada seção). Cada documento leva
+        nos metadados a citação pronta ("SILVA et al., 2020") e a entrada
+        ABNT correspondente (ver report_citations.py) - sessões indexadas
+        antes disso (sem `index_version`) são reindexadas aqui."""
         if self._rag is None:
             raise RAGUnavailableError("ChromaDB indisponível - verifique o container 'chromadb'.")
 
@@ -202,24 +216,29 @@ class ReportWriterService:
             filter_metadata={"session_id": session_key},
         )
         if already_indexed:
-            return
+            metadata = already_indexed[0].get("metadata") or {}
+            if metadata.get("index_version") == _INDEX_VERSION:
+                return
+            await self._rag.clear_by_metadata({"session_id": session_key})
 
         documents: list[dict[str, Any]] = []
-        for patent in patents:
-            text = _title_abstract_text(patent)
-            if text:
-                doc = {"text": text, "session_id": session_key, "document_type": "patent"}
-                source = _build_source_citation(patent.get("inventors"), patent.get("year"))
-                if source:
-                    doc["source"] = source
-                documents.append(doc)
-        for article in articles:
-            text = _title_abstract_text(article)
-            if text:
-                doc = {"text": text, "session_id": session_key, "document_type": "article"}
-                source = _build_source_citation(article.get("authors"), article.get("year"))
-                if source:
-                    doc["source"] = source
+        for document_type, items in (("patent", patents), ("article", articles)):
+            for item in items:
+                text = _title_abstract_text(item)
+                if not text:
+                    continue
+                doc = {
+                    "text": text,
+                    "session_id": session_key,
+                    "document_type": document_type,
+                    "index_version": _INDEX_VERSION,
+                }
+                names = item.get("inventors") if document_type == "patent" else item.get("authors")
+                citation = build_citation(names, item.get("year"))
+                reference = build_reference(item, document_type)
+                if citation and reference:
+                    doc["citation"] = citation
+                    doc["reference"] = reference
                 documents.append(doc)
 
         if not documents:
@@ -242,19 +261,55 @@ class ReportWriterService:
         await self._rag.clear_by_metadata({"session_id": str(session_id)})
         await self.ensure_session_indexed(session_id, patents, articles)
 
-    async def build_rag_context(self, session_id: int, section_key: str) -> str:
+    async def build_rag_context(
+        self, session_id: int, section_key: str, theme: str = ""
+    ) -> tuple[str, list[dict[str, str]]]:
+        """Recupera os trechos mais relevantes pra seção e devolve
+        (contexto pro LLM, fontes citáveis). O tema entra na busca (sem ele
+        a busca era só o nome da seção e trazia documentos periféricos);
+        trechos bem menos relevantes que o melhor são descartados
+        (_RELATIVE_MIN_RELEVANCE). O contexto NÃO leva score de similaridade
+        nem "Fonte: N/A" - o LLM tratava esses valores como dados."""
         if self._rag is None:
             raise RAGUnavailableError("ChromaDB indisponível - verifique o container 'chromadb'.")
         if section_key not in AI_SECTIONS:
             raise ValueError(f"'{section_key}' não é uma seção de IA válida.")
 
         section_name, section_description = AI_SECTIONS[section_key]
-        return await self._rag.get_context_for_section(
-            section_name=section_name,
-            section_description=section_description,
+        query_text = f"{theme}. {section_name}: {section_description}" if theme else f"{section_name}: {section_description}"
+        results = await self._rag.query(
+            query_text=query_text,
             top_k=self._settings.rag_top_k_per_section,
             filter_metadata={"session_id": str(session_id)},
         )
+        if not results:
+            return "", []
+
+        best = max(r.get("relevance_score", 0) for r in results)
+        kept = [r for r in results if r.get("relevance_score", 0) >= best * _RELATIVE_MIN_RELEVANCE]
+
+        raw_sources = [
+            {"citation": m["citation"], "reference": m["reference"]}
+            for m in ((r.get("metadata") or {}) for r in kept)
+            if m.get("citation") and m.get("reference")
+        ]
+        sources = disambiguate(raw_sources)
+        citation_by_reference = {s["reference"]: s["citation"] for s in sources}
+
+        parts = [f"## Documentos recuperados sobre o tema ({section_name})\n"]
+        for idx, result in enumerate(kept, 1):
+            metadata = result.get("metadata") or {}
+            citation = citation_by_reference.get(metadata.get("reference", ""))
+            header = f"Documento {idx} - citar como ({citation})" if citation else f"Documento {idx} - sem autoria identificada (não citar)"
+            parts.append(header)
+            parts.append(result.get("text", ""))
+            parts.append("")
+
+        logger.info(
+            "report_rag_context section=%s retrieved=%d kept=%d citable=%d",
+            section_key, len(results), len(kept), len(sources),
+        )
+        return "\n".join(parts), sources
 
     # ------------------------------------------------------------------
     # Geração de texto
@@ -266,7 +321,13 @@ class ReportWriterService:
         theme: str,
         rag_context: str,
         data: dict[str, Any],
+        sources: Optional[list[dict[str, str]]] = None,
     ) -> str:
+        """Gera o texto da seção e o valida: números no formato pt-BR são
+        corrigidos automaticamente; termos internos do pipeline ("[Informação
+        não disponível]", "Relevância", "contexto fornecido"...) forçam UMA
+        regeneração - se persistirem, levanta SectionQualityError. Citações
+        que não correspondem a nenhuma fonte recuperada são removidas."""
         if section_key not in AI_SECTIONS:
             raise ValueError(f"'{section_key}' não é uma seção de IA válida.")
 
@@ -279,9 +340,27 @@ class ReportWriterService:
             data=data,
         )
         text_generation = await self._llm_resolver.resolve_text_generation("report_writing")
-        raw_text = await text_generation.generate(prompt, system=REPORT_SYSTEM_PROMPT)
-        cleaned_text = _strip_markdown_headings(raw_text)
-        escaped_text = escape_latex(cleaned_text)
+
+        issues: list[str] = []
+        for attempt in (1, 2):
+            attempt_prompt = prompt if attempt == 1 else prompt + retry_instruction(issues)
+            raw_text = await text_generation.generate(attempt_prompt, system=REPORT_SYSTEM_PROMPT)
+            text = _strip_markdown_headings(raw_text)
+            text, removed = filter_citations(text, sources or [])
+            if removed:
+                logger.warning("report_citations_removed section=%s removed=%s", section_key, removed)
+            text = fix_number_formatting(text)
+            issues = find_text_issues(text)
+            if not issues:
+                break
+            logger.warning("report_section_quality_issues section=%s attempt=%d issues=%s", section_key, attempt, issues)
+        else:
+            raise SectionQualityError(
+                f"O texto gerado para '{section_name}' continuou com problemas após regenerar: "
+                + "; ".join(issues)
+            )
+
+        escaped_text = escape_latex(text)
         return _convert_markdown_bold(escaped_text)
 
 
@@ -293,38 +372,3 @@ def _title_abstract_text(document: dict[str, Any]) -> Optional[str]:
     if title and abstract:
         return f"{title}\n\n{abstract}"
     return title or abstract
-
-
-def _build_source_citation(names: Optional[list[str]], year: Optional[int]) -> Optional[str]:
-    """Citação curta no espírito ABNT ("SOBRENOME et al. (ano)") a partir
-    dos autores/inventores de um documento indexado no RAG - alimenta
-    `metadata["source"]` (ver ensure_session_indexed), que
-    RAGService.get_context_for_section já formata como "Fonte: {source}"
-    em cada trecho recuperado, e REPORT_SYSTEM_PROMPT (regra 6, ver
-    config/prompts/report_prompts.py) já instrui a IA a citar essa fonte
-    entre parênteses ao usar o trecho - o mecanismo de citação já existia
-    ponta a ponta, só nunca recebeu um valor de verdade (sempre "N/A").
-
-    Pega o primeiro nome da lista (autor/inventor, não depositante/empresa -
-    ver chamadas em ensure_session_indexed) e extrai o que vem antes da
-    primeira vírgula (convenção "Sobrenome, Nome" já usada nos nomes vindos
-    da OPS/Scopus) - se não houver vírgula, usa o nome inteiro. Acrescenta
-    "et al." se houver mais de um nome. `None` se não houver nome nenhum, ou
-    se o sobrenome não sobrevive a _strip_unrenderable_chars (nome em
-    CJK/cirílico/etc., comum em inventores de patentes internacionais) - o
-    template só tipografa script latino (ver escape_latex), então uma
-    citação nesses casos sairia só como "(ano)" sem nome nenhum; melhor não
-    citar do que citar vazio. Nunca inventa autor."""
-    if not names:
-        return None
-    first = names[0].strip()
-    if not first:
-        return None
-    surname = first.split(",", 1)[0].strip().upper()
-    if not surname:
-        return None
-    surname = _strip_unrenderable_chars(surname).strip()
-    if not surname:
-        return None
-    label = f"{surname} et al." if len(names) > 1 else surname
-    return f"{label} ({year})" if year else label

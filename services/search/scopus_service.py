@@ -54,7 +54,7 @@ class ScopusService:
 
     # Configurações
     _SCOPUS_API_URL = "https://api.elsevier.com/content/search/scopus"
-    _MAX_RETRIES = 3
+    _MAX_RETRIES = 4
     _RETRY_DELAY_SECONDS = 2
     _TIMEOUT_SECONDS = 30
     _DEFAULT_RESULTS_PER_PAGE = 25
@@ -350,6 +350,32 @@ class ScopusService:
                         run_id=run_id,
                     )
 
+                await asyncio.sleep(self._RETRY_DELAY_SECONDS * (attempt + 1))
+
+            except httpx.TransportError as exc:
+                # Falha de rede transitória (ConnectError "All connection
+                # attempts failed", ReadTimeout...) - comum com várias
+                # requisições simultâneas (busca final por ano, contagem por
+                # área). Antes não era repetida: o ano virava "0 artigos" e a
+                # curva S saía com buracos ou nem era gerada.
+                retry_count = attempt
+                logger.warning(
+                    "scopus_page_transport_error",
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                    attempt=attempt + 1,
+                    run_id=run_id,
+                )
+                if attempt == self._MAX_RETRIES - 1:
+                    return SearchResult(
+                        api_name="scopus",
+                        success=False,
+                        query=query_params.get("query", ""),
+                        error_code="NETWORK_ERROR",
+                        error_message=str(exc) or type(exc).__name__,
+                        retry_count=retry_count,
+                        run_id=run_id,
+                    )
                 await asyncio.sleep(self._RETRY_DELAY_SECONDS * (attempt + 1))
 
             except Exception as exc:

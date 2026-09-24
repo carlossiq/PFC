@@ -13,14 +13,19 @@ import {
   buildStaticSections,
   computeSectionRagContext,
   generateSectionText,
-  generatePatentSCurve,
-  generateArticleSCurve,
   assembleReport,
   type AiSectionKey,
   type SectionGenerateOverrides,
   type SignatureBlockInput,
   type SignaturesFormInput,
 } from '../../services/report'
+import {
+  adminReferenceError,
+  bibliographyError,
+  signerNameError,
+  signerPostoError,
+  textFieldError,
+} from '../../utils/reportFormValidation'
 
 type SectionRunStatus = 'pending' | 'rag' | 'generating' | 'done' | 'error'
 
@@ -55,32 +60,9 @@ const STATUS_CLASSES: Record<SectionRunStatus, string> = {
 }
 
 function errorMessage(err: unknown, fallback: string): string {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  if (typeof detail === 'string' && detail) return detail
   return err instanceof Error ? err.message : fallback
-}
-
-// Top-N chaves de um Record<string, number> (contagem), ordem decrescente -
-// usado pra extrair "top depositantes"/"top CPC"/"top área de estudo" dos
-// agregados que o front já tem em memória (step4PatentResults/step4ArticleResults,
-// ver useFormStore.ts) e mandar como override pro backend (ver
-// SectionGenerateOverrides) - sem isso as seções de Resultados sempre geram
-// texto genérico, já que os documentos da busca FINAL nunca são persistidos
-// no banco (só os da probe).
-function topNKeys(counts: Record<string, number> | undefined, n = 5): string[] {
-  if (!counts) return []
-  return Object.entries(counts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, n)
-    .map(([key]) => key)
-}
-
-// Estágio do ciclo de vida (Ernst, 1997 - o mesmo boilerplate de
-// Metodologia já cita isso) a partir da saturação atual do ajuste
-// logístico da curva S (0-1).
-function deriveSCurvePhase(currentSaturation: number): string {
-  if (currentSaturation < 0.25) return 'Emergente'
-  if (currentSaturation < 0.6) return 'Crescimento'
-  if (currentSaturation < 0.9) return 'Maturidade'
-  return 'Saturação'
 }
 
 function ListEditor({
@@ -89,20 +71,31 @@ function ListEditor({
   onChange,
   placeholder,
   error = false,
+  validate,
 }: {
   label: string
   items: string[]
   onChange: (items: string[]) => void
   placeholder: string
   error?: boolean
+  // Devolve a mensagem de erro do item (ou null) - item inválido não entra
+  // na lista (ver utils/reportFormValidation.ts).
+  validate?: (item: string) => string | null
 }) {
   const [draft, setDraft] = useState('')
+  const [draftError, setDraftError] = useState<string | null>(null)
 
   function add() {
     const trimmed = draft.trim()
     if (!trimmed) return
+    const itemError = validate?.(trimmed) ?? null
+    if (itemError) {
+      setDraftError(itemError)
+      return
+    }
     onChange([...items, trimmed])
     setDraft('')
+    setDraftError(null)
   }
 
   return (
@@ -111,7 +104,10 @@ function ListEditor({
       <div className="flex gap-2 mb-2">
         <input
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value)
+            setDraftError(null)
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault()
@@ -120,7 +116,7 @@ function ListEditor({
           }}
           placeholder={placeholder}
           className={`flex-1 h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-1 ${
-            error
+            error || draftError
               ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
               : 'border-gray-300 focus:border-[#0f9448] focus:ring-[#0f9448]'
           }`}
@@ -129,6 +125,7 @@ function ListEditor({
           Adicionar
         </Button>
       </div>
+      {draftError && <p className="text-red-500 text-xs -mt-1 mb-2">{draftError}</p>}
       {error && items.length === 0 && <p className="text-red-500 text-xs -mt-1 mb-2">Campo obrigatório.</p>}
       {items.length > 0 && (
         <ul className="space-y-1">
@@ -189,18 +186,32 @@ function SignatureListEditor({
         {values.map((value, index) => (
           <div key={index} className="flex items-start gap-2">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1">
-              <FloatingLabelInput
-                label="Nome"
-                name={`${title}-nome-${index}`}
-                value={value.nome}
-                onChange={(e) => updateAt(index, { nome: e.target.value })}
-              />
-              <FloatingLabelInput
-                label="Posto/Função"
-                name={`${title}-posto-${index}`}
-                value={value.postoFuncao}
-                onChange={(e) => updateAt(index, { postoFuncao: e.target.value })}
-              />
+              <div>
+                <FloatingLabelInput
+                  label="Nome"
+                  name={`${title}-nome-${index}`}
+                  value={value.nome}
+                  onChange={(e) => updateAt(index, { nome: e.target.value })}
+                  placeholder="Ex.: RICARDO WAGNER AMORIM GUIMARÃES – TC"
+                  error={!!signerNameError(value.nome)}
+                />
+                {signerNameError(value.nome) && (
+                  <p className="text-red-500 text-xs mt-1">{signerNameError(value.nome)}</p>
+                )}
+              </div>
+              <div>
+                <FloatingLabelInput
+                  label="Posto/Função"
+                  name={`${title}-posto-${index}`}
+                  value={value.postoFuncao}
+                  onChange={(e) => updateAt(index, { postoFuncao: e.target.value })}
+                  placeholder="Ex.: Adj da Seção de Informações Tecnológicas"
+                  error={!!signerPostoError(value.postoFuncao)}
+                />
+                {signerPostoError(value.postoFuncao) && (
+                  <p className="text-red-500 text-xs mt-1">{signerPostoError(value.postoFuncao)}</p>
+                )}
+              </div>
             </div>
             {values.length > 1 && (
               <button
@@ -273,6 +284,11 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
   const [ano, setAno] = useState(String(new Date().getFullYear()))
   const [referenciasAdministrativas, setReferenciasAdministrativas] = useState<string[]>([])
   const [referenciasBibliograficasAdicionais, setReferenciasBibliograficasAdicionais] = useState<string[]>([])
+  // Finalidade = frase fixa com o destinatário; Objetivo opcional (vazio =
+  // gerado por IA); local = linha "Rio de Janeiro, <data>." das assinaturas.
+  const [destinatario, setDestinatario] = useState('')
+  const [objetivo, setObjetivo] = useState('')
+  const [local, setLocal] = useState('Rio de Janeiro')
   const [signatures, setSignatures] = useState<SignaturesFormInput>({
     elaboradoPor: EMPTY_SIGNATURE_LIST,
     revisadoPor: EMPTY_SIGNATURE_LIST,
@@ -314,11 +330,33 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
   const anoError = !ano.trim()
   const referenciasAdministrativasError = referenciasAdministrativas.length === 0
   const elaboradoPorError = !signatures.elaboradoPor.some((s) => s.nome.trim() && s.postoFuncao.trim())
-  const hasRequiredFieldErrors = numeroError || anoError || referenciasAdministrativasError || elaboradoPorError
+  const destinatarioError = !destinatario.trim() || !!textFieldError(destinatario)
+  const objetivoError = !!textFieldError(objetivo, 5)
+  const localError = !local.trim()
+  const signatureFieldErrors = [...signatures.elaboradoPor, ...signatures.revisadoPor, ...signatures.aprovadoPor].some(
+    (s) => !!signerNameError(s.nome) || !!signerPostoError(s.postoFuncao)
+  )
+  const hasRequiredFieldErrors =
+    numeroError ||
+    anoError ||
+    referenciasAdministrativasError ||
+    elaboradoPorError ||
+    destinatarioError ||
+    objetivoError ||
+    localError ||
+    signatureFieldErrors
+  const showDestinatarioError = hasAttemptedAssemble && destinatarioError
+  const showLocalError = hasAttemptedAssemble && localError
+  const hasUserObjetivo = !!objetivo.trim()
   const showNumeroError = hasAttemptedAssemble && numeroError
   const showAnoError = hasAttemptedAssemble && anoError
   const showReferenciasAdministrativasError = hasAttemptedAssemble && referenciasAdministrativasError
   const showElaboradoPorError = hasAttemptedAssemble && elaboradoPorError
+
+  function currentTema(): string {
+    const formState = useFormStore.getState()
+    return formState.step2SelectedTheme?.theme || formState.input.theme
+  }
 
   function buildSignaturesPayload(): SignaturesFormInput {
     return signatures
@@ -334,61 +372,15 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
     return { periodStart: range?.from ?? null, periodEnd: range?.to ?? null }
   }
 
-  // Estatísticas agregadas que o front já tem em memória pra alimentar as 3
-  // seções de Resultados - ver docstring de SectionGenerateOverrides (só
-  // existe porque os documentos da busca final nunca são persistidos no
-  // banco). "tendencias_ciclo_vida" precisa recalcular a curva S na hora
-  // (a mesma rota que FinalResults.tsx já usa) porque o ajuste (fase,
-  // saturação, ano de pico) não é persistido em lugar nenhum, só o PNG.
-  async function buildSectionOverrides(key: AiSectionKey): Promise<SectionGenerateOverrides | undefined> {
+  // Totais de resultados da busca final - os únicos fatos que não ficam no
+  // banco (resumos dos gráficos, estágio do ciclo de vida e CPC oficial o
+  // backend lê do que já está persistido).
+  function buildSectionOverrides(): SectionGenerateOverrides {
     const formState = useFormStore.getState()
-
-    if (key === 'informacoes_cientificas') {
-      return {
-        articleCount: formState.step4ArticleResults?.resultsCount,
-        topFields: topNKeys(formState.step4ArticleResults?.areaOfStudy),
-      }
+    return {
+      articleCount: formState.step4ArticleResults?.resultsCount,
+      patentCount: formState.step4PatentResults?.resultsCount,
     }
-
-    if (key === 'informacoes_tecnologicas') {
-      return {
-        patentCount: formState.step4PatentResults?.resultsCount,
-        topApplicants: topNKeys(formState.step4PatentResults?.depositants),
-        topCpcCodes: topNKeys(formState.step4PatentResults?.cpc),
-      }
-    }
-
-    if (key === 'tendencias_ciclo_vida') {
-      try {
-        const patentsByYear = formState.step4PatentResults?.patentsByYear
-        if (patentsByYear && Object.keys(patentsByYear).length >= 2) {
-          const { fit } = await generatePatentSCurve(sessionId, patentsByYear, 5)
-          if (fit) {
-            return {
-              sCurvePhase: deriveSCurvePhase(fit.currentSaturation),
-              growthRate: fit.r.toFixed(3),
-              peakYear: Math.round(fit.mpYear),
-            }
-          }
-        }
-        const articlesByYear = formState.step4ArticleResults?.articlesByYear
-        if (articlesByYear && Object.keys(articlesByYear).length >= 2) {
-          const { fit } = await generateArticleSCurve(sessionId, articlesByYear, 5)
-          if (fit) {
-            return {
-              sCurvePhase: deriveSCurvePhase(fit.currentSaturation),
-              growthRate: fit.r.toFixed(3),
-              peakYear: Math.round(fit.mpYear),
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('Falha ao calcular a curva S para o prompt de Tendências e Ciclo de Vida:', err)
-      }
-      return undefined
-    }
-
-    return undefined
   }
 
   async function runStatic(): Promise<boolean> {
@@ -403,7 +395,15 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
         assinaturas: buildSignaturesPayload(),
         periodStart,
         periodEnd,
+        tema: currentTema(),
+        destinatario,
+        objetivo,
       })
+      // Objetivo escrito pelo usuário já foi gravado pelas seções estáticas
+      // - a seção de IA "objetivo" não roda.
+      if (hasUserObjetivo) {
+        setAiSections((s) => ({ ...s, objetivo: { status: 'done', text: objetivo.trim(), error: null } }))
+      }
       setStaticState({
         status: 'done',
         metodologia: result.metodologia,
@@ -428,8 +428,7 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
     }
     setAiSections((s) => ({ ...s, [key]: { ...s[key], status: 'generating' } }))
     try {
-      const overrides = await buildSectionOverrides(key)
-      const text = await generateSectionText(sessionId, key, overrides)
+      const text = await generateSectionText(sessionId, key, buildSectionOverrides())
       setAiSections((s) => ({ ...s, [key]: { status: 'done', text, error: null } }))
       return true
     } catch (err) {
@@ -440,6 +439,12 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
 
   async function runPipeline() {
     if (isGenerating) return
+    // Mesmos campos obrigatórios da montagem - as seções estáticas (Finalidade,
+    // Objetivo do usuário, referências) já dependem deles.
+    if (hasRequiredFieldErrors) {
+      setHasAttemptedAssemble(true)
+      return
+    }
     setIsGenerating(true)
     if (staticState.status !== 'done') {
       const ok = await runStatic()
@@ -450,6 +455,7 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
     }
     for (const key of AI_SECTION_ORDER) {
       if (aiSections[key].status === 'done') continue
+      if (key === 'objetivo' && hasUserObjetivo) continue
       const ok = await runAiSection(key)
       if (!ok) {
         setIsGenerating(false)
@@ -473,7 +479,7 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
     setAssembleError(null)
     try {
       const formState = useFormStore.getState()
-      const tema = formState.step2SelectedTheme?.theme || formState.input.theme
+      const tema = currentTema()
       const quadroBusca = {
         patenteQuery: formState.step4PatentQuery?.query?.query ?? null,
         patenteCount: formState.step4PatentResults?.resultsCount ?? null,
@@ -487,6 +493,7 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
         referenciasAdministrativas,
         assinaturas: buildSignaturesPayload(),
         quadroBusca,
+        local,
       })
       const { step: currentStep, substep: currentSubstep } = useProspectingStore.getState()
       const payload = buildSaveSessionPayload(formState, true, currentStep, currentSubstep)
@@ -529,14 +536,62 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
           onChange={setReferenciasAdministrativas}
           placeholder="Ex.: DIEx Nº 115-A3/DCT de 6 de janeiro de 2023"
           error={showReferenciasAdministrativasError}
+          validate={adminReferenceError}
         />
 
         <ListEditor
           label="Referências bibliográficas adicionais"
           items={referenciasBibliograficasAdicionais}
           onChange={setReferenciasBibliograficasAdicionais}
-          placeholder="Referência no formato ABNT"
+          placeholder="Ex.: SILVA, J. Título da obra. Editora, 2020."
+          validate={bibliographyError}
         />
+
+        <div>
+          <FloatingLabelInput
+            label="Destinatário (Finalidade)"
+            name="reptec-destinatario"
+            value={destinatario}
+            onChange={(e) => setDestinatario(e.target.value)}
+            placeholder="Ex.: Indústria de Material Bélico do Brasil (IMBEL)"
+            error={showDestinatarioError}
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Finalidade: "Apresentar o relatório de Prospecção Tecnológica sobre o tema a fim de fornecer informações de
+            tendências e ciclo de vida da tecnologia para <strong>{destinatario.trim() || '[destinatário]'}</strong>."
+          </p>
+          {showDestinatarioError && <p className="text-red-500 text-xs mt-1">Informe para quem é o relatório.</p>}
+        </div>
+
+        <div>
+          <FloatingLabelInput
+            label="Objetivo (opcional)"
+            name="reptec-objetivo"
+            value={objetivo}
+            onChange={(e) => setObjetivo(e.target.value)}
+            placeholder="Ex.: O presente trabalho consiste em realizar um estudo de prospecção tecnológica sobre ... como subsídio para ..."
+            isTextarea
+            rows={3}
+            error={objetivoError}
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            {objetivoError
+              ? 'Texto inválido - escreva ao menos uma frase.'
+              : 'Deixe em branco para a IA redigir um parágrafo curto a partir do tema.'}
+          </p>
+        </div>
+
+        <div>
+          <FloatingLabelInput
+            label="Local (linha antes das assinaturas)"
+            name="reptec-local"
+            value={local}
+            onChange={(e) => setLocal(e.target.value)}
+            placeholder="Ex.: Rio de Janeiro"
+            error={showLocalError}
+          />
+          {showLocalError && <p className="text-red-500 text-xs mt-1">Campo obrigatório.</p>}
+        </div>
 
         {staticState.databasesDetected.length > 0 && (
           <p className="text-xs text-gray-500">
@@ -574,7 +629,7 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
 
       <div className="space-y-3 mb-6">
         <SectionRow
-          label="Metodologia e Referências Bibliográficas"
+          label="Finalidade, Metodologia e Referências Bibliográficas"
           state={{
             status: staticState.status,
             error: staticState.error,

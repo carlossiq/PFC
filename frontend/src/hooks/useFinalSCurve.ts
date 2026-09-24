@@ -79,7 +79,7 @@ export function useFinalSCurve(kind: SCurveKind, yearlyByYear: Record<string, nu
         // à toa - o save acima garante que essa checagem reflete o estado
         // atual (trocar de variante já invalida/apaga o gráfico salvo, ver
         // session_persistence.py).
-        const existing = await getExistingChart(sessionId, fonte, 's_curve')
+        const existing = await getExistingChart(sessionId, fonte, 's_curve', true)
         if (requestIdRef.current !== requestId) return
         if (existing) {
           setChart(existing)

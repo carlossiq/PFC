@@ -3,6 +3,7 @@ import pytest
 from app.core.services.report_writer_service import (
     AI_SECTIONS,
     RAGUnavailableError,
+    SectionQualityError,
     ReportWriterService,
     escape_latex,
 )
@@ -21,7 +22,19 @@ class FakeRAGService:
         self.last_query_filter = filter_metadata
         session_id = (filter_metadata or {}).get("session_id")
         if session_id in self.indexed_sessions:
-            return [{"text": "chunk", "relevance_score": 0.9, "metadata": {"session_id": session_id}}]
+            return [
+                {
+                    "text": "chunk sobre o tema",
+                    "relevance_score": 0.9,
+                    "metadata": {
+                        "session_id": session_id,
+                        "index_version": "2",
+                        "citation": "SILVA et al., 2020",
+                        "reference": "SILVA, J. et al. Título. Periódico, 2020.",
+                    },
+                },
+                {"text": "chunk periférico", "relevance_score": 0.3, "metadata": {"session_id": session_id}},
+            ]
         return []
 
     async def index_documents(self, documents: list[dict]) -> int:
@@ -101,13 +114,15 @@ def test_escape_latex_empty_string():
 # ---- AI_SECTIONS / ai_section_keys ----
 
 
-def test_ai_section_keys_matches_seven_sections():
-    assert len(ReportWriterService.ai_section_keys()) == 7
+def test_ai_section_keys_matches_six_sections():
+    # Finalidade virou texto fixo (report_static_sections.render_finalidade).
+    assert len(ReportWriterService.ai_section_keys()) == 6
     assert set(ReportWriterService.ai_section_keys()) == set(AI_SECTIONS.keys())
 
 
 def test_is_ai_section_rejects_static_sections():
-    assert ReportWriterService.is_ai_section("finalidade") is True
+    assert ReportWriterService.is_ai_section("objetivo") is True
+    assert ReportWriterService.is_ai_section("finalidade") is False
     assert ReportWriterService.is_ai_section("metodologia") is False
     assert ReportWriterService.is_ai_section("referencias_bibliograficas") is False
 
@@ -150,9 +165,48 @@ async def test_reindex_session_clears_before_indexing(svc, rag):
 
 @pytest.mark.asyncio
 async def test_build_rag_context_filters_by_session_id(svc, rag):
-    context = await svc.build_rag_context(42, "introducao")
+    rag.indexed_sessions.add("42")
+    context, sources = await svc.build_rag_context(42, "introducao", "placas solares")
     assert rag.last_query_filter == {"session_id": "42"}
     assert "Introdução" in context
+
+
+@pytest.mark.asyncio
+async def test_build_rag_context_has_no_scores_and_drops_peripheral_chunks(svc, rag):
+    rag.indexed_sessions.add("7")
+    context, sources = await svc.build_rag_context(7, "introducao", "placas solares")
+    assert "citar como (SILVA et al., 2020)" in context
+    assert "chunk periférico" not in context  # 0,3 < 75% de 0,9
+    assert "Relevância" not in context and "N/A" not in context and "%" not in context
+    assert sources == [{"citation": "SILVA et al., 2020", "reference": "SILVA, J. et al. Título. Periódico, 2020."}]
+
+
+@pytest.mark.asyncio
+async def test_generate_section_text_regenerates_once_on_pipeline_leaks(svc, text_generation):
+    responses = iter(["Texto com [Informação não disponível].", "Texto limpo com 17.3% e 1800 patentes."])
+    text_generation.generate = lambda prompt, system=None: _async(next(responses))
+    result = await svc.generate_section_text("conclusao", "Tema", "", {})
+    assert result == r"Texto limpo com 17,3\% e 1.800 patentes."
+
+
+@pytest.mark.asyncio
+async def test_generate_section_text_fails_when_leak_persists(svc, text_generation):
+    text_generation.response = "Conforme o contexto fornecido (Fonte: N/A)."
+    with pytest.raises(SectionQualityError):
+        await svc.generate_section_text("conclusao", "Tema", "", {})
+    assert len(text_generation.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_section_text_removes_unknown_citations(svc, text_generation):
+    text_generation.response = "Afirmação (SILVA et al., 2020; PEI, 2008). Outra (XUAN et al., 2025)."
+    sources = [{"citation": "SILVA et al., 2020", "reference": "x"}]
+    result = await svc.generate_section_text("conclusao", "Tema", "", {}, sources)
+    assert result == "Afirmação (SILVA et al., 2020). Outra."
+
+
+async def _async(value):
+    return value
 
 
 @pytest.mark.asyncio

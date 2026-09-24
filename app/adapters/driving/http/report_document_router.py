@@ -22,7 +22,7 @@ import base64
 import io
 import re
 import unicodedata
-from collections import Counter
+from datetime import date
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -31,19 +31,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.driving.http.dependencies import get_db_session
 from app.adapters.driving.http.report_router import _resolve_final_probe_query_id
+from app.core.services.cpc_titles import describe_codes
+from app.core.services.report_citations import references_for_text
+from app.core.services.report_lifecycle import build_lifecycle, summary_text
 from app.core.services.report_writer_service import (
     RAGUnavailableError,
     ReportWriterService,
+    SectionQualityError,
     escape_latex,
     latex_comment,
 )
 from app.core.services.report_cover_image import REPORT_COVER_IMAGE_FILENAME, REPORT_COVER_IMAGE_OBJECT_KEY
+from app.core.services.report_figures import FIGURE_ORDER, FIGURE_SPECS, CatalogEntry, figure_id, place_figures
+from app.core.services.report_form_validation import (
+    admin_reference_error,
+    bibliography_error,
+    collect_errors,
+    signer_error,
+    text_field_error,
+)
 from app.core.services.report_static_figures import REPORT_STATIC_FIGURES
 from config.prompts.report_static_sections import (
     DEFAULT_BIBLIOGRAPHY,
     DEFAULT_SIGNATURES,
     legacy_metodologia_to_paragraph,
     merge_bibliography,
+    render_finalidade,
+    render_local_data,
     render_metodologia,
 )
 from core.config import settings
@@ -83,31 +97,11 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/report", tags=["report-document"])
 
-# Título de cada figura no .tex (acima da imagem - a imagem em si não tem
-# título desenhado, ver report_service.py) e, ao mesmo tempo, a LISTA DE
-# GRÁFICOS PERMITIDOS no relatório: SessionChart pode ter linhas de
-# chart_type fora daqui (ex.: top_inventors/top_authors/geographic_
-# distribution do pipeline antigo de POST /report/{id}/graphics, gerados em
-# sessões anteriores à remoção dele) - essas nunca entram no .tex nem no
-# painel de imagens do editor (ver _is_report_chart).
-# A distribuição de classificações de patentes é tratada como CPC no texto
-# do relatório (pedido explícito do usuário), mesmo sendo IPC na origem (a
-# OPS não devolve CPC na busca final, ver ChatService._aggregate_ops_final_items).
-_CHART_CAPTIONS: dict[tuple[str, str], str] = {
-    ("patent", "s_curve"): "Curva S e Evolução Temporal — Patentes",
-    ("article", "s_curve"): "Curva S e Evolução Temporal — Artigos",
-    ("patent", "top_depositants"): "Top 10 Depositantes",
-    ("article", "top_institutions"): "Top 10 Instituições",
-    ("patent", "yearly_volume"): "Patentes por Ano",
-    ("article", "yearly_volume"): "Artigos por Ano",
-    ("patent", "top10_heatmap"): "Top 10 Classificações (CPC)",
-    ("article", "top10_heatmap"): "Top 10 Áreas de Estudo",
-}
-
 
 def _is_report_chart(chart: SessionChart) -> bool:
-    return (chart.document_type, chart.chart_type) in _CHART_CAPTIONS
-
+    """Só os gráficos do catálogo do relatório (FIGURE_SPECS) - ver
+    report_figures.py pro porquê de existirem outros em SessionChart."""
+    return (chart.document_type, chart.chart_type) in FIGURE_SPECS
 
 
 def _writer(request: Request) -> ReportWriterService:
@@ -248,9 +242,8 @@ def _patent_to_rag_dict(patent: Patent) -> dict[str, Any]:
         "abstract": patent.abstract,
         "year": patent.year,
         "applicants": patent.applicants,
-        # Inventores (pessoa), não depositantes (empresa) - usado pra
-        # citação de autoria no texto gerado (ver
-        # ReportWriterService._build_source_citation/ensure_session_indexed).
+        # Inventores (pessoa), não depositantes (empresa) - viram a citação
+        # (SOBRENOME et al., ano) do documento (ver report_citations.py).
         "inventors": patent.inventors,
         "cpc_codes": patent.cpc_codes,
         "ipc_codes": patent.ipc_codes,
@@ -269,67 +262,87 @@ def _article_to_rag_dict(article: Article) -> dict[str, Any]:
     }
 
 
-def _top_values(documents: list[dict[str, Any]], field: str, is_list: bool, n: int = 5) -> list[str]:
-    if is_list:
-        values = [str(v) for doc in documents for v in (doc.get(field) or []) if v]
-    else:
-        values = [str(doc[field]) for doc in documents if doc.get(field)]
-    return [value for value, _ in Counter(values).most_common(n)]
+def _pt_int(value: int) -> str:
+    return f"{value:,}".replace(",", ".")
 
 
-def _build_report_data(
-    theme_input: Optional[SessionInput],
-    patents: list[dict[str, Any]],
-    articles: list[dict[str, Any]],
-) -> dict[str, Any]:
-    """Monta o `data: dict` passado pra report_prompts.get_section_prompt -
-    reaproveita só o que já está persistido (SessionInput + Patent/Article
-    da busca final), sem recalcular nada que report_service.py já resolve
-    de outra forma (curva S etc. ficam só nos gráficos embutidos no .tex,
-    não recomputados aqui em número)."""
+async def _report_charts(session: AsyncSession, session_id: int) -> list[SessionChart]:
+    """Gráficos da busca final dessa sessão que fazem parte do relatório
+    (FIGURE_SPECS), na ordem de apresentação."""
+    result = await session.execute(
+        select(SessionChart)
+        .join(SessionProbeQuery, SessionProbeQuery.id == SessionChart.probe_query_id)
+        .where(SessionProbeQuery.session_id == session_id, SessionProbeQuery.tipo.isnot(None))
+    )
+    charts = [chart for chart in result.scalars().all() if _is_report_chart(chart)]
+    order = {chart_type: idx for idx, chart_type in enumerate(FIGURE_ORDER)}
+    return sorted(charts, key=lambda c: (order.get(c.chart_type, len(order)), c.document_type))
+
+
+def _figure_facts(chart: SessionChart) -> dict[str, str]:
+    spec = FIGURE_SPECS[(chart.document_type, chart.chart_type)]
     return {
-        "area_of_study": (theme_input.area_of_study if theme_input else None) or "",
-        "keywords": (theme_input.keywords if theme_input else None) or [],
-        "period_start": theme_input.year_from if theme_input else None,
-        "period_end": theme_input.year_to if theme_input else None,
-        "patent_count": len(patents),
-        "article_count": len(articles),
-        "top_applicants": [{"name": v} for v in _top_values(patents, "applicants", True)],
-        # "top_cpc_codes" é lido de ipc_codes de propósito - patent.cpc_codes
-        # fica sempre vazio (a OPS não retorna CPC nesse endpoint, só IPC;
-        # ver ChatService._aggregate_ops_final_items). Chave preservada por
-        # compatibilidade com SectionGenerateOverrides.top_cpc_codes.
-        "top_cpc_codes": _top_values(patents, "ipc_codes", True),
-        "top_journals": [{"journal": v} for v in _top_values(articles, "journal_or_source", False)],
-        "top_fields": _top_values(articles, "field_of_study", True),
+        "id": figure_id(chart.document_type, chart.chart_type),
+        "kind": "Quadro" if spec.kind == "quadro" else "Figura",
+        "caption": spec.caption,
+        "summary": summary_text(chart.chart_type, chart.summary or {}),
     }
 
 
-def _apply_section_generate_overrides(data: dict[str, Any], payload: Optional[SectionGenerateRequest]) -> None:
-    """Sobrescreve campos de `data` (ver _build_report_data, quase sempre
-    0/vazio hoje) com as estatísticas agregadas que o front já tem em
-    memória - None/lista vazia em `payload` preserva o valor já calculado,
-    sem sobrescrever com "nada" por engano."""
-    if payload is None:
-        return
-    if payload.article_count is not None:
-        data["article_count"] = payload.article_count
-    if payload.top_journals:
-        data["top_journals"] = [{"journal": v} for v in payload.top_journals]
-    if payload.top_fields:
-        data["top_fields"] = payload.top_fields
-    if payload.patent_count is not None:
-        data["patent_count"] = payload.patent_count
-    if payload.top_applicants:
-        data["top_applicants"] = [{"name": v} for v in payload.top_applicants]
-    if payload.top_cpc_codes:
-        data["top_cpc_codes"] = payload.top_cpc_codes
-    if payload.s_curve_phase is not None:
-        data["s_curve_phase"] = payload.s_curve_phase
-    if payload.growth_rate is not None:
-        data["growth_rate"] = payload.growth_rate
-    if payload.peak_year is not None:
-        data["peak_year"] = payload.peak_year
+def _build_section_data(
+    section_key: str,
+    theme_input: Optional[SessionInput],
+    charts: list[SessionChart],
+    patents: list[Patent],
+    articles: list[Article],
+    payload: Optional[SectionGenerateRequest],
+) -> dict[str, Any]:
+    """Fatos passados ao prompt da seção (ver formato em report_prompts.py) -
+    tudo calculado aqui, a partir do que já está persistido: resumos
+    numéricos gravados junto de cada gráfico (SessionChart.summary),
+    estágio do ciclo de vida (curvas S), títulos oficiais CPC e documentos
+    da busca final. `payload` (front) só contribui com os totais de
+    resultados da busca, que não ficam no banco."""
+    data: dict[str, Any] = {
+        "area_of_study": (theme_input.area_of_study if theme_input else None) or "",
+        "keywords": (theme_input.keywords if theme_input else None) or [],
+    }
+    if payload is not None and payload.article_count is not None:
+        data["article_count"] = _pt_int(payload.article_count)
+    if payload is not None and payload.patent_count is not None:
+        data["patent_count"] = _pt_int(payload.patent_count)
+
+    data["figures"] = [
+        _figure_facts(chart) for chart in charts
+        if FIGURE_SPECS[(chart.document_type, chart.chart_type)].section == section_key
+    ]
+
+    s_curves = {c.document_type: c.summary for c in charts if c.chart_type == "s_curve" and c.summary}
+    data["lifecycle"] = build_lifecycle(s_curves)
+
+    if section_key == "informacoes_tecnologicas":
+        heatmap = next(
+            (c for c in charts if c.document_type == "patent" and c.chart_type == "top10_heatmap" and c.summary), None
+        )
+        codes = [name for name, _ in heatmap.summary["top"]] if heatmap else list(payload.top_cpc_codes if payload else [])
+        data["cpc_titles"] = describe_codes(codes)
+
+    if section_key == "conclusao":
+        if patents or articles:
+            data["brazil"] = {
+                "patents": sum(1 for p in patents if (p.country or "").upper() == "BR"),
+                "articles": sum(1 for a in articles if "Brazil" in (a.affiliation_countries or [])),
+            }
+        lines = []
+        if data.get("patent_count"):
+            lines.append(f"- Total de patentes encontradas: {data['patent_count']}")
+        if data.get("article_count"):
+            lines.append(f"- Total de publicações científicas encontradas: {data['article_count']}")
+        for chart in charts:
+            facts = _figure_facts(chart)
+            lines.append(f"- {facts['caption']} {facts['summary']}")
+        data["results_digest"] = "\n".join(lines)
+    return data
 
 
 _SIGNATURE_ROLE_LABELS = {
@@ -337,6 +350,21 @@ _SIGNATURE_ROLE_LABELS = {
     "revisado_por": "Revisado por",
     "aprovado_por": "Aprovado por",
 }
+
+
+def _raise_on_form_errors(errors: list[str]) -> None:
+    if errors:
+        raise HTTPException(status_code=422, detail=" ".join(errors))
+
+
+def _signature_errors(payload: Optional[SignaturesInput]) -> list[str]:
+    if payload is None:
+        return []
+    return collect_errors(
+        signer_error(_SIGNATURE_ROLE_LABELS[field], block.nome, block.posto_funcao)
+        for field in ("elaborado_por", "revisado_por", "aprovado_por")
+        for block in getattr(payload, field)
+    )
 
 
 def _merge_signatures(payload: Optional[SignaturesInput]) -> dict[str, Any]:
@@ -433,12 +461,16 @@ async def compute_section_rag_context(
             [_patent_to_rag_dict(p) for p in patents],
             [_article_to_rag_dict(a) for a in articles],
         )
-        rag_context = await writer.build_rag_context(session_id, section_key)
+        theme_input = await _get_session_theme_input(session, session_id)
+        rag_context, sources = await writer.build_rag_context(
+            session_id, section_key, theme_input.theme if theme_input else ""
+        )
     except RAGUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     row = await _get_or_create_section_row(session, session_id, section_key)
     row.rag_context = rag_context
+    row.sources = sources
     row.status = "rag_done"
     await session.commit()
 
@@ -461,11 +493,10 @@ async def generate_section_text(
     persistido pela rota /rag (422 se ela ainda não rodou pra essa seção) -
     carrega só o prompt dessa seção, não o relatório inteiro.
 
-    `payload`, quando vem preenchido, sobrescreve os campos de
-    `_build_report_data` com as estatísticas agregadas que o FRONT já tem em
-    memória (ver SectionGenerateRequest) - necessário porque
-    `_fetch_final_patents_and_articles` fica vazio na prática (os documentos
-    da busca final nunca são persistidos em patent/article, só os da probe)."""
+    Os fatos do prompt vêm de _build_section_data (resumos dos gráficos,
+    estágio do ciclo de vida, CPC oficial); `payload` só traz os totais de
+    resultados da busca final. 422 se o texto continuar com termos internos
+    do pipeline depois de uma regeneração (SectionQualityError)."""
     _validate_ai_section_key(section_key)
     await _get_session_or_404(session, session_id)
 
@@ -486,16 +517,16 @@ async def generate_section_text(
     theme_input = await _get_session_theme_input(session, session_id)
     theme = theme_input.theme if theme_input else ""
     patents, articles = await _fetch_final_patents_and_articles(session, session_id)
-    data = _build_report_data(
-        theme_input,
-        [_patent_to_rag_dict(p) for p in patents],
-        [_article_to_rag_dict(a) for a in articles],
-    )
-    _apply_section_generate_overrides(data, payload)
+    charts = await _report_charts(session, session_id)
+    data = _build_section_data(section_key, theme_input, charts, patents, articles, payload)
 
     writer = _writer(request)
     try:
-        generated_text = await writer.generate_section_text(section_key, theme, row.rag_context, data)
+        generated_text = await writer.generate_section_text(
+            section_key, theme, row.rag_context, data, row.sources or []
+        )
+    except SectionQualityError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("report_section_generate_failed session_id=%d section=%s error=%s", session_id, section_key, exc)
         raise HTTPException(status_code=502, detail=f"Falha ao gerar texto via LLM: {exc}") from exc
@@ -524,6 +555,17 @@ async def build_static_sections(
     LLM/RAG (evita citação inventada). Capa/assinaturas ficam guardadas
     junto do payload, usadas só na montagem final (/assemble)."""
     await _get_session_or_404(session, session_id)
+    _raise_on_form_errors(
+        collect_errors(
+            [
+                *(admin_reference_error(ref) for ref in payload.referencias_administrativas),
+                *(bibliography_error(ref) for ref in payload.referencias_bibliograficas_adicionais),
+                text_field_error("Destinatário", payload.destinatario) if payload.destinatario else None,
+                text_field_error("Objetivo", payload.objetivo, min_words=5) if payload.objetivo else None,
+            ]
+        )
+        + _signature_errors(payload.assinaturas)
+    )
     theme_input = await _get_session_theme_input(session, session_id)
 
     detected_databases = await _detect_databases_used(session, session_id)
@@ -557,10 +599,18 @@ async def build_static_sections(
         escape_latex(ref) for ref in (*DEFAULT_BIBLIOGRAPHY, *payload.referencias_bibliograficas_adicionais)
     ]
 
-    for section_key, text in (
+    static_texts = [
         ("metodologia", metodologia_text),
         ("referencias_bibliograficas", "\n".join(bibliografia)),
-    ):
+    ]
+    tema = payload.tema.strip() or (theme_input.theme if theme_input else "")
+    if payload.destinatario.strip():
+        static_texts.append(("finalidade", escape_latex(render_finalidade(tema, payload.destinatario))))
+    # Objetivo escrito pelo usuário substitui a seção de IA (o front pula a
+    # geração dela nesse caso).
+    if payload.objetivo and payload.objetivo.strip():
+        static_texts.append(("objetivo", escape_latex(payload.objetivo.strip())))
+    for section_key, text in static_texts:
         row = await _get_or_create_section_row(session, session_id, section_key)
         row.generated_text = text
         row.status = "generated"
@@ -597,7 +647,7 @@ async def _assemble_document(
     )
     sections_by_key = {row.section_key: row for row in sections_result.scalars().all()}
 
-    all_keys = [*ReportWriterService.ai_section_keys(), "metodologia", "referencias_bibliograficas"]
+    all_keys = [*ReportWriterService.ai_section_keys(), "finalidade", "metodologia", "referencias_bibliograficas"]
     sections_missing = [key for key in all_keys if key not in sections_by_key or not sections_by_key[key].generated_text]
 
     def _text(key: str) -> str:
@@ -610,9 +660,10 @@ async def _assemble_document(
         .where(SessionProbeQuery.session_id == session_id, SessionProbeQuery.tipo.isnot(None))
     )
     storage = _storage(request)
-    charts_cientificas: list[dict[str, str]] = []
-    charts_tecnologicas: list[dict[str, str]] = []
-    charts_ciclo_vida: list[dict[str, str]] = []
+    # Catálogo de figuras por seção de Resultados - cada uma entra no texto
+    # onde o LLM pôs o marcador [[FIG:id]] (ou no fim da seção, ver
+    # place_figures).
+    catalogs: dict[str, list[CatalogEntry]] = {}
     chart_object_keys: list[str] = []
     for chart in charts_result.scalars().all():
         if not _is_report_chart(chart):
@@ -635,15 +686,20 @@ async def _assemble_document(
             )
             continue
 
-        caption = escape_latex(_CHART_CAPTIONS[(chart.document_type, chart.chart_type)])
-        entry = {"filename": chart.object_key.rsplit("/", 1)[-1], "caption": caption}
+        spec = FIGURE_SPECS[(chart.document_type, chart.chart_type)]
         chart_object_keys.append(chart.object_key)
-        if chart.chart_type == "s_curve":
-            charts_ciclo_vida.append(entry)
-        elif chart.document_type == "article":
-            charts_cientificas.append(entry)
-        else:
-            charts_tecnologicas.append(entry)
+        catalogs.setdefault(spec.section, []).append(
+            CatalogEntry(
+                id=figure_id(chart.document_type, chart.chart_type),
+                kind=spec.kind,
+                caption=escape_latex(spec.caption),
+                filename=chart.object_key.rsplit("/", 1)[-1],
+            )
+        )
+
+    def _results_text(key: str) -> str:
+        text, _ = place_figures(_text(key), catalogs.get(key, []), key)
+        return text
 
     # numero/ano/tema/referencias_administrativas vêm direto do corpo da
     # requisição (nunca passaram por session_report_section, diferente das
@@ -675,6 +731,15 @@ async def _assemble_document(
     stored_biblio_refs = (
         stored_biblio.generated_text.split("\n") if stored_biblio and stored_biblio.generated_text else []
     )
+    # Toda citação (SOBRENOME et al., ano) que sobrou no texto das seções
+    # de IA ganha a entrada correspondente (ver report_citations.py).
+    cited_refs: list[str] = []
+    for key in ReportWriterService.ai_section_keys():
+        section_row = sections_by_key.get(key)
+        if section_row and section_row.generated_text and section_row.sources:
+            cited_refs.extend(
+                escape_latex(ref) for ref in references_for_text(section_row.generated_text, section_row.sources)
+            )
     context = {
         "numero": escape_latex(payload.numero),
         "ano": escape_latex(payload.ano),
@@ -686,17 +751,15 @@ async def _assemble_document(
         "referencias_administrativas": [escape_latex(ref) for ref in payload.referencias_administrativas],
         "metodologia": legacy_metodologia_to_paragraph(_text("metodologia")),
         "quadro_busca": quadro_busca,
-        "informacoes_cientificas": _text("informacoes_cientificas"),
-        "informacoes_tecnologicas": _text("informacoes_tecnologicas"),
-        "tendencias_ciclo_vida": _text("tendencias_ciclo_vida"),
-        "charts_cientificas": charts_cientificas,
-        "charts_tecnologicas": charts_tecnologicas,
-        "charts_ciclo_vida": charts_ciclo_vida,
+        "informacoes_cientificas": _results_text("informacoes_cientificas"),
+        "informacoes_tecnologicas": _results_text("informacoes_tecnologicas"),
+        "tendencias_ciclo_vida": _results_text("tendencias_ciclo_vida"),
         "conclusao": _text("conclusao"),
         "referencias_bibliograficas": merge_bibliography(
-            [escape_latex(ref) for ref in DEFAULT_BIBLIOGRAPHY], stored_biblio_refs
+            [escape_latex(ref) for ref in DEFAULT_BIBLIOGRAPHY], stored_biblio_refs + cited_refs
         ),
         "assinaturas": _merge_signatures(payload.assinaturas),
+        "local_data": escape_latex(render_local_data(payload.local, date.today())) if payload.local.strip() else None,
     }
 
     latex_svc = _latex_svc(request)
@@ -738,6 +801,10 @@ async def assemble_report_tex(
     request: Request,
     session: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[AssembleResponse]:
+    _raise_on_form_errors(
+        collect_errors(admin_reference_error(ref) for ref in payload.referencias_administrativas)
+        + _signature_errors(payload.assinaturas)
+    )
     return SuccessResponse(data=await _assemble_document(session, session_id, payload, request))
 
 
@@ -950,7 +1017,7 @@ async def get_report_charts(
     dessa sessão - alimenta o painel lateral de imagens da tela de edição do
     `.tex`, pra o usuário ver o que está disponível pra referenciar/mover no
     corpo do documento (mesma fonte que /assemble usa pra embutir os
-    gráficos por padrão, ver _CHART_CAPTIONS)."""
+    gráficos por padrão, ver report_figures.FIGURE_SPECS)."""
     await _get_session_or_404(session, session_id)
 
     charts_result = await session.execute(
@@ -974,7 +1041,7 @@ async def get_report_charts(
                 image_base64=base64.b64encode(png_bytes).decode("ascii"),
                 chart_type=chart.chart_type,
                 document_type=chart.document_type,
-                caption=_CHART_CAPTIONS[(chart.document_type, chart.chart_type)],
+                caption=FIGURE_SPECS[(chart.document_type, chart.chart_type)].caption,
                 origin="generated",
             )
         )

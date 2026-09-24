@@ -3,7 +3,6 @@ Google Gemini LLM service implementation.
 """
 
 import json
-import re
 import time
 from typing import Any, Optional
 
@@ -13,7 +12,7 @@ from app.core.domain.types import LLMUsage
 from core.logging import get_logger
 from schemas.intake import InputIntake
 from schemas.llm import LLMOutput
-from services.llm.base import BaseLLMService, LLMJSONParseError
+from services.llm.base import BaseLLMService, LLMJSONParseError, parse_llm_json
 
 logger = get_logger(__name__)
 
@@ -357,21 +356,6 @@ class GeminiLLMService(BaseLLMService):
 
     @staticmethod
     def _parse_json_with_repair(json_str: str) -> dict:
-        """
-        Faz parse de JSON, com uma segunda tentativa removendo vírgulas
-        sobrando antes de ``}``/``]`` (erro comum em respostas de LLM).
-
-        Args:
-            json_str: Texto candidato a JSON.
-
-        Returns:
-            Dicionário parseado.
-
-        Raises:
-            json.JSONDecodeError: Se nem o texto original nem a versão reparada forem JSON válido.
-        """
-        try:
-            return json.loads(json_str)
-        except json.JSONDecodeError:
-            repaired = re.sub(r",\s*([}\]])", r"\1", json_str)
-            return json.loads(repaired)
+        """Mantido por compatibilidade - delega pro reparo compartilhado
+        (vírgula sobrando/faltando, ver services.llm.base.parse_llm_json)."""
+        return parse_llm_json(json_str)

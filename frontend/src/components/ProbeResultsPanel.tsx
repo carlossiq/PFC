@@ -33,7 +33,7 @@ function ProbeResultsStatTiles({ api, results }: { api: ProbeApi; results: Probe
           value={formatYearRange(summary)}
           sub={summary.distinctYears > 0 ? `${summary.distinctYears} distintos` : undefined}
         />
-        <StatTile label="Classificações IPC" value={summary.distinctIpc} />
+        <StatTile label="Classificações CPC" value={summary.distinctIpc} />
         <StatTile label="Jurisdições" value={summary.distinctCountries} />
       </div>
     )

@@ -27,6 +27,13 @@ import pandas as pd  # noqa: E402
 from matplotlib.patches import Rectangle  # noqa: E402
 
 from app.core.ports.outbound.storage_port import StoragePort  # noqa: E402
+from app.core.services.chart_labels import abbreviate_labels  # noqa: E402
+from app.core.services.report_lifecycle import (  # noqa: E402
+    complete_years_only,
+    s_curve_summary,
+    top_summary,
+    yearly_summary,
+)
 from app.core.services.s_curve import (  # noqa: E402
     SCurveFitError,
     fit_s_curve,
@@ -234,7 +241,7 @@ class ReportService:
         await _add(
             "ipc_distribution",
             "patent",
-            self._chart_top_entities(patents, "ipc_codes", True, "patent", "Distribuição por IPC"),
+            self._chart_top_entities(patents, "ipc_codes", True, "patent", "Distribuição por CPC"),
         )
 
         # h) distribuição por área de estudo (só artigo)
@@ -360,7 +367,9 @@ class ReportService:
             (motivo textual se algo foi pulado, ou None).
         """
         label = _DOCUMENT_LABELS[document_type].lower()
-        yearly_counts = {int(year): int(count) for year, count in yearly_by_year.items()}
+        # Só anos completos: o ano corrente tem contagem parcial e distorce
+        # o último ponto da curva (ver report_lifecycle.complete_years_only).
+        yearly_counts = complete_years_only({int(year): int(count) for year, count in yearly_by_year.items()})
         if len(yearly_counts) < 2:
             reason = f"menos de 2 anos distintos com dados de {label} (recebido: {len(yearly_counts)})"
             logger.warning(f"{document_type}_s_curve_insufficient_data", session_id=session_id, reason=reason)
@@ -390,6 +399,7 @@ class ReportService:
         return {
             "chart": chart,
             "fit": fit_result,
+            "summary": s_curve_summary(fit_result, yearly_counts),
             "skipped_reason": None,
         }
 
@@ -493,7 +503,7 @@ class ReportService:
             dict com "chart" (manifesto do PNG gerado, ou None se pulado) e
             "skipped_reason" (motivo textual se pulado, ou None).
         """
-        counts = {int(year): int(count) for year, count in yearly_counts.items()}
+        counts = complete_years_only({int(year): int(count) for year, count in yearly_counts.items()})
         if not counts:
             reason = f"nenhum dado de {_DOCUMENT_LABELS[document_type].lower()} por ano fornecido"
             logger.warning(
@@ -511,7 +521,7 @@ class ReportService:
             f"{document_type}_yearly_volume.png",
         )
 
-        return {"chart": chart, "skipped_reason": None}
+        return {"chart": chart, "summary": yearly_summary(counts), "skipped_reason": None}
 
     async def generate_top10_heatmap(
         self,
@@ -550,7 +560,7 @@ class ReportService:
             f"{document_type}_top10_heatmap.png",
         )
 
-        return {"chart": chart, "skipped_reason": None}
+        return {"chart": chart, "summary": top_summary(top10, _HEATMAP_TOP_K), "skipped_reason": None}
 
     def _chart_yearly_volume(self, yearly_counts: dict[int, int], document_type: str) -> bytes:
         """Desenha o gráfico de barras de volume de documentos por ano
@@ -573,7 +583,7 @@ class ReportService:
         for spine in ("top", "right"):
             ax.spines[spine].set_visible(False)
         # Sem título desenhado: o título da figura vai no .tex, acima da imagem
-        # (ver _CHART_CAPTIONS em report_document_router.py).
+        # (ver FIGURE_SPECS em report_figures.py).
         fig.tight_layout()
 
         return self._savefig_bytes(fig, dpi=_DPI)
@@ -679,7 +689,7 @@ class ReportService:
         ax_grid.set_aspect("equal")
         ax_grid.axis("off")
         # Sem título desenhado: o título da figura vai no .tex, acima da imagem
-        # (ver _CHART_CAPTIONS em report_document_router.py).
+        # (ver FIGURE_SPECS em report_figures.py).
 
         threshold = float(np.percentile(values, 90)) if values else 0.0
         self._add_heatmap_gradient_legend(ax_legend, cmap, norm, threshold)
@@ -836,7 +846,7 @@ class ReportService:
             frameon=False, fontsize=9, handlelength=1.6,
         )
         # Sem título desenhado: o título da figura vai no .tex, acima da imagem
-        # (ver _CHART_CAPTIONS em report_document_router.py).
+        # (ver FIGURE_SPECS em report_figures.py).
         fig.subplots_adjust(left=0.09, right=0.78, top=0.97, bottom=0.12)
 
         # bbox_inches="tight" - a legenda fica fora da área dos eixos (à
@@ -891,7 +901,12 @@ class ReportService:
         label = _DOCUMENT_LABELS[document_type]
 
         fig, ax = plt.subplots(figsize=_FIGSIZE_BAR)
-        bars = ax.barh(counts.index.astype(str), counts.to_numpy(), color=color, zorder=2)
+        # Nomes acima de MAX_LABEL_LENGTH são abreviados só no rótulo (ver
+        # chart_labels.py) - um nome de 80+ caracteres empurrava o eixo e
+        # espremia as barras. Os dados (e o resumo que vai pro texto do
+        # relatório) continuam com o nome completo.
+        labels = abbreviate_labels([str(name) for name in counts.index])
+        bars = ax.barh(labels, counts.to_numpy(), color=color, zorder=2)
         ax.bar_label(bars, padding=3, color=_COLOR_TEXT, fontsize=8)
         # Nomes de depositantes/instituições podem vir em chinês/japonês/
         # coreano (ver _font_for_label) - a fonte padrão não tem esses
@@ -909,7 +924,7 @@ class ReportService:
         for spine in ("top", "right", "left"):
             ax.spines[spine].set_visible(False)
         # Sem título desenhado: o título da figura vai no .tex, acima da imagem
-        # (ver _CHART_CAPTIONS em report_document_router.py).
+        # (ver FIGURE_SPECS em report_figures.py).
         fig.tight_layout()
 
         return self._savefig_bytes(fig, dpi=_DPI)
@@ -953,4 +968,4 @@ class ReportService:
             png_bytes, session_id, probe_query_id, document_type, chart_type, f"{document_type}_{chart_type}.png"
         )
 
-        return {"chart": chart, "skipped_reason": None}
+        return {"chart": chart, "summary": top_summary(entity_counts, top_k), "skipped_reason": None}

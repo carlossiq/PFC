@@ -24,7 +24,7 @@ async function withExistingCheck(
   generate: () => Promise<GeneratedChart | null>
 ): Promise<GeneratedChart | null> {
   try {
-    const existing = await getExistingChart(sessionId, fonte, chartType)
+    const existing = await getExistingChart(sessionId, fonte, chartType, true)
     if (existing) return existing
   } catch (err) {
     console.warn(`Falha ao checar gráfico existente ${chartType} (${fonte}), gerando de novo:`, err)

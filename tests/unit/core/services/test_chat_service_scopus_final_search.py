@@ -224,20 +224,51 @@ async def test_run_scopus_final_search_year_strategy_iteration_selects_next_wind
 
 
 @pytest.mark.asyncio
-async def test_run_scopus_final_search_falls_back_when_total_count_unavailable():
+async def test_run_scopus_final_search_uses_per_year_counts_when_total_count_unavailable():
+    # Sem a contagem total (ex.: falha de rede), a busca por ano ainda traz a
+    # contagem real de cada ano - a série anual (e a curva S) continua
+    # existindo, em vez de cair em 1 página com articles_by_year vazio.
     svc = _svc()
-    adapter = FakeScopusAdapter(total_count=None, area_totals={})
+    adapter = FakeScopusAdapter(
+        total_count=None,
+        year_data={2019: (4, {0: []}), 2020: (7, {0: []})},
+        area_totals={},
+    )
 
-    compiled = await svc._run_scopus_final_search(adapter, _base_query(), year_from=2020, year_to=2020)
+    compiled = await svc._run_scopus_final_search(adapter, _base_query(), year_from=2019, year_to=2020)
 
-    assert compiled["total_count"] is None
-    assert compiled["strategy"] == "range"
-    assert compiled["articles_by_year"] == {}
-    assert compiled["institutions"] == {}
-    assert compiled["title"] == []
-    assert compiled["raw_items"] == []
-    # 1 única requisição de range (max_requests=1), mesmo fallback da OPS.
-    assert len(adapter.fetch_calls) == 1
+    assert compiled["strategy"] == "year"
+    assert compiled["articles_by_year"] == {2019: 4, 2020: 7}
+    assert compiled["total_count"] == 11
+
+
+class _FlakyYearAdapter(FakeScopusAdapter):
+    """Ano 2020 falha na 1ª rodada (conexão) e responde na 2ª; 2021 falha sempre."""
+
+    def __init__(self) -> None:
+        super().__init__(total_count=500, year_data={2019: (3, {0: []}), 2020: (5, {0: []}), 2021: (9, {0: []})})
+        self.calls_2020 = 0
+
+    async def fetch_results_page(self, query: dict, start: int = 0, count: int = 25, run_id=None) -> SearchResult:
+        q = query.get("query", "")
+        if "PUBYEAR > 2020 AND PUBYEAR < 2022" in q:
+            return SearchResult(api_name="scopus", success=False, query=q, error_message="All connection attempts failed")
+        if "PUBYEAR > 2019 AND PUBYEAR < 2021" in q:
+            self.calls_2020 += 1
+            if self.calls_2020 == 1:
+                return SearchResult(api_name="scopus", success=False, query=q, error_message="All connection attempts failed")
+        return await super().fetch_results_page(query, start, count, run_id)
+
+
+@pytest.mark.asyncio
+async def test_failed_year_is_retried_and_left_out_instead_of_zero():
+    svc = _svc()
+    adapter = _FlakyYearAdapter()
+
+    _, by_year = await svc._run_scopus_search_by_year(adapter, _base_query(), 2019, 2021, None)
+
+    assert by_year == {2019: 3, 2020: 5}  # 2020 recuperado na 2ª rodada; 2021 fora (nunca 0)
+    assert adapter.calls_2020 == 2
 
 
 @pytest.mark.asyncio

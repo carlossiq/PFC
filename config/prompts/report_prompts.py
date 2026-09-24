@@ -1,30 +1,49 @@
 """
-Prompts for technology prospecting report generation.
+Prompts das seções de IA do relatório de prospecção (padrão REPTEC/AGITEC,
+ver notes/REPTEC_001_2023_TETRA.pdf).
 
-Each prompt is tailored to a specific section with instructions
-to maintain accuracy and use only provided data.
+Princípio: tudo que é FATO (contagens, anos, estágio do ciclo de vida,
+significado de códigos CPC, citações) chega pronto em `data`, calculado em
+Python - o LLM só redige. Nada de "Fonte: ...", score de busca ou
+marcadores internos no texto (ver report_text_quality.py, que rejeita
+esses padrões e força uma regeneração).
+
+Formato de `data` (todas as chaves opcionais):
+    area_of_study, keywords, objetivo_usuario
+    article_count, patent_count (já formatados pt-BR, ex.: "1.800")
+    figures: list[{id, kind ("Figura"|"Quadro"), caption, summary}] -
+        catálogo das figuras da seção (ver report_figures.py)
+    cpc_titles: list[(código, título oficial)] - só pra 6.2
+    lifecycle: {"article"/"patent": {stage, gp, mp, sp}, "overall_stage"}
+        - estágio calculado da curva S (ver report_lifecycle.py)
+    brazil: {"patents": int, "articles": int} - documentos com Brasil na
+        amostra persistida
+    results_digest: str - fatos dos Resultados, só pra Conclusão
 """
 
-REPORT_SYSTEM_PROMPT = """Você é um especialista em redação de relatórios de prospecção tecnológica no estilo REPTEC/AGITEC.
+from __future__ import annotations
 
-INSTRUÇÕES OBRIGATÓRIAS:
-1. Escreva em português formal e técnico
-2. Use estilo de relatório institucional profissional
-3. NÃO invente números, estatísticas ou datas
-4. NÃO crie referências ou fontes fictícias
-5. Use APENAS dados e contexto fornecidos
-6. Quando usar dados do contexto, cite a fonte entre parênteses: (Fonte: nome_da_fonte)
-7. NÃO inclua o título/cabeçalho da seção na resposta (ex.: não escreva "## Seção: X" ou
-   qualquer variação) - o título já é adicionado automaticamente pelo documento final.
-   Comece direto pelo primeiro parágrafo do conteúdo.
-8. Use linguagem ativa e precisa
-9. Se informação não estiver disponível, indique explicitamente: [Informação não disponível]
-10. Interprete gráficos e dados bibliométricos de forma objetiva
+REPORT_SYSTEM_PROMPT = """Você é um especialista em redação de relatórios de prospecção tecnológica no estilo REPTEC/AGITEC do Exército Brasileiro.
 
-FORMATO:
-- Parágrafos bem estruturados com 3-5 frases cada, sem títulos/subtítulos próprios
-- Use bullets ou numeração quando apropriado
-- Inclua conclusões baseadas em evidências"""
+REGRAS OBRIGATÓRIAS:
+1. Português formal, técnico e IMPESSOAL ("observa-se", "recomenda-se" - nunca "observamos", "recomendamos").
+2. Use APENAS os fatos e documentos fornecidos no pedido. NÃO invente números, datas, normas, regulamentos, mercados, empresas ou autores.
+3. Citações: somente no formato (SOBRENOME et al., ano), exatamente como indicado em "citar como" de cada documento. Documento marcado "não citar" não pode ser citado. Nunca escreva "Fonte:", "N/A" ou percentuais de relevância/similaridade.
+4. Nunca mencione o material de apoio ("contexto fornecido", "dados fornecidos", "documentos recuperados"). Escreva como se o conhecimento fosse seu.
+5. Se um dado não existir, simplesmente não trate daquele ponto - nunca escreva "[Informação não disponível]" nem frases sobre ausência de dados.
+6. Mantenha o foco no TEMA do relatório. Documentos sobre assuntos periféricos servem só como exemplo pontual, nunca como assunto central.
+7. Números em formato brasileiro: vírgula decimal (17,3%) e ponto de milhar (1.800).
+8. Não inclua título/cabeçalho da seção (ex.: "## Seção") - comece direto pelo primeiro parágrafo.
+9. Parágrafos corridos, sem listas com marcadores e sem Markdown."""
+
+
+def retry_instruction(issues: list[str]) -> str:
+    """Anexada ao prompt na regeneração (ver ReportWriterService)."""
+    listed = "\n".join(f"- {issue}" for issue in issues)
+    return (
+        "\n\nATENÇÃO: a versão anterior deste texto foi rejeitada pelos seguintes problemas:\n"
+        f"{listed}\nReescreva o texto inteiro sem nenhum desses problemas, seguindo as regras obrigatórias."
+    )
 
 
 def get_section_prompt(
@@ -34,273 +53,162 @@ def get_section_prompt(
     context: str,
     data: dict,
 ) -> str:
-    """
-    Generate prompt for a specific report section.
-
-    Args:
-        section_name: Name of section (e.g., "Introdução")
-        section_type: Type of section (introduction, methodology, results, etc)
-        theme: Research theme
-        context: Retrieved context from RAG
-        data: Relevant data for the section
-
-    Returns:
-        Formatted prompt
-    """
-
-    if section_type == "finalidade":
-        return _finalidade_prompt(theme, data)
-    elif section_type == "referencias":
-        return _referencias_prompt(data)
-    elif section_type == "objetivo":
-        return _objetivo_prompt(theme, data)
-    elif section_type == "introducao":
-        return _introducao_prompt(theme, context, data)
-    elif section_type == "metodologia":
-        return _metodologia_prompt(theme, data)
-    elif section_type == "informacoes_cientificas":
-        return _informacoes_cientificas_prompt(context, data)
-    elif section_type == "informacoes_tecnologicas":
-        return _informacoes_tecnologicas_prompt(context, data)
-    elif section_type == "tendencias_ciclo_vida":
-        return _tendencias_ciclo_vida_prompt(context, data)
-    elif section_type == "conclusao":
-        return _conclusao_prompt(theme, context, data)
-    elif section_type == "referencias_bibliograficas":
-        return _referencias_bibliograficas_prompt(data)
-    else:
-        return f"Gere uma seção sobre {section_name}:\n\n{context}"
+    builders = {
+        "objetivo": lambda: _objetivo_prompt(theme, data),
+        "introducao": lambda: _introducao_prompt(theme, context, data),
+        "informacoes_cientificas": lambda: _informacoes_cientificas_prompt(theme, context, data),
+        "informacoes_tecnologicas": lambda: _informacoes_tecnologicas_prompt(theme, context, data),
+        "tendencias_ciclo_vida": lambda: _tendencias_ciclo_vida_prompt(theme, context, data),
+        "conclusao": lambda: _conclusao_prompt(theme, data),
+    }
+    builder = builders.get(section_type)
+    if builder is None:
+        raise ValueError(f"Seção sem prompt de IA: {section_type}")
+    return builder()
 
 
-def _finalidade_prompt(theme: str, data: dict) -> str:
-    """Prompt for Finalidade (Purpose) section."""
-    area = data.get("area_of_study", "")
-    keywords = data.get("keywords", [])
-
-    return f"""Escreva a seção de Finalidade para um relatório de prospecção tecnológica sobre: {theme}
-
-Dados:
-- Área de Estudo: {area}
-- Palavras-chave: {', '.join(keywords) if keywords else 'Não especificadas'}
-- Período de Pesquisa: {data.get('period_start', '?')} a {data.get('period_end', '?')}
-
-A Finalidade deve:
-1. Deixar claro o objetivo geral da prospecção
-2. Contextualizar a importância do tema
-3. Indicar aplicações práticas
-
-Escreva 2-3 parágrafos bem estruturados."""
+# ---------------------------------------------------------------------------
+# Blocos compartilhados
+# ---------------------------------------------------------------------------
 
 
-def _referencias_prompt(data: dict) -> str:
-    """Prompt for Referências section."""
-    refs = data.get("references", [])
+def _documents_block(context: str) -> str:
+    if not context.strip():
+        return ""
+    return f"DOCUMENTOS DE APOIO (use só o que for pertinente ao tema):\n{context}\n\n"
 
-    refs_text = "\n".join([f"- {ref}" for ref in refs]) if refs else "[Nenhuma referência fornecida]"
 
-    return f"""Resuma e contextualize as seguintes referências:
+def _figures_block(data: dict) -> str:
+    figures = data.get("figures") or []
+    if not figures:
+        return ""
+    lines = []
+    for fig in figures:
+        lines.append(f"- id: {fig['id']} | {fig['kind']}: {fig['caption']}\n  Dados: {fig['summary']}")
+    catalog = "\n".join(lines)
+    return f"""FIGURAS E QUADROS DESTA SEÇÃO (os números abaixo são os mesmos desenhados em cada imagem):
+{catalog}
 
-{refs_text}
+COMO POSICIONAR AS FIGURAS/QUADROS:
+- Para citar no texto, escreva a palavra (Figura ou Quadro) seguida do marcador [[REF:id]]. Ex.: "A Figura [[REF:{figures[0]['id']}]] mostra ...".
+- Logo depois do parágrafo que discute a figura/quadro, escreva [[FIG:id]] sozinho numa linha - nunca no meio de um parágrafo.
+- Use cada figura/quadro exatamente uma vez e não invente ids.
+- Todo número citado sobre uma figura deve vir dos "Dados" dela.
 
-Indique:
-1. O escopo das referências
-2. Como elas fundamentam a pesquisa
-3. Qualquer padrão ou tendência nas fontes
+"""
 
-Escreva 1-2 parágrafos."""
+
+def _lifecycle_lines(lifecycle: dict) -> str:
+    labels = {"article": "Publicações científicas (artigos)", "patent": "Depósitos de patentes"}
+    lines = []
+    for key in ("article", "patent"):
+        curve = lifecycle.get(key)
+        if not curve:
+            continue
+        points = ", ".join(
+            f"{name} = {curve[name.lower()]}" for name in ("GP", "MP", "SP") if curve.get(name.lower()) is not None
+        )
+        lines.append(f"- {labels[key]}: estágio de {curve['stage'].upper()} ({points}).")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Seções
+# ---------------------------------------------------------------------------
 
 
 def _objetivo_prompt(theme: str, data: dict) -> str:
-    """Prompt for Objetivo (Objective) section."""
-    return f"""Descreva o objetivo específico desta prospecção tecnológica.
+    return f"""Escreva a seção OBJETIVO de um relatório de prospecção tecnológica sobre: {theme}
 
-Tema: {theme}
-Área: {data.get('area_of_study', 'N/A')}
+Modelo do REPTEC (um único parágrafo curto, 1 a 2 frases):
+"O presente trabalho consiste em realizar um estudo de prospecção tecnológica sobre Terrestrial Trunked Radio (TETRA) confeccionado como subsídio para a elaboração de estudos acerca de parceria entre a IMBEL e a empresa ROHILL."
 
-O Objetivo deve:
-1. Ser específico e mensurável
-2. Estar alinhado com a Finalidade
-3. Indicar escopo da pesquisa (temporal, geográfico, técnico)
-4. Deixar claro o que será analisado
+Área de estudo informada: {data.get('area_of_study') or '(não informada)'}
 
-Escreva 2-3 parágrafos em português formal."""
+Escreva UM parágrafo curto no mesmo estilo, só com o tema e a área acima. Não cite normas, regulamentos, mercados, países nem períodos."""
 
 
 def _introducao_prompt(theme: str, context: str, data: dict) -> str:
-    """Prompt for Introdução (Introduction) section."""
-    return f"""Contexto Recuperado:
-{context}
+    return f"""{_documents_block(context)}Escreva a INTRODUÇÃO de um relatório de prospecção tecnológica sobre: {theme}
 
-Escreva a Introdução para um relatório de prospecção tecnológica sobre: {theme}
+A Introdução deve, em 3 a 4 parágrafos:
+1. Apresentar a tecnologia "{theme}" e seu funcionamento geral;
+2. Explicar por que o tema é relevante;
+3. Indicar o estado atual da tecnologia, citando (SOBRENOME et al., ano) os documentos de apoio pertinentes;
+4. Motivar a leitura do relatório.
 
-A Introdução deve:
-1. Apresentar o tema de forma clara e contextualizada
-2. Explicar por que o tema é relevante
-3. Indicar o estado atual da tecnologia
-4. Motivar a leitura do relatório
-5. Usar dados e informações do contexto fornecido
-
-Escreva 3-4 parágrafos bem estruturados em português formal."""
+O assunto central é sempre "{theme}"; documentos sobre outros assuntos só podem aparecer como exemplo pontual."""
 
 
-def _metodologia_prompt(theme: str, data: dict) -> str:
-    """Prompt for Metodologia (Methodology) section."""
-    period_start = data.get("period_start", "N/A")
-    period_end = data.get("period_end", "N/A")
-    apis = data.get("apis_used", [])
+def _informacoes_cientificas_prompt(theme: str, context: str, data: dict) -> str:
+    facts = []
+    if data.get("article_count"):
+        facts.append(f"- Total de publicações científicas encontradas: {data['article_count']}")
+    facts_text = "\n".join(facts)
+    return f"""{_documents_block(context)}{_figures_block(data)}Escreva a subseção 6.1 INFORMAÇÕES CIENTÍFICAS do relatório de prospecção sobre: {theme}
 
-    apis_text = ", ".join(apis) if apis else "múltiplas fontes"
+Fatos:
+{facts_text}
 
-    return f"""Tema: {theme}
-Período: {period_start} a {period_end}
-Fontes: {apis_text}
-
-Escreva a Metodologia descrevendo:
-1. Fontes de dados utilizadas (patentes, artigos científicos)
-2. Período de cobertura e justificativa
-3. Critérios de busca e filtros aplicados
-4. Ferramentas utilizadas para análise
-5. Estrutura do relatório
-
-Seja específico e técnico. Use dados reais do projeto (número de patentes, artigos, etc. se disponíveis).
-
-Escreva 3-4 parágrafos."""
+No estilo do REPTEC, em 3 a 5 parágrafos: comece pelo total de publicações e o período coberto; comente a evolução ao longo do tempo (crescimento, pico, queda) com base nos dados das figuras; depois as instituições que mais publicaram e as áreas de estudo predominantes. Cite (SOBRENOME et al., ano) apenas documentos de apoio pertinentes ao tema."""
 
 
-def _informacoes_cientificas_prompt(context: str, data: dict) -> str:
-    """Prompt for Informações Científicas (Scientific Information) section."""
-    article_count = data.get("article_count", "não especificado")
-    top_journals = data.get("top_journals", [])
-    top_fields = data.get("top_fields", [])
+def _informacoes_tecnologicas_prompt(theme: str, context: str, data: dict) -> str:
+    facts = []
+    if data.get("patent_count"):
+        facts.append(f"- Total de patentes encontradas: {data['patent_count']}")
+    facts_text = "\n".join(facts)
+    cpc_titles = data.get("cpc_titles") or []
+    cpc_block = ""
+    if cpc_titles:
+        rows = "\n".join(f"- {code}: {title}" for code, title in cpc_titles)
+        cpc_block = f"""SIGNIFICADO OFICIAL DAS CLASSIFICAÇÕES CPC (títulos oficiais, em inglês - traduza fielmente ao citar; NÃO descreva nenhum código por conta própria nem cite códigos fora desta lista):
+{rows}
 
-    journals_text = (
-        ", ".join([f["journal"] for f in top_journals[:5]]) if top_journals else "N/A"
-    )
-    fields_text = ", ".join(top_fields[:5]) if top_fields else "N/A"
+"""
+    return f"""{_documents_block(context)}{_figures_block(data)}{cpc_block}Escreva a subseção 6.2 INFORMAÇÕES TECNOLÓGICAS do relatório de prospecção sobre: {theme}
 
-    return f"""Contexto:
-{context}
+Fatos:
+{facts_text}
 
-Dados Disponíveis:
-- Total de artigos científicos: {article_count}
-- Principais periódicos: {journals_text}
-- Principais campos de estudo: {fields_text}
-
-Analise e descreva:
-1. Volume e tendência de publicações científicas
-2. Principais periódicos e autores
-3. Campos de estudo predominantes
-4. Evolução temporal da pesquisa
-5. Instituições e países líderes
-
-Use dados do contexto e interprete os padrões encontrados.
-
-Escreva 4-5 parágrafos estruturados."""
+No estilo do REPTEC, em 3 a 5 parágrafos: comece pela distribuição temporal dos depósitos (crescimento, pico) com base nos dados das figuras; depois os principais depositantes, citando nomes e quantidades; depois as classificações CPC mais encontradas, explicando cada uma SÓ pelo significado oficial acima. Sempre escreva "CPC" (nunca "IPC")."""
 
 
-def _informacoes_tecnologicas_prompt(context: str, data: dict) -> str:
-    """Prompt for Informações Tecnológicas (Technological Information) section."""
-    patent_count = data.get("patent_count", "não especificado")
-    top_applicants = data.get("top_applicants", [])
-    # Conteúdo vem de IPC (a OPS não retorna CPC no endpoint /search/biblio
-    # usado pela busca final, ver ChatService._aggregate_ops_final_items),
-    # mas o relatório trata essa distribuição como CPC - pedido explícito do
-    # usuário (mesma nomenclatura das figuras, ver _CHART_CAPTIONS).
-    top_cpcs = data.get("top_cpc_codes", [])
+def _tendencias_ciclo_vida_prompt(theme: str, context: str, data: dict) -> str:
+    lifecycle = data.get("lifecycle") or {}
+    lines = _lifecycle_lines(lifecycle)
+    facts = f"""ESTÁGIO DO CICLO DE VIDA (calculado a partir das curvas S - use exatamente estes estágios e anos, sem reinterpretar):
+{lines}
+GP = ponto de crescimento (10% da saturação), MP = ponto médio (50%), SP = ponto de saturação (90%).
 
-    applicants_text = (
-        ", ".join([f["name"] for f in top_applicants[:5]]) if top_applicants else "N/A"
-    )
-    cpcs_text = ", ".join(top_cpcs[:5]) if top_cpcs else "N/A"
+""" if lines else ""
+    return f"""{_documents_block(context)}{_figures_block(data)}{facts}Escreva a subseção 6.3 TENDÊNCIAS E CICLO DE VIDA DA TECNOLOGIA do relatório de prospecção sobre: {theme}
 
-    return f"""Contexto:
-{context}
-
-Dados Disponíveis:
-- Total de patentes: {patent_count}
-- Principais depositantes: {applicants_text}
-- Principais classificações CPC: {cpcs_text}
-
-Analise e descreva:
-1. Volume e tendência de depósitos de patentes
-2. Principais depositantes e estratégias de patenteamento
-3. Classificações técnicas predominantes
-4. Evolução temporal dos depósitos
-5. Distribuição geográfica das patentes
-
-Explique o significado das classificações CPC (Classificação Cooperativa de Patentes). Use dados do contexto para fundamentar. Se algum dos itens acima não tiver dado disponível, diga isso claramente em vez de inventar.
-
-Escreva 4-5 parágrafos estruturados."""
+No estilo do REPTEC, em 3 a 5 parágrafos: descreva a evolução das publicações e dos depósitos ao longo do tempo; discuta SEPARADAMENTE a curva S dos artigos e a curva S das patentes, informando o estágio de cada uma e os anos GP/MP/SP acima (ex.: "MP = 2011"); interprete o que isso indica sobre o interesse acadêmico e comercial pela tecnologia."""
 
 
-def _tendencias_ciclo_vida_prompt(context: str, data: dict) -> str:
-    """Prompt for Tendências e Ciclo de Vida section."""
-    s_curve_phase = data.get("s_curve_phase", "não disponível")
-    growth_rate = data.get("growth_rate", "não especificado")
-    peak_year = data.get("peak_year", "não especificado")
+def _conclusao_prompt(theme: str, data: dict) -> str:
+    lifecycle = data.get("lifecycle") or {}
+    overall = lifecycle.get("overall_stage")
+    lines = _lifecycle_lines(lifecycle)
+    brazil = data.get("brazil") or {}
+    brazil_text = ""
+    if brazil:
+        brazil_text = (
+            f"- Na amostra analisada: {brazil.get('patents', 0)} patente(s) depositada(s) no Brasil e "
+            f"{brazil.get('articles', 0)} publicação(ões) com afiliação brasileira."
+        )
+    stage_text = f"- Estágio da tecnologia (definido pela curva de patentes): {overall.upper()}\n" if overall else ""
+    return f"""Escreva a seção CONCLUSÃO do relatório de prospecção tecnológica sobre: {theme}
 
-    return f"""Contexto:
-{context}
+FATOS (use somente estes - não traga assuntos que não aparecem aqui):
+{stage_text}{lines}
+{brazil_text}
+{data.get('results_digest') or ''}
 
-Dados da Curva-S:
-- Fase atual: {s_curve_phase}
-- Taxa de crescimento: {growth_rate}
-- Ano de pico: {peak_year}
-
-Analise e descreva:
-1. Fase do ciclo de vida (Emergente, Crescimento, Maturidade, Declínio)
-2. Tendências identificadas (crescimento/estabilização/declínio)
-3. Fatores impulsionadores de inovação
-4. Riscos e oportunidades baseadas no ciclo
-5. Previsões de evolução
-
-Use a Curva-S para fundamentar análises sobre o estágio da tecnologia.
-
-Escreva 4-5 parágrafos estruturados."""
-
-
-def _conclusao_prompt(theme: str, context: str, data: dict) -> str:
-    """Prompt for Conclusão (Conclusion) section."""
-    main_findings = data.get("main_findings", [])
-
-    findings_text = "\n".join([f"- {f}" for f in main_findings]) if main_findings else "Sem achados específicos"
-
-    return f"""Tema: {theme}
-
-Contexto da Pesquisa:
-{context}
-
-Principais Achados:
-{findings_text}
-
-Escreva a Conclusão sintetizando:
-1. Resumo das principais descobertas
-2. Estado atual da tecnologia
-3. Oportunidades identificadas
-4. Recomendações para próximas etapas
-5. Impacto potencial da tecnologia
-
-A conclusão deve ser assertiva mas baseada exclusivamente em dados apresentados.
-
-Escreva 3-4 parágrafos estruturados."""
-
-
-def _referencias_bibliograficas_prompt(data: dict) -> str:
-    """Prompt for Referências Bibliográficas section."""
-    references = data.get("references", [])
-
-    if references:
-        refs_formatted = "\n".join([f"{i+1}. {ref}" for i, ref in enumerate(references)])
-    else:
-        refs_formatted = "[Nenhuma referência disponível]"
-
-    return f"""Organize e apresente as seguintes referências em formato de lista estruturada:
-
-{refs_formatted}
-
-Inclua:
-1. Numeração sequencial
-2. Dados completos de cada referência
-3. Organização por tipo se aplicável (artigos, patentes, livros, websites)
-
-Formato: Autor(es). Título. Fonte. Ano."""
+Estrutura obrigatória (como no REPTEC), em 3 a 4 parágrafos impessoais:
+1. Comece afirmando que a tecnologia se encontra no ESTÁGIO DE {overall.upper() if overall else '<estágio>'} em relação ao seu ciclo de vida (escreva o estágio em MAIÚSCULAS);
+2. Sintetize o que os Resultados mostraram (volume, evolução, principais atores);
+3. Contextualize a situação no Brasil com base nos fatos acima;
+4. Faça a previsão com base nos anos de saturação (SP) informados;
+5. Encerre recomendando o monitoramento tecnológico contínuo ("recomenda-se ...")."""

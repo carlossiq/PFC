@@ -25,6 +25,8 @@ import {
 } from '../../services/report'
 
 function errorMessage(err: unknown, fallback: string): string {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  if (typeof detail === 'string' && detail) return detail
   return err instanceof Error ? err.message : fallback
 }
 
@@ -59,6 +61,11 @@ const ATTACHMENT_CAPTION_PLACEHOLDER = 'Título da figura'
 // montados antes dele ganham o bloco equivalente por extenso.
 function chartFigureSnippet(chart: ReportChart, texText: string): string {
   const caption = escapeLatex(chart.origin === 'attachment' ? ATTACHMENT_CAPTION_PLACEHOLDER : chart.caption)
+  // Heatmaps (CPC/áreas de estudo) são Quadro no REPTEC, não Figura - ver
+  // FIGURE_SPECS em app/core/services/report_figures.py.
+  if (chart.chartType === 'top10_heatmap' && texText.includes('\\newcommand{\\quadroimg}')) {
+    return `\n\\quadroimg{${caption}}{${chart.filename}}\n`
+  }
   if (texText.includes('\\newcommand{\\figura}')) {
     return `\n\\figura{${caption}}{${chart.filename}}\n`
   }
@@ -201,35 +208,36 @@ export function ReportDocumentEditor({
     return endDocIdx === -1 ? t.length : endDocIdx
   }
 
+  // Foca e posiciona o cursor em `pos` SEM mexer na rolagem: trocar o
+  // `value` do textarea (re-render do React) joga o cursor pro fim do texto,
+  // e um focus() comum rola até ele - a tela pulava pro fim do documento a
+  // cada imagem inserida. preventScroll + restaurar o scrollTop salvo antes
+  // da troca mantém o usuário exatamente onde estava.
+  function placeCaretKeepingScroll(textarea: HTMLTextAreaElement, pos: number, scrollTop: number) {
+    requestAnimationFrame(() => {
+      textarea.focus({ preventScroll: true })
+      textarea.setSelectionRange(pos, pos)
+      textarea.scrollTop = scrollTop
+    })
+  }
+
   function insertChartSnippet(chart: ReportChart) {
     const snippet = chartFigureSnippet(chart, texText)
     const textarea = textareaRef.current
+    const scrollTop = textarea?.scrollTop ?? 0
     if (!textarea || !hasFocusedTextareaRef.current) {
-      setTexText((t) => {
-        const at = fallbackInsertionIndex(t)
-        return t.slice(0, at) + snippet + t.slice(at)
-      })
-      // Foca e posiciona o cursor logo após o snippet inserido, pra que a
-      // PRÓXIMA inserção (ou digitação) já use a posição real do cursor
-      // em vez de cair de novo no fallback.
-      if (textarea) {
-        requestAnimationFrame(() => {
-          const at = fallbackInsertionIndex(textarea.value)
-          textarea.focus()
-          const pos = Math.min(at, textarea.value.length) + snippet.length
-          textarea.setSelectionRange(pos, pos)
-        })
-      }
+      const at = fallbackInsertionIndex(texText)
+      setTexText((t) => t.slice(0, at) + snippet + t.slice(at))
+      // Cursor logo após o snippet inserido, pra que a PRÓXIMA inserção (ou
+      // digitação) já use a posição real do cursor em vez de cair de novo
+      // no fallback.
+      if (textarea) placeCaretKeepingScroll(textarea, at + snippet.length, scrollTop)
       return
     }
     const start = textarea.selectionStart
     const end = textarea.selectionEnd
     setTexText((t) => t.slice(0, start) + snippet + t.slice(end))
-    requestAnimationFrame(() => {
-      textarea.focus()
-      const pos = start + snippet.length
-      textarea.setSelectionRange(pos, pos)
-    })
+    placeCaretKeepingScroll(textarea, start + snippet.length, scrollTop)
   }
 
   async function handleUploadAttachment(e: React.ChangeEvent<HTMLInputElement>) {

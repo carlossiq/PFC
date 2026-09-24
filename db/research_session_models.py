@@ -381,6 +381,11 @@ class SessionChart(Base):
     # PNG (ver ReportService._render_s_curve_chart) e virou responsabilidade
     # do front mostrar como um aviso separado da imagem.
     fit_quality: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # Resumo numérico dos dados desenhados no PNG (total, pico, top N, anos
+    # GP/MP/SP da curva S...), calculado das MESMAS contagens usadas pra
+    # desenhar o gráfico - é o que o LLM recebe pra comentar a figura nas
+    # seções de Resultados (ver report_figures.py), em vez de adivinhar.
+    summary: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -417,6 +422,12 @@ class SessionReportSection(Base):
     session_id: Mapped[int] = mapped_column(ForeignKey("research_session.id"), nullable=False, index=True)
     section_key: Mapped[str] = mapped_column(String(50), nullable=False)
     rag_context: Mapped[Optional[str]] = mapped_column(Text)
+    # Documentos recuperados pelo RAG pra essa seção - lista de
+    # {"citation": "SILVA et al., 2020", "reference": "<entrada ABNT>"} -
+    # permite validar as citações do texto gerado e montar as Referências
+    # Bibliográficas só com o que foi de fato citado (ver
+    # report_citations.py).
+    sources: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     generated_text: Mapped[Optional[str]] = mapped_column(Text)
     # "rag_done" logo após a rota de RAG; "generated" depois que a rota de
     # geração roda com sucesso - permite o front saber em que ponto cada

@@ -1061,6 +1061,7 @@ class ChatService:
         complexity: Optional[dict] = None
         non_english_terms: list[str] = []
         usages: list[LLMUsage] = []
+        last_error: Optional[Exception] = None
 
         year_from = getattr(self.settings, "search_year_from", 2015)
         year_to = getattr(self.settings, "search_year_to", 2026)
@@ -1074,39 +1075,57 @@ class ChatService:
         for attempt in range(1, max_attempts + 1):
             base_prompt = PromptLoader.load_prompt("final_system_prompt.md")
             system_prompt = base_prompt + context_suffix
-            if attempt > 1:
+            # complexity None = a tentativa anterior falhou antes de montar a
+            # query (ver except abaixo) - não há o que simplificar, repete o
+            # prompt base.
+            if attempt > 1 and complexity is not None:
                 system_prompt += self._simplification_suffix(complexity, attempt, non_english_terms)
 
-            llm = await self.llm_resolver.resolve("final_query")
-            llm_response, usage = await llm.process_intake(llm_request, system_prompt)
-            usages.append(usage)
+            # Mesmo tratamento de _build_query_with_retry: erro na chamada/
+            # parse da IA (ex.: JSON mal formado de modelo local pequeno,
+            # "Expecting ',' delimiter") consome a tentativa em vez de abortar
+            # a variante inteira logo na primeira resposta ruim.
+            try:
+                llm = await self.llm_resolver.resolve("final_query")
+                llm_response, usage = await llm.process_intake(llm_request, system_prompt)
+                usages.append(usage)
 
-            # Formato + procedência: só passam códigos que existem de
-            # verdade E foram observados nos documentos da busca probe (ver
-            # classification_code_validator.py) - probe_classification_codes
-            # vazia/None ainda valida formato, só não filtra por procedência.
-            llm_response.ipc = validate_classification_codes(
-                llm_response.ipc, allowed_codes=probe_classification_codes, field_name="ipc"
-            )
-            llm_response.cpc = validate_classification_codes(
-                llm_response.cpc, allowed_codes=probe_classification_codes, field_name="cpc"
-            )
+                # Formato + procedência: só passam códigos que existem de
+                # verdade E foram observados nos documentos da busca probe (ver
+                # classification_code_validator.py) - probe_classification_codes
+                # vazia/None ainda valida formato, só não filtra por procedência.
+                llm_response.ipc = validate_classification_codes(
+                    llm_response.ipc, allowed_codes=probe_classification_codes, field_name="ipc"
+                )
+                llm_response.cpc = validate_classification_codes(
+                    llm_response.cpc, allowed_codes=probe_classification_codes, field_name="cpc"
+                )
 
-            # Rede de segurança estrutural: modelos pequenos (gemma3:4b)
-            # nem sempre respeitam a tabela de contagem de grupos por
-            # variante do prompt (ver FIELD GUIDELINES em
-            # final_system_prompt.md) - confirmado ao vivo devolvendo 3
-            # grupos de ABSTRACT pra uma busca GENERIC que pedia no máximo
-            # 2. Funde grupos excedentes em vez de rejeitar a resposta (ver
-            # field_group_limiter.py).
-            enforce_final_query_group_limits(llm_response, variant)
+                # Rede de segurança estrutural: modelos pequenos (gemma3:4b)
+                # nem sempre respeitam a tabela de contagem de grupos por
+                # variante do prompt (ver FIELD GUIDELINES em
+                # final_system_prompt.md) - confirmado ao vivo devolvendo 3
+                # grupos de ABSTRACT pra uma busca GENERIC que pedia no máximo
+                # 2. Funde grupos excedentes em vez de rejeitar a resposta (ver
+                # field_group_limiter.py).
+                enforce_final_query_group_limits(llm_response, variant)
 
-            query = qb.build_query(
-                strategy=llm_response,
-                year_from=year_from,
-                year_to=year_to,
-                search_mode="final",
-            )
+                query = qb.build_query(
+                    strategy=llm_response,
+                    year_from=year_from,
+                    year_to=year_to,
+                    search_mode="final",
+                )
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "final_variant_attempt_llm_error",
+                    api=api,
+                    variant=variant,
+                    attempt=attempt,
+                    error=str(exc),
+                )
+                continue
 
             cql_query = query.get("query", "")
             complexity = self._complexity_from_query(cql_query)
@@ -1145,6 +1164,20 @@ class ChatService:
                     "year_range": year_range,
                     "ai_usage": self._aggregate_usage(usages, step),
                 }
+
+        if not attempts_history:
+            logger.error(
+                "final_variant_all_attempts_failed",
+                api=api,
+                variant=variant,
+                max_attempts=max_attempts,
+                error=str(last_error),
+            )
+            return {
+                "success": False,
+                "error": f"Falha ao gerar a query final após {max_attempts} tentativas: {last_error}",
+                "ai_usage": self._aggregate_usage(usages, step),
+            }
 
         best = min(
             attempts_history,
@@ -1588,7 +1621,7 @@ class ChatService:
         start = iteration * self._SCOPUS_FINAL_PAGE_SIZE
         semaphore = asyncio.Semaphore(self._SCOPUS_MAX_CONCURRENCY)
 
-        async def _fetch_year(year: int) -> tuple[int, list[dict[str, Any]], int]:
+        async def _fetch_year(year: int) -> tuple[int, list[dict[str, Any]], Optional[int]]:
             year_query = {**query, "query": self._scopus_replace_date_clause(scopus_query, year, year)}
             async with semaphore:
                 result = await adapter.fetch_results_page(
@@ -1596,15 +1629,36 @@ class ChatService:
                 )
             if not result.success:
                 logger.warning("scopus_final_year_page_failed", year=year, error=result.error_message)
-                return year, [], 0
+                return year, [], None
             return year, result.results, result.total_count or 0
 
         years_results = await asyncio.gather(*(_fetch_year(year) for year in range(year_from, year_to + 1)))
+        # Anos que falharam mesmo com as novas tentativas do adaptador
+        # ganham uma segunda rodada, SEQUENCIAL (sem concorrência - o erro
+        # mais comum é de conexão sob várias requisições simultâneas).
+        failed = [year for year, _, total in years_results if total is None]
+        if failed:
+            logger.warning("scopus_final_years_retry", years=failed)
+            retried = {}
+            for year in failed:
+                _, results, total = await _fetch_year(year)
+                retried[year] = (results, total)
+            years_results = [
+                (year, *retried[year]) if year in retried else (year, results, total)
+                for year, results, total in years_results
+            ]
+
         collected: list[dict[str, Any]] = []
         articles_by_year: dict[int, int] = {}
         for year, results, total in years_results:
             collected.extend(results)
-            articles_by_year[year] = total
+            # Ano que falhou fica FORA da série (nunca "0 artigos"): um zero
+            # falso no meio da série distorce a curva S e o histórico anual.
+            if total is not None:
+                articles_by_year[year] = total
+        missing = [year for year, _, total in years_results if total is None]
+        if missing:
+            logger.warning("scopus_final_years_missing", years=missing)
         return collected, articles_by_year
 
     async def _run_scopus_area_of_study_counts(
@@ -1698,12 +1752,14 @@ class ChatService:
         n_years = year_to - year_from + 1
 
         if total_count is None:
+            # Contagem total indisponível (ex.: falha de rede persistente) -
+            # a busca por ano ainda traz a contagem REAL de cada ano
+            # (total-result-count de cada resposta), então a série anual e a
+            # curva S continuam possíveis. Antes caía em 1 página de 25
+            # itens com articles_by_year vazio, e a curva S nem aparecia.
             logger.warning("scopus_final_total_count_unavailable")
-            # Caso degradado (contagem indisponível) - sem base pra decidir
-            # estratégia, então sempre busca a página 1 (iteration
-            # deliberadamente ignorado aqui, ver docstring).
-            items = await self._run_scopus_search_by_range(
-                adapter, query, max_requests=1, year_from=year_from, year_to=year_to, run_id=run_id
+            items, articles_by_year = await self._run_scopus_search_by_year(
+                adapter, query, year_from, year_to, run_id, iteration=iteration
             )
             institutions, title = self._aggregate_scopus_final_items(items)
             raw_items = await self._enrich_scopus_abstracts(items, top_k=self._SCOPUS_RAG_ENRICH_CAP)
@@ -1711,9 +1767,9 @@ class ChatService:
                 "institutions": institutions,
                 "area_of_study": area_of_study,
                 "title": title,
-                "articles_by_year": {},
-                "strategy": "range",
-                "total_count": None,
+                "articles_by_year": articles_by_year,
+                "strategy": "year",
+                "total_count": sum(articles_by_year.values()) or None,
                 "raw_items": raw_items,
             }
 
