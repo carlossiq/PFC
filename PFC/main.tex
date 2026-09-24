@@ -235,7 +235,7 @@ e do(s) orientador(es).
   Belchior, Carlos Alexandre Siqueira de Almeida. -- Rio de Janeiro, 2026.
 
   \vspace{4pt}
-  \quad 29 f.
+  \quad 67 f.
 
   \vspace{4pt}
 \quad Orientadora: Maria Cláudia Reis Cavalcanti.
@@ -418,7 +418,7 @@ AGITEC \cite{agitec2024}.
 específicos:
 
   \begin{enumerate}[label=\roman*.]
-    \item Promover a integração com modelos de linguagem remotos selecionados pelo usuário, atualmente contemplando as famílias Claude, da Anthropic, e Gemini, do Google, de modo a viabilizar a geração assistida de estratégias de busca mais coerentes, estruturadas e aderentes ao tema investigado, a partir dos parâmetros fornecidos pelo usuário.
+    \item Promover a integração com modelos de linguagem selecionados pelo usuário --- remotos, como as famílias Claude, da Anthropic, e Gemini, do Google, ou locais, executados por meio da plataforma Ollama ---, configuráveis individualmente para cada ponto de uso do sistema, de modo a viabilizar a geração assistida de estratégias de busca mais coerentes, estruturadas e aderentes ao tema investigado, a partir dos parâmetros fornecidos pelo usuário.
     \item Integrar o sistema às APIs \textit{Open Patent Services} (OPS) do
     Escritório Europeu de Patentes (EPO), Scopus da Elsevier e às bases Lens Patents e Lens Scholarly,
 da plataforma Lens, viabilizando a
@@ -496,17 +496,19 @@ usuário, que deve selecionar uma opção ou retornar aos valores anteriores, po
   Após a aprovação, o sistema executa a busca final e recupera o conjunto
 definitivo de patentes e artigos. Os dados coletados alimentam, por um lado, o
 cálculo automático das curvas~S da tecnologia pesquisada (Seção~\ref{sec:curva-s}) e,
-por outro --- em uma etapa cuja implementação plena é tratada como trabalho em
-andamento (Seção~\ref{sec:estado-atual}) ---, a indexação, em um
-banco de dados vetorial (ChromaDB), de uma amostra dos temas recuperados na
-busca final e de relatórios de referência já elaborados pela AGITEC, por meio
-da técnica de RAG
+por outro, a indexação, em um
+banco de dados vetorial (ChromaDB), do título e do resumo dos documentos
+recuperados na busca final, por meio da técnica de RAG
 (\textit{Retrieval-Augmented Generation}) \cite{lewis2020, gao2024}, que
 permite a um modelo de linguagem local gerar conteúdo factualmente embasado
-nos temas recuperados e estruturalmente aderente ao padrão de relatórios
-reais, minimizando a ocorrência de alucinações \cite{ji2022}. Com
-esses dados, é gerado automaticamente um relatório consolidado, contendo as
-referências identificadas e o histórico completo do processo.
+nos documentos recuperados, minimizando a ocorrência de alucinações
+\cite{ji2022}. A aderência ao padrão REPTEC/AGITEC é garantida por um
+\textit{template} LaTeX e por seções de texto fixo extraídas de um relatório
+real \cite{reptec2023tetra}. Com esses dados, é gerado automaticamente um
+relatório consolidado em LaTeX, contendo os gráficos da análise, as
+referências efetivamente citadas e o quadro com as consultas de busca
+utilizadas, que o usuário pode editar, revisar e compilar em PDF diretamente
+na interface \textit{web}.
 
   \subsection{Estrutura do Texto}
 
@@ -693,7 +695,9 @@ trabalho não realiza e nem se propõe a realizar avaliação de TRL.
 
   O ajuste de curva~S implementado no sistema é feito sobre a contagem
 \emph{cumulativa} de documentos por ano (anos sem publicação são reindexados
-como zero antes da soma acumulada), por meio da função logística clássica:
+como zero antes da soma acumulada, e o ano corrente, ainda incompleto, é
+descartado, já que sua contagem parcial seria lida pelo ajuste como uma queda
+artificial), por meio da função logística clássica:
 
 $$N(t) = \frac{K}{1 + e^{-r \cdot (t - t_0)}}$$
 
@@ -786,8 +790,8 @@ de sua incerteza estatística.
   Um limite inerente a qualquer indicador construído sobre uma amostra de
 patentes ou artigos, incluindo os próprios GP/MP/SP, é que ele reflete o
 que foi \emph{recuperado} pela busca, não necessariamente o universo completo
-do que existe. Duas técnicas estatísticas complementares, ainda não
-implementadas no protótipo atual e registradas aqui como extensão planejada,
+do que existe. Duas técnicas estatísticas complementares, implementadas no
+sistema como um módulo de inferência estatística sobre a busca final,
 endereçam esse limite sob ângulos distintos.
 
   O \textbf{estimador Chao1} \cite{chao1984} é uma técnica originária da ecologia de
@@ -807,7 +811,19 @@ duas vezes (\textit{doubletons}). Quanto mais próxima a razão $S_{obs} /
 \hat{S}_{Chao1}$ estiver de 1, mais "saturada" está a amostra, ou seja, mais
 próxima de já ter capturado a diversidade real de entidades existentes no
 universo pesquisado, e menor a chance de que um aumento no volume de busca
-revele muitas entidades novas e relevantes ainda não observadas.
+revele muitas entidades novas e relevantes ainda não observadas. Como a
+formulação clássica não é definida quando $f_2 = 0$, o sistema emprega a
+variante com correção de viés \cite{chao1984},
+
+$$
+\hat{S}_{Chao1} = S_{obs} + \frac{f_1 (f_1 - 1)}{2 (f_2 + 1)},
+$$
+
+  e considera a amostra \textbf{insuficiente} quando qualquer um de três sinais
+é observado: saturação $S_{obs}/\hat{S}_{Chao1} < 0{,}5$; mais de 70\% das
+entidades observadas são \textit{singletons} ($f_1 / S_{obs} > 0{,}7$); ou
+menos de cinco \textit{doubletons} ($f_2 < 5$), situação em que a própria
+estimativa se torna instável.
 
   O \textbf{método de \textit{bootstrap}} \cite{efron1979} complementa essa leitura verificando
 a \textbf{estabilidade} de um indicador derivado da
@@ -818,19 +834,30 @@ interesse (por exemplo, a composição do \textit{top}-10) a cada reamostragem;
 a variância da composição e da ordem do \textit{top}-10 entre as reamostragens
 é então usada como medida de confiança --- um \textit{ranking} que muda
 substancialmente entre reamostragens é sinal de que a amostra atual ainda é
-pequena demais para sustentar aquele agregado específico com confiança.
+pequena demais para sustentar aquele agregado específico com confiança. No
+sistema, a reamostragem é feita 1.000 vezes, de forma vetorizada, sobre a
+distribuição observada de contagens (reamostragem multinomial com o mesmo
+tamanho total da amostra original), e a estabilidade de cada entidade do
+\textit{top}-10 original é medida como a fração das reamostragens em que ela
+permanece entre as dez primeiras.
 
-  A aplicação conjunta dessas duas técnicas é planejada, no sistema
-desenvolvido, principalmente para as agregações de classificação tecnológica
+  O sistema combina as duas técnicas em um laço iterativo de
+enriquecimento: a busca final é repetida, solicitando novas páginas de
+resultados às APIs, até que a amostra deixe de ser insuficiente segundo o
+critério de Chao1 ou até que se esgote um tempo máximo configurado; ao
+final, o resultado agregado é resumido em \textit{rankings} \textit{top}-10
+acompanhados da estabilidade de cada item e da relevância semântica de cada
+documento ao tema pesquisado. A aplicação conjunta dessas duas técnicas é
+especialmente relevante para as agregações de classificação tecnológica
 (CPC) e área de estudo --- que, por terem cardinalidade tipicamente baixa
 (poucas categorias distintas possíveis), tendem a atingir saturação (Chao1) e
 estabilidade de \textit{ranking} (\textit{bootstrap}) com volumes de amostra
 relativamente pequenos --- e para as agregações de depositante/instituição,
 cuja cardinalidade alta e cauda longa tornam esperável a necessidade de
 volumes de busca maiores antes que o \textit{ranking} apresentado possa ser
-considerado estatisticamente estável. O objetivo funcional dessa extensão é
-sinalizar automaticamente ao usuário, junto de cada tabela ou gráfico do
-relatório, quando a amostra recuperada ainda é pequena demais para que o
+considerado estatisticamente estável. O objetivo funcional desse módulo é
+sinalizar automaticamente ao usuário quando a amostra recuperada ainda é
+pequena demais para que o
 indicador correspondente seja interpretado com confiança, complementando,
 para métricas de \textit{ranking} e diversidade, o mesmo papel que o
 diagnóstico de $R^2$ (Seção anterior) já cumpre para o ajuste da curva~S.
@@ -891,16 +918,22 @@ cada posição da sequência passa a carregar informações sobre as demais posi
   Diversas famílias de LLMs de propósito geral estão disponíveis atualmente,
 cada uma com diferentes compromissos entre custo, desempenho, tamanho e
 possibilidade de execução local --- entre elas, GPT (OpenAI), Claude
-(Anthropic), Gemini (Google) e Qwen (Alibaba), esta última disponibilizada em
-variantes de menor porte adequadas à execução local. O sistema desenvolvido
-neste trabalho emprega, para as etapas de geração e refinamento de termos e
-consultas de busca, modelos remotos das famílias \textbf{Claude} (Anthropic) e
-\textbf{Gemini} (Google), tratados como
-parâmetros de configuração substituível, consistente com a arquitetura
-hexagonal descrita no Capítulo~3, e não como decisão fixa de arquitetura; e,
-para a etapa (ainda em desenvolvimento) de geração textual do relatório final
-via RAG local, o modelo \textbf{Qwen~2.5 (3B-Instruct)}, executado localmente
-por meio da plataforma Ollama.
+(Anthropic), Gemini (Google), Qwen (Alibaba) e Gemma (Google), estas duas
+últimas disponibilizadas em variantes de menor porte adequadas à execução
+local. No sistema desenvolvido, o modelo utilizado não é uma decisão fixa de
+arquitetura, mas um parâmetro de configuração substituível, consistente com a
+arquitetura hexagonal descrita no Capítulo~3: cada \textbf{ponto de uso} de LLM
+--- geração das variações de tema, geração das consultas exploratórias,
+geração da consulta final, redação do relatório e revisão linguística do
+relatório --- é associado, em tempo de execução, a uma configuração de
+provedor e modelo armazenada no banco de dados e editável pela interface
+\textit{web}. As etapas de refinamento de tema e de construção de consultas
+podem utilizar modelos remotos das famílias \textbf{Claude} (Anthropic) e
+\textbf{Gemini} (Google), ou modelos locais; a redação do relatório final via
+RAG utiliza um modelo local executado por meio da plataforma Ollama --- nos
+testes realizados, os modelos \textbf{Qwen~2.5 (3B-Instruct)} e \textbf{Gemma~3
+(4B)} ---, ou, no ambiente institucional, um LLM disponibilizado na intranet
+por meio de uma API compatível com o padrão OpenAI.
 
     \subsubsection{Capacidades e Limitações}
 
@@ -939,11 +972,14 @@ possíveis restrições ao processamento de dados sensíveis.
   \textbf{Modelos locais}: a execução local de LLMs, por meio de plataformas
 como o Ollama, elimina os custos recorrentes e garante a privacidade dos dados,
 porém exige capacidade computacional adequada \cite{zhao2023}. Modelos locais de
-menor porte, como o Qwen~2.5 (3B-Instruct), adotado neste projeto, apresentam
+menor porte, como o Qwen~2.5 (3B-Instruct) e o Gemma~3 (4B), testados neste projeto, apresentam
 desempenho aceitável em máquinas comuns, mas com tempo de inferência superior ao
 de modelos remotos e com possível redução na qualidade da geração de texto,
 especialmente em tarefas que exigem raciocínio complexo ou geração de português
-formal de alta qualidade.
+formal de alta qualidade. Na prática do projeto, a limitação mais recorrente
+observada nesses modelos foi a concordância verbal com sujeito distante (por
+exemplo, "a concentração de depositantes \ldots\ indicam"), o que motivou a
+etapa de revisão linguística assistida descrita na Seção~\ref{sec:fase5}.
 
   \subsection{Engenharia de \textit{Prompt}}
 
@@ -1094,7 +1130,7 @@ $$
 \text{score} = 0{,}2(60) + 0{,}3(60) + 0{,}3(45) + 0{,}2(42) = 12 + 18 + 13{,}5 + 8{,}4 = 51{,}9,
 $$
 
-  classificando essa consulta hipotética como \textbf{Complexa} (Tabela~\ref{tab:complexidade}), acima, portanto, do limiar padrão de $60$ pontos
+  classificando essa consulta hipotética como \textbf{Complexa} (Tabela~\ref{tab:complexidade}), abaixo, portanto, do limiar padrão de $60$ pontos
 adotado como corte de aceitação, ou seja, ainda dentro do limite, mas
 próxima o suficiente dele para que, em uma consulta real com poucos termos ou
 operadores a mais, o sistema já acionasse o ciclo de retentativa com
@@ -1134,8 +1170,12 @@ uma cobrindo os casos que a anterior deixa passar:
     apenas JSON válido") e de extração posterior de blocos de código ou
     interpretação direta da resposta como JSON.
     \item \textbf{Reparo sintático leve}, por expressão regular, que remove
-    vírgulas finais indevidas antes de uma nova tentativa de interpretação do
-    texto como JSON (erro comum e de baixo risco de correção incorreta).
+    vírgulas finais indevidas e insere vírgulas ausentes entre membros de um
+    objeto ou lista antes de uma nova tentativa de interpretação do texto como
+    JSON --- erros comuns, sobretudo em modelos locais de menor porte, e de
+    baixo risco de correção incorreta. Se, ainda assim, a resposta não puder
+    ser interpretada, a chamada ao LLM é repetida, em vez de a etapa falhar na
+    primeira resposta malformada.
     \item \textbf{Recuperação tolerante a item individual corrompido}: no
     fluxo de refinamento de tema, quando a resposta é uma lista de
     candidatos e apenas um deles está malformado, o sistema extrai
@@ -1206,49 +1246,65 @@ sofisticadas:
     específicas.
   \end{itemize}
 
-  O sistema desenvolvido neste trabalho adota uma variante de \textbf{RAG Naive, inteiramente local}, indexando duas naturezas distintas de conteúdo, mantidas
-em coleções separadas do banco de dados vetorial: (i) um conjunto amostral dos
-temas presentes nos documentos recuperados na busca final --- e não a
-totalidade das patentes e artigos retornados pela busca ---, que fornece o
-embasamento factual específico do tema pesquisado; e (ii) um conjunto de
-relatórios de prospecção tecnológica já elaborados pela AGITEC, indexado não
-como fonte de fatos sobre o tema em análise, mas como referência de
-\textbf{estrutura e estilo redacional} do padrão REPTEC/AGITEC --- um exemplo
-de uso de RAG para condicionar a forma da saída gerada, e não apenas seu
-conteúdo factual. Ambos os conjuntos são segmentados em fragmentos,
-convertidos em \textit{embeddings} por um modelo executado localmente,
-indexados em um banco de dados vetorial também local (ChromaDB, detalhado na
-Seção~\ref{sec:chromadb}) e, no momento da geração de cada seção do
-relatório, os fragmentos mais similares à consulta semântica daquela seção
---- tanto do lado factual quanto do lado estrutural/estilístico --- são
-recuperados e concatenados como \textbf{texto puro} dentro do \textit{prompt}
-de usuário enviado ao modelo de linguagem \textbf{local} (Qwen~2.5, via
-Ollama) --- deliberadamente sem uso de \textit{function
+  O sistema desenvolvido neste trabalho adota uma variante de \textbf{RAG Naive, inteiramente local}, acrescida de dois pós-processamentos leves típicos do RAG Avançado.
+O corpus indexado é composto pelo título e pelo resumo de cada patente e de
+cada artigo recuperado na busca final da sessão, segmentados em fragmentos,
+convertidos em \textit{embeddings} por um modelo executado localmente e
+armazenados em um banco de dados vetorial também local (ChromaDB, detalhado
+na Seção~\ref{sec:chromadb}), isolados por sessão de pesquisa. No momento da
+geração de cada seção do relatório, os fragmentos mais similares à consulta
+semântica daquela seção são recuperados e concatenados como \textbf{texto
+puro} dentro do \textit{prompt} de usuário enviado ao modelo de linguagem
+\textbf{local} --- deliberadamente sem uso de \textit{function
 calling}/\textit{tool use}, tanto por simplicidade de integração quanto porque
-o modelo local escolhido, de menor porte, tem suporte mais limitado e menos
-confiável a chamadas de ferramentas estruturadas do que os modelos remotos de
-maior escala.
+os modelos locais de menor porte têm suporte mais limitado e menos confiável a
+chamadas de ferramentas estruturadas do que os modelos remotos de maior escala.
 
-Essa escolha de arquitetura é deliberada e alinhada a três
+  Os dois pós-processamentos aplicados sobre os fragmentos recuperados são:
+(i) um \textbf{corte relativo de relevância}, que descarta todo fragmento cujo
+escore de similaridade seja inferior a uma fração configurável (por padrão,
+$0{,}75$) do escore do fragmento mais relevante, eliminando documentos
+periféricos ao tema que a simples seleção dos $k$ mais similares traria de
+qualquer forma; e (ii) a remoção dos escores de similaridade do texto enviado
+ao modelo, que, quando presentes, tendiam a ser reproduzidos literalmente no
+relatório. Cada fragmento carrega ainda, em seus metadados, a citação no
+formato autor-data e a referência bibliográfica completa no padrão ABNT do
+documento de origem, montadas a partir dos metadados estruturados devolvidos
+pelas APIs; essas são as únicas citações que o modelo está autorizado a
+utilizar no texto (Seção~\ref{sec:fase5}).
+
+  A concepção inicial do sistema previa uma segunda coleção vetorial, com
+relatórios de prospecção já elaborados pela AGITEC, indexados como referência
+de estrutura e estilo redacional. Essa abordagem foi substituída, na
+implementação, por um mecanismo determinístico: a estrutura do relatório é
+fixada por um \textit{template} LaTeX que reproduz o padrão REPTEC
+\cite{reptec2023tetra}, e as seções cujo texto é essencialmente o mesmo em
+todo relatório (Finalidade e Metodologia, por exemplo) são inseridas como
+texto fixo, sem passar pelo modelo. Essa escolha elimina, nessas seções, o
+risco de alucinação e reduz o volume de contexto de cada chamada, cabendo ao
+modelo apenas a redação das seções que efetivamente dependem dos dados da
+busca.
+
+Essa escolha de arquitetura é deliberada e alinhada a dois
 objetivos que a motivam: manter toda a etapa de geração do relatório final, que é a mais sensível em termos de volume de contexto e, potencialmente, de
 sigilo dos dados sob análise, inteiramente dentro da infraestrutura local,
-sem envio de dados a serviços remotos; produzir um relatório que siga
+sem envio de dados a serviços remotos; e produzir um relatório que siga
 fielmente o padrão REPTEC já estabelecido pela literatura institucional
-\cite{agitec2024, reptec2023tetra}, com cada seção fundamentada nos temas
+\cite{agitec2024, reptec2023tetra}, com cada seção fundamentada nos documentos
 efetivamente recuperados na busca, mitigando o risco de alucinação factual
-apontado por Ji et al.\ \cite{ji2022}; e aproximar a redação gerada do estilo
-e da organização já praticados em relatórios reais da AGITEC, em vez de
-depender exclusivamente de instrução textual no \textit{prompt} (Seção~2.4)
-para descrever esse padrão --- um exemplo de uso do RAG como mecanismo de
-\textit{few-shot} implícito sobre documentos completos, e não apenas sobre
-exemplos curtos escritos manualmente.
+apontado por Ji et al.\ \cite{ji2022}.
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=1\textwidth]{img/pipeline_rag_local.png}
-    \caption{Pipeline do RAG local: das coleções indexadas no ChromaDB até a seção redigida pelo LLM local. Fonte: elaborado pelo autor.}
-    \label{fig:pipeline-rag-local}
-\end{figure}
+%% TODO (imagem desatualizada): pipeline_rag_local.png ainda mostra a
+%% concepção inicial (duas coleções, nomic-embed-text, Qwen 2.5). Redesenhar
+%% com: título+resumo da busca final -> fragmentos -> embeddings SBERT ->
+%% ChromaDB (coleção única, filtrada por sessão) -> top-k + corte relativo ->
+%% prompt da seção (+ citações permitidas) -> LLM local -> validador de texto.
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=1\textwidth]{img/pipeline_rag_local.png}
+%     \caption{Pipeline do RAG local: da coleção indexada no ChromaDB até a seção redigida pelo LLM local. Fonte: elaborado pelo autor.}
+%     \label{fig:pipeline-rag-local}
+% \end{figure}
 
   \subsection{\textit{Embeddings} e Bancos de Dados Vetoriais}
 
@@ -1326,45 +1382,67 @@ restante do \textit{pipeline} de análise textual.
 
   Complementarmente às técnicas de \textit{embedding} descritas na
 Seção~2.6, o pipeline de extração de termos do sistema
-(Seção~\ref{sec:extracao-termos}) combina duas técnicas de recuperação de
-informação para pontuar os candidatos a termo-chave extraídos de título e
-resumo de cada documento: TF-IDF e KeyBERT.
+(Seção~\ref{sec:extracao-termos}) combina técnicas consagradas de
+recuperação de informação para gerar, pontuar e ranquear os candidatos a
+termo-chave extraídos de título e resumo de cada documento: PatternRank,
+BM25F, KeyBERT, \textit{Reciprocal Rank Fusion} (RRF) e C-value.
 
-  O \textbf{TF-IDF} (\textit{Term Frequency--Inverse Document Frequency}),
-formalizado por Salton e Buckley \cite{saltonbuckley1988}, é uma medida
-estatística clássica de ponderação de termos que combina a frequência de um
-termo em um documento (TF) com o inverso de sua frequência no conjunto de
-documentos (IDF): candidatos que ocorrem com frequência relativamente alta em
-poucos documentos do conjunto recebem escore alto, por serem estatisticamente
-mais distintivos daquele subconjunto, enquanto candidatos disseminados de
-forma praticamente uniforme por todo o conjunto recebem escore baixo, por
-serem pouco informativos sobre o conteúdo específico de cada documento
-individual. O \textbf{KeyBERT} \cite{grootendorst2020}, por sua vez, é uma
-técnica mais recente de extração de palavras-chave baseada em
-\textit{embeddings} de sentença (Seção~2.6): tanto o texto de referência
-(o conjunto de títulos, ou o conjunto de resumos, dos documentos recuperados)
-quanto cada candidato a termo são convertidos em vetores pelo mesmo modelo de
-\textit{embedding} \cite{reimers2019}, e o escore do candidato é dado pela
-similaridade de cosseno entre os dois vetores --- de modo que, diferentemente
-do TF-IDF, que mede apenas recorrência estatística, o KeyBERT captura
-proximidade semântica, inclusive entre um candidato e um sentido que não
-compartilhe exatamente as mesmas palavras do texto de referência.
+  O \textbf{PatternRank} \cite{schopf2022} é um método de geração de
+candidatos baseado em padrões gramaticais: em vez de fatiar o texto em
+janelas de palavras de tamanho fixo, extrai as frases nominais maximais que
+obedecem a um padrão de classes gramaticais --- no sistema, zero ou mais
+adjetivos seguidos de um ou mais substantivos ---, de modo que cada candidato
+já nasce como uma expressão gramaticalmente completa (\textit{"perovskite
+solar cell"}), e não como um fragmento arbitrário (\textit{"solar cell
+efficiency of"}).
 
-  Os dois escores são calculados separadamente para título e para resumo, e
-ambos são normalizados para o intervalo $[0,1]$ antes de serem combinados: o
-escore do TF-IDF já resulta normalizado do próprio método de ponderação, ao
-passo que o escore bruto do KeyBERT --- já naturalmente restrito a esse
-intervalo, por já ser uma similaridade de cosseno --- é adicionalmente
-renormalizado dividindo cada valor pelo máximo observado no respectivo grupo
-(título ou resumo), de modo que o candidato mais similar do grupo receba
-sempre exatamente 1. A combinação dos dois escores normalizados, a agregação
-entre título e resumo e os ajustes por tamanho de n-grama e por padrão
-gramatical --- incluindo a construção dos próprios candidatos a n-grama a
-partir dos \textit{noun chunks} extraídos pelo spaCy, os filtros de fronteira
-lexical e gramatical aplicados antes e depois da pontuação, e as penalizações
-aplicadas a unigramas e a padrões gramaticais pouco informativos --- são
-detalhados passo a passo, com fórmulas exatas e um exemplo numérico completo,
-na Seção~\ref{sec:extracao-termos}, no capítulo da solução proposta.
+  O \textbf{BM25} \cite{robertson2009} é a função de ranqueamento
+probabilístico que se tornou padrão em mecanismos de busca textual, sucessora
+direta da ponderação TF-IDF (\textit{Term Frequency--Inverse Document
+Frequency}) formalizada por Salton e Buckley \cite{saltonbuckley1988}. Assim
+como o TF-IDF, favorece termos frequentes em poucos documentos do conjunto;
+diferentemente dele, satura a contribuição da frequência do termo
+(parâmetro $k_1$), de modo que a décima ocorrência de um termo acrescente
+muito menos que a primeira, e normaliza essa frequência pelo tamanho do
+documento (parâmetro $b$), evitando que documentos longos sejam favorecidos
+apenas por conterem mais palavras. O \textbf{BM25F} \cite{robertson2004} estende
+o BM25 a documentos com múltiplos campos ponderados: título e resumo são
+tratados como campos distintos de um mesmo documento, cada um com seu peso,
+e as frequências ponderadas são combinadas \emph{antes} da saturação --- e
+não somando dois escores BM25 independentes, o que distorceria a saturação.
+
+  O \textbf{KeyBERT} \cite{grootendorst2020}, por sua vez, é uma técnica de
+extração de palavras-chave baseada em \textit{embeddings} de sentença
+(Seção~2.6): tanto o texto de referência quanto cada candidato a termo são
+convertidos em vetores pelo mesmo modelo de \textit{embedding}
+\cite{reimers2019}, e o escore do candidato é dado pela similaridade de
+cosseno entre os dois vetores --- de modo que, diferentemente do BM25F, que
+mede apenas recorrência estatística, o KeyBERT captura proximidade semântica,
+inclusive entre um candidato e um sentido que não compartilhe exatamente as
+mesmas palavras do texto de referência.
+
+  Como BM25F e KeyBERT produzem escores em escalas incomparáveis (o primeiro
+ilimitado, o segundo uma similaridade de cosseno), o sistema não os soma: os
+dois canais são combinados pela \textbf{\textit{Reciprocal Rank Fusion}}
+(RRF) \cite{cormack2009}, que funde \emph{posições} em vez de escores:
+
+$$
+\text{RRF}(t) = \sum_{i} \frac{1}{k + \text{posição}_i(t)},
+$$
+
+  onde $\text{posição}_i(t)$ é a posição do candidato $t$ no \textit{ranking}
+do canal $i$ e $k = 60$ é a constante de suavização recomendada pelos
+autores do método. Um candidato bem posicionado em ambos os canais supera um
+candidato excelente em apenas um deles, sem que seja necessário calibrar
+pesos entre escalas diferentes. Por fim, o \textbf{C-value}
+\cite{frantzi2000} é uma medida de \textit{termhood} para termos compostos,
+que penaliza candidatos que ocorrem quase sempre aninhados dentro de um
+candidato mais longo (por exemplo, \textit{"ultrafiltration membrane"}
+dentro de \textit{"composite ultrafiltration membrane"}), sinalizando
+redundância entre termos aninhados. A aplicação dessas técnicas, com os
+filtros de fronteira lexical e gramatical aplicados antes e depois da
+pontuação, é detalhada passo a passo, com fórmulas e um exemplo numérico, na
+Seção~\ref{sec:extracao-termos}, no capítulo da solução proposta.
 
   \subsection{APIs Utilizadas}
 
@@ -1469,12 +1547,21 @@ do relatório.
 
     O Ollama é uma plataforma de código aberto que permite a execução local de
 modelos de linguagem de grande escala, disponibilizando uma API REST compatível
-com padrões amplamente utilizados. No contexto deste projeto, o Ollama é
-responsável por disponibilizar os modelos Qwen~2.5~(3B-instruct) e
-nomic-embed-text, executados inteiramente na infraestrutura local, sem transmissão
-de dados para servidores externos. Essa abordagem garante a privacidade dos temas
-pesquisados e a ausência de custos recorrentes de API, ao custo de maior tempo
-de processamento em relação a modelos remotos de maior porte \cite{zhao2023}.
+com padrões amplamente utilizados --- inclusive o formato de \textit{chat
+completions} da OpenAI. No contexto deste projeto, o Ollama é responsável por
+disponibilizar os modelos de geração de texto locais (nos testes, Qwen~2.5
+(3B-instruct) e Gemma~3 (4B)), executados inteiramente na infraestrutura local,
+sem transmissão de dados para servidores externos. Como o sistema se comunica
+com o Ollama pelo mesmo formato compatível com a OpenAI adotado pelo LLM
+disponibilizado na intranet do Exército, um único adaptador atende aos dois
+ambientes, bastando trocar o endereço configurado. Essa abordagem garante a
+privacidade dos temas pesquisados e a ausência de custos recorrentes de API, ao
+custo de maior tempo de processamento em relação a modelos remotos de maior
+porte \cite{zhao2023}. Os \textit{embeddings} do RAG, por sua vez, não são
+gerados pelo Ollama, mas pelo mesmo modelo de sentença (Sentence-BERT
+\cite{reimers2019}) já empregado nos filtros de relevância, o que torna a
+indexação e a recuperação independentes da disponibilidade do modelo de
+geração de texto.
 
     \subsubsection{ChromaDB}
     \label{sec:chromadb}
@@ -1497,33 +1584,32 @@ coleção de vetores em uma estrutura de grafo de proximidade hierárquica
 vizinhos mais próximos sem comparar o vetor de consulta contra a totalidade
 dos vetores indexados um a um --- o que tornaria a busca proibitivamente lenta
 à medida que o volume de documentos indexados crescesse. No sistema
-desenvolvido, o ChromaDB é executado inteiramente em modo local persistente,
-sem depender de nenhum serviço remoto, com os vetores de cada sessão de
-pesquisa armazenados em um arquivo local próprio, organizados em uma coleção
-por sessão.
+desenvolvido, o ChromaDB é executado como um contêiner local, acessado por
+HTTP, sem depender de nenhum serviço remoto --- e não como uma biblioteca
+embutida gravando diretamente em disco, o que não seria seguro caso o
+\textit{backend} fosse executado com mais de um processo simultâneo. Os
+vetores de todas as sessões ficam em uma única coleção, e cada fragmento
+carrega, em seus metadados, o identificador da sessão de pesquisa de origem,
+usado como filtro em toda consulta.
 
     No sistema, o ChromaDB é utilizado como repositório persistente dos
-vetores gerados pelo modelo nomic-embed-text, suportando buscas por
-similaridade de cosseno para a recuperação de contexto no subsistema RAG
-descrito na Seção~\ref{sec:rag}. Sua utilidade para o RAG decorre diretamente
-da forma como essa técnica opera: antes de gerar cada seção do relatório, o
-sistema precisa localizar, entre a amostra de temas recuperados na busca
-final e o conjunto de relatórios de referência já elaborados pela AGITEC ---
-ambos potencialmente segmentados em múltiplos fragmentos ---, apenas os
-poucos trechos mais relevantes ao propósito daquela seção específica, seja
-ele factual (fundamentar o conteúdo no tema pesquisado) ou estrutural
-(orientar-se pela forma como o mesmo tipo de seção é redigido em relatórios
-reais), já que o volume de contexto que pode ser enviado ao modelo de
+vetores gerados pelo modelo de \textit{embedding} de sentença, suportando
+buscas por similaridade de cosseno para a recuperação de contexto no
+subsistema RAG descrito na Seção~\ref{sec:rag}. Sua utilidade para o RAG
+decorre diretamente da forma como essa técnica opera: antes de gerar cada
+seção do relatório, o sistema precisa localizar, entre os documentos
+recuperados na busca final --- segmentados em múltiplos fragmentos ---,
+apenas os poucos trechos mais relevantes ao propósito daquela seção
+específica, já que o volume de contexto que pode ser enviado ao modelo de
 linguagem local em uma única chamada é limitado. Sem um banco de dados
 vetorial dedicado, essa busca por similaridade semântica teria de ser
 recalculada por força bruta a cada seção gerada, comparando o
 \textit{embedding} da consulta contra o de cada fragmento indexado
 individualmente; o ChromaDB elimina esse custo ao manter os vetores já
 indexados e prontos para consulta eficiente, e ao persistir essa indexação
-entre chamadas, de modo que tanto a amostra de temas de uma sessão quanto o
-conjunto de relatórios de referência da AGITEC precisam ser processados e
-vetorizados apenas uma vez, ainda que múltiplas seções do relatório final
-consultem repetidamente as mesmas coleções de vetores. Adicionalmente, por
+entre chamadas, de modo que os documentos de uma sessão precisam ser
+processados e vetorizados apenas uma vez, ainda que múltiplas seções do
+relatório final consultem repetidamente os mesmos vetores. Adicionalmente, por
 ser executado inteiramente em infraestrutura local, sem comunicação com
 serviços externos, o ChromaDB é consistente com o objetivo arquitetural, já
 discutido na Seção~\ref{sec:rag}, de manter a etapa de geração do relatório
@@ -1531,12 +1617,40 @@ discutido na Seção~\ref{sec:rag}, de manter a etapa de geração do relatório
 dentro do ambiente local, sem envio de conteúdo de patentes, artigos ou
 relatórios institucionais a serviços remotos.
 
-    A coleção de temas recuperados na busca final comporta, na configuração
-atual, até 50 patentes e 50 artigos por pesquisa --- limite dimensionado para
-o volume típico de uma sessão de prospecção, e ajustável conforme a
-capacidade computacional disponível ---, mantida separadamente da coleção de
-relatórios de referência da AGITEC, que não varia de uma sessão de pesquisa
-para outra.
+    São indexados o título e o resumo de todos os documentos da busca final
+persistidos na sessão; como os resumos de artigos nem sempre chegam
+preenchidos, o corpus de uma sessão tende a ser majoritariamente composto por
+patentes. A indexação é idempotente e versionada: uma sessão já indexada não
+é reprocessada a cada seção gerada, e uma sessão indexada por uma versão
+anterior do sistema, sem os metadados de citação, é reindexada
+automaticamente.
+
+    \subsubsection{MinIO}
+
+    O MinIO é um servidor de armazenamento de objetos de código aberto,
+compatível com a API S3 da Amazon, que pode ser executado em infraestrutura
+própria (\textit{self-hosted}). No sistema, armazena, fora do banco relacional,
+todos os artefatos binários produzidos: as imagens dos gráficos, as figuras
+fixas da seção de Metodologia do relatório, as imagens anexadas pelo usuário,
+o arquivo \texttt{.tex} montado e o PDF compilado. O banco relacional guarda
+apenas a chave de cada objeto. O MinIO já é utilizado pelo Exército Brasileiro
+em outro ambiente; o sistema o executa em um contêiner local, com um caminho
+claro de promoção para a instância institucional.
+
+    \subsubsection{TeX Live e LanguageTool}
+
+    A compilação do relatório em PDF é realizada por um serviço dedicado,
+executado em contêiner próprio, construído sobre uma distribuição mínima do
+TeX Live acrescida apenas dos pacotes efetivamente utilizados pelo
+\textit{template} do relatório. Todos os pacotes são instalados durante a
+construção da imagem, e não durante a compilação, já que o ambiente-alvo é
+uma intranet sem acesso à internet.
+
+    O \textbf{LanguageTool} é um verificador ortográfico e gramatical de
+código aberto, baseado em regras, com suporte ao português do Brasil,
+executado localmente em contêiner próprio. No sistema, é empregado na revisão
+do relatório gerado (Seção~\ref{sec:fase5}), detectando erros de ortografia, acentuação e
+concordância sem que o texto seja enviado a nenhum serviço externo.
 
 % ============================================================
 %  CAPÍTULO 3 — SOLUÇÃO PROPOSTA
@@ -1550,9 +1664,11 @@ prospecção tecnológica \cite{mayerhoff2008, porter2004}, estruturada em torno
 um \textit{backend} desenvolvido em Python com o \textit{framework} FastAPI, um
 banco de dados relacional para persistência das pesquisas e resultados, um banco
 de dados vetorial (ChromaDB) para indexação semântica dos documentos recuperados
-\cite{gao2024}, um módulo de IA baseado em LLM remota responsável pelo refinamento de termos e geração das \textit{queries booleanas} e um módulo de IA baseado em LLM local (Qwen~2.5 via Ollama)
-responsável pela geração do relatório técnico
-\cite{zhao2023}.
+\cite{gao2024}, um módulo de IA baseado em LLM (remota ou local, configurável por ponto de uso) responsável pelo refinamento de termos e geração das \textit{queries booleanas} e um módulo de IA baseado em LLM local (via Ollama ou LLM da intranet)
+responsável pela redação e pela revisão do relatório técnico
+\cite{zhao2023}, além de serviços auxiliares executados em contêineres locais
+para armazenamento de objetos (MinIO), compilação LaTeX (TeX Live) e revisão
+ortográfica e gramatical (LanguageTool).
 
   O principal objetivo é reduzir significativamente o esforço manual e o tempo
 necessários para a realização de um levantamento completo de prospecção
@@ -1584,11 +1700,15 @@ Implementa também o ciclo de verificação de complexidade e retentativa
 (Seção~\ref{sec:complexidade}) e medeia cada ciclo de validação do usuário
 entre etapas.
 
-  \textbf{Módulo de IA (LLM remota):} adaptador técnico que executa as
-chamadas aos provedores Claude (Anthropic) e Gemini (Google) --- envia os
-\textit{prompts} montados pelo Módulo de Orquestração e interpreta e valida a
-resposta estruturada retornada (Seção~\ref{sec:defesa-camadas}) ---, sem
-decidir por si só quando ou com que conteúdo cada chamada deve ocorrer.
+  \textbf{Módulo de IA (LLM):} adaptadores técnicos que executam as
+chamadas aos provedores configurados --- Claude (Anthropic), Gemini (Google)
+ou um modelo local compatível com a API da OpenAI --- enviando os
+\textit{prompts} montados pelo Módulo de Orquestração e interpretando e
+validando a resposta estruturada retornada (Seção~\ref{sec:defesa-camadas}),
+sem decidir por si só quando ou com que conteúdo cada chamada deve ocorrer.
+Qual provedor e modelo atende a cada ponto de uso é resolvido em tempo de
+execução, a partir de configurações armazenadas no banco de dados e editáveis
+na tela de configurações da interface, sem reinicialização do sistema.
 
   \textbf{Módulo de busca (QueryBuilders + SearchServices):} adaptadores
 técnicos que traduzem a estrutura de campos já decidida pelo Módulo de
@@ -1615,28 +1735,44 @@ partir de identificadores primários do próprio documento (por exemplo, o
 número de publicação de uma patente ou o DOI de um artigo) e, na ausência
 destes, por uma combinação normalizada de título e ano de publicação; essa
 chave é o que permite que patentes e artigos sejam reaproveitados entre
-diferentes consultas e sessões, em vez de duplicados a cada nova busca. Este
-é o único dos dois módulos de geração de relatório já implementado e
-conectado a uma rota de produção (Seção~\ref{sec:estado-atual}).
+diferentes consultas e sessões, em vez de duplicados a cada nova busca. Cada
+gráfico gerado é armazenado no MinIO e registrado no banco de dados junto de
+um resumo numérico (total, ano de pico, principais entidades, GP/MP/SP), que é
+repassado ao módulo seguinte para que o texto do relatório descreva cada
+figura com os números reais.
 
-  \textbf{Módulo de Geração Textual do Relatório (RAGService + ChromaDB +
-LLM local):} indexa a amostra de temas recuperados na busca final e um
-conjunto de relatórios de referência já elaborados pela AGITEC, em coleções
-separadas do banco de dados vetorial, recupera os trechos mais relevantes
-\cite{reimers2019} para fundamentar, respectivamente, o conteúdo factual e a
-estrutura/estilo redacional de cada seção, e coordena o modelo de linguagem
-local (Qwen~2.5, via Ollama) na redação das dez seções do relatório no padrão
-REPTEC/AGITEC \cite{agitec2024, reptec2023tetra}, mitigando o risco de
-alucinações \cite{ji2022}. Diferentemente do módulo anterior, esta é a etapa
-de geração de relatório tratada como trabalho em andamento, ainda não
-conectada a uma rota de produção (Seção~\ref{sec:estado-atual}).
+  \textbf{Módulo de Inferência Estatística:} aplica o estimador Chao1 e a
+verificação de estabilidade por \textit{bootstrap}
+(Seção~\ref{sec:chao1bootstrap}) sobre a busca final, enriquecendo
+iterativamente a amostra até sua saturação ou até o limite de tempo
+configurado.
 
-\textbf{Módulo de Persistência (SQLAlchemy + SQLite/PostgreSQL):} responsável
+  \textbf{Módulo de Geração Textual do Relatório (ReportWriterService +
+ChromaDB + LLM local):} indexa o título e o resumo dos documentos recuperados
+na busca final, recupera os trechos mais relevantes \cite{reimers2019} para
+cada seção e coordena o modelo de linguagem local na redação das seções que
+dependem dos dados da busca, enquanto as seções de texto fixo e os elementos
+estruturais do padrão REPTEC/AGITEC \cite{agitec2024, reptec2023tetra} são
+produzidos de forma determinística. Módulos auxiliares, sem uso de LLM,
+posicionam as figuras no texto, calculam o estágio do ciclo de vida da
+tecnologia, restringem as citações às obras efetivamente recuperadas e
+validam o texto gerado, mitigando o risco de alucinações \cite{ji2022}
+(Seção~\ref{sec:fase5}).
+
+  \textbf{Módulo de Montagem, Revisão e Exportação do Relatório:} monta o
+arquivo \texttt{.tex} a partir de um \textit{template} LaTeX no padrão REPTEC,
+disponibiliza-o para edição na interface \textit{web}, revisa-o (verificação
+de LaTeX, LanguageTool e, opcionalmente, revisão por LLM), compila-o em PDF no
+serviço TeX Live e exporta um pacote \texttt{.zip} com o \texttt{.tex} e as
+imagens referenciadas.
+
+\textbf{Módulo de Persistência (SQLAlchemy + PostgreSQL + MinIO):} responsável
 pelo armazenamento estruturado de todas as entidades do sistema --- pesquisas,
-patentes, artigos, métricas e histórico de execução ---,
-garantindo rastreabilidade completa do processo e permitindo a retomada ou
-reanálise de pesquisas anteriores sem necessidade de nova consulta às APIs
-externas.
+patentes, artigos, gráficos, seções do relatório, configurações e histórico de
+execução ---, garantindo rastreabilidade completa do processo e permitindo a
+retomada ou reanálise de pesquisas anteriores sem necessidade de nova
+consulta às APIs externas; os artefatos binários (imagens, \texttt{.tex} e
+PDF) ficam no MinIO, referenciados por chave no banco relacional.
 
 \begin{figure}[H]
     \centering
@@ -1712,16 +1848,29 @@ gráficas padronizadas pela AGITEC. \\[4pt] \addlinespace[8pt]
 
 RF09 & Geração automática de relatório &
 O sistema deve gerar automaticamente um relatório técnico consolidado no padrão
-REPTEC/AGITEC \cite{agitec2024, reptec2023tetra}, com dez seções, utilizando RAG \cite{lewis2020}
-para embasamento factual. \\[4pt] \addlinespace[8pt]
+REPTEC/AGITEC \cite{agitec2024, reptec2023tetra}, com as oito seções numeradas
+do padrão, utilizando RAG \cite{lewis2020} para embasamento factual das seções
+redigidas por LLM, com as figuras apresentadas e interpretadas no texto e com
+citações restritas aos documentos efetivamente recuperados. \\[4pt] \addlinespace[8pt]
 
 RF10 & Edição e exportação &
 O sistema deve disponibilizar o relatório gerado para edição pelo usuário e
-permitir sua exportação em LaTeX e PDF. \\[4pt] \addlinespace[8pt]
+permitir sua exportação em LaTeX (incluindo as imagens utilizadas) e em PDF. \\[4pt] \addlinespace[8pt]
 
 RF11 & Rastreamento de métricas &
 O sistema deve registrar o consumo de \textit{tokens}, o custo estimado por
-operação e o tempo de execução de cada fase do \textit{pipeline}. \\
+operação e o tempo de execução de cada fase do \textit{pipeline}. \\[4pt] \addlinespace[8pt]
+
+RF12 & Revisão do relatório &
+O sistema deve revisar o relatório editado, apontando erros de sintaxe LaTeX,
+de ortografia, de acentuação e de concordância nos trechos gerados por IA ou
+editados pelo usuário, e permitir que cada sugestão seja aplicada ou ignorada
+individualmente. \\[4pt] \addlinespace[8pt]
+
+RF13 & Configuração em tempo de execução &
+O sistema deve permitir ao usuário escolher o provedor e o modelo de LLM de
+cada ponto de uso, as APIs de busca ativas e os parâmetros operacionais, sem
+necessidade de reinicialização. \\
 
 \bottomrule
 \caption{Requisitos Funcionais do Projeto}
@@ -1810,9 +1959,9 @@ concretos de cada uma.
 \textbf{Camada} & \textbf{Responsabilidade} & \textbf{Exemplos} \\
 \midrule
 Domínio & Tipos de dados puros, sem I/O & Estruturas de resultado de busca, de requisição/resposta de LLM, de termo extraído \\
-\textit{Ports} & Contratos (interfaces) dos quais o núcleo depende, sem implementá-los & Porta de LLM; porta de busca de patentes; porta de busca de artigos; porta de repositório \\
-Serviços (núcleo) & Regras de negócio puras, sem dependência de \textit{framework} & Orquestração do fluxo de prospecção; análise de complexidade de consulta; geração de gráficos \\
-Adaptadores \textit{driven} & Implementam as portas, conectando a integrações reais & Cliente da API Anthropic; cliente da API Gemini; cliente OPS; cliente Scopus \\
+\textit{Ports} & Contratos (interfaces) dos quais o núcleo depende, sem implementá-los & Porta de LLM; porta de geração de texto; porta de busca de patentes; porta de busca de artigos; porta de repositório; porta de armazenamento de objetos; porta de banco vetorial \\
+Serviços (núcleo) & Regras de negócio puras, sem dependência de \textit{framework} & Orquestração do fluxo de prospecção; análise de complexidade de consulta; geração de gráficos; redação, montagem e revisão do relatório; inferência estatística \\
+Adaptadores \textit{driven} & Implementam as portas, conectando a integrações reais & Clientes das APIs Anthropic, Gemini e OpenAI-compatível (Ollama/intranet); clientes OPS e Scopus; MinIO; ChromaDB \\
 Adaptadores \textit{driving} & Chamam o núcleo a partir do mundo externo & Rotas HTTP (FastAPI) que expõem cada etapa do fluxo ao \textit{frontend} \\
 \bottomrule
 \end{tabular}
@@ -1949,12 +2098,14 @@ definidos, o módulo de IA constrói uma nova \textit{query}, que é apresentada
 ao usuário para validação antes da execução da busca final.
 
 Concluída a busca final, a aplicação gera automaticamente os gráficos de análise
-\cite{foster1986, fisherpry1971}, e o usuário seleciona quais deles comporão o relatório. Os
-gráficos selecionados, juntamente com os dados consolidados e o histórico do
-processo, alimentam a etapa de síntese de dados, que embasa a geração automática
-do relatório no padrão REPTec \cite{lewis2020, agitec2024, reptec2023tetra}. O relatório é
-então disponibilizado como arquivo editável, cabendo ao usuário realizar a edição
-e validação final antes da entrega.
+\cite{foster1986, fisherpry1971} --- restritos ao conjunto de figuras previsto no
+padrão REPTEC --- e seus resumos numéricos. Os gráficos, juntamente com os dados
+consolidados e o histórico do processo, alimentam a etapa de síntese de dados,
+que embasa a geração automática do relatório no padrão REPTEC \cite{lewis2020,
+agitec2024, reptec2023tetra}, seção a seção. O relatório é então disponibilizado
+como arquivo LaTeX editável na própria interface, onde o usuário pode inserir
+novas imagens, revisar o texto, compilar o PDF e exportar o resultado, cabendo a
+ele a edição e a validação final antes da entrega.
 
   \subsection{Configurações e Parâmetros Adotados}
 
@@ -1970,13 +2121,24 @@ AGITEC, como demonstrado com dados reais de patentes e publicações sobre a
 tecnologia TETRA em \cite{reptec2023tetra}. A representação gráfica
 da curva~S, gerada automaticamente a partir dos dados de publicação por ano, é
 incluída no relatório final como elemento de análise estratégica, junto do aviso
-de confiabilidade do ajuste quando aplicável.
+de confiabilidade do ajuste quando aplicável. O estágio do ciclo de vida
+(emergente, crescimento, maturidade ou saturação) é determinado por código a
+partir da posição do último ano observado em relação a GP, MP e SP; o estágio
+geral da tecnologia segue a curva de patentes, e é informado ao LLM como um
+fato pronto, em vez de ser inferido por ele.
 
-  Como LLM local, é utilizado o modelo \textbf{Qwen~2.5~(3B-instruct)},
-disponibilizado localmente por meio da plataforma \textbf{Ollama}. O modelo opera
-com temperatura de $0{,}3$ e \textit{top-p} de $0{,}95$, parâmetros configurados
-para privilegiar respostas factuais em detrimento de respostas criativas, com
-geração de até 1500 \textit{tokens} por seção do relatório.
+  Os modelos de linguagem são configurados por \textbf{ponto de uso}, em
+tabelas próprias do banco de dados: cada um dos cinco pontos de uso
+(variações de tema, consulta exploratória, consulta final, redação do
+relatório e revisão do relatório) aponta para uma configuração de provedor,
+modelo e credencial. Os testes locais foram realizados com os modelos
+\textbf{Qwen~2.5~(3B-instruct)} e \textbf{Gemma~3~(4B)}, disponibilizados por
+meio da plataforma \textbf{Ollama}, com geração de até 4.096 \textit{tokens} por
+chamada. Parâmetros operacionais --- como o número de fragmentos recuperados
+por seção, o corte relativo de relevância do RAG e o idioma da revisão
+ortográfica --- ficam em uma tabela de configurações editável pela interface,
+com valores iniciais semeados de forma idempotente, sem sobrescrever valores já
+alterados pelo usuário.
 
   A engenharia de \textit{prompt} (Seção~\ref{sec:hexagonal} e Capítulo~2) é
 empregada em
@@ -1986,21 +2148,20 @@ relatório técnico. Os \textit{prompts} são estruturados para instruir
 explicitamente o modelo a basear suas respostas exclusivamente nos dados
 recuperados, evitando a introdução de informações não verificadas.
 
-  O RAG local (Seção~\ref{sec:rag} do Capítulo~2) opera da seguinte forma:
-duas fontes de conteúdo alimentam o subsistema --- a amostra de temas
-recuperados na busca final (patentes e artigos científicos) e um conjunto de
-relatórios de referência já elaborados pela AGITEC ---, ambas divididas em
-fragmentos (\textit{chunks}) de 1000 caracteres com sobreposição de 200
-caracteres, e convertidas em \textit{embeddings} pelo modelo
-nomic-embed-text. Esses vetores são armazenados em coleções próprias no banco
-de dados vetorial ChromaDB. Na etapa de geração de cada seção do relatório, o
-sistema formula uma \textit{query} semântica, recupera os cinco fragmentos
-mais similares por busca de similaridade cosseno --- da amostra de temas da
-sessão, para embasamento factual, e dos relatórios de referência da AGITEC,
-para orientação de estrutura e estilo --- e injeta esse contexto, como texto
-puro, no \textit{prompt} enviado ao LLM local, garantindo que o texto gerado
-seja fundamentado em fontes reais --- caracterizando a variante de RAG Naive local
-descrita na Seção~\ref{sec:rag}.
+  O RAG local (Seção~\ref{sec:rag} do Capítulo~2) opera da seguinte forma: o
+título e o resumo de cada documento da busca final (patentes e artigos
+científicos) são divididos em fragmentos (\textit{chunks}) de 1000
+caracteres com sobreposição de 200 caracteres e convertidos em
+\textit{embeddings} pelo mesmo modelo Sentence-BERT \cite{reimers2019} usado
+nos filtros de relevância. Esses vetores são armazenados em uma coleção do
+ChromaDB, com o identificador da sessão, a citação e a referência ABNT do
+documento de origem nos metadados. Na etapa de geração de cada seção do
+relatório, o sistema formula uma \textit{query} semântica a partir do tema e do
+propósito da seção, recupera os cinco fragmentos mais similares da sessão por
+similaridade de cosseno, descarta os que ficarem abaixo de $75\%$ do escore do
+mais relevante e injeta o restante, como texto puro, no \textit{prompt} enviado
+ao LLM local, junto da lista de citações permitidas --- caracterizando a
+variante de RAG Naive local descrita na Seção~\ref{sec:rag}.
 
   \subsection{Tecnologias Adotadas}
 
@@ -2010,21 +2171,29 @@ descrita na Seção~\ref{sec:rag}.
 \textit{framework} \textbf{FastAPI}, escolhido por sua alta performance em
 operações assíncronas e pela geração automática de documentação interativa
 (Swagger/OpenAPI). A persistência relacional é gerenciada pelo ORM
-\textbf{SQLAlchemy}, com \textbf{SQLite} em desenvolvimento e \textbf{PostgreSQL}
-em produção. A busca vetorial e a persistência de \textit{embeddings} são
-realizadas pelo \textbf{ChromaDB} \cite{gao2024}. A execução local dos modelos
-de linguagem é viabilizada pelo \textbf{Ollama}, que disponibiliza o modelo
-\textbf{Qwen~2.5~(3B-instruct)} para geração de texto \cite{zhao2023} e o
-modelo \textbf{nomic-embed-text} para geração de \textit{embeddings}
+\textbf{SQLAlchemy}, com \textbf{PostgreSQL} como banco de dados (o SQLite é
+empregado apenas nos testes automatizados). A busca vetorial e a persistência
+de \textit{embeddings} são realizadas pelo \textbf{ChromaDB} \cite{gao2024}, e
+os artefatos binários, pelo \textbf{MinIO}. A execução local dos modelos
+de linguagem é viabilizada pelo \textbf{Ollama} \cite{zhao2023}, e os
+\textit{embeddings} são gerados com a biblioteca \textbf{sentence-transformers}
 \cite{reimers2019}. O pipeline local de extração de termos (Seção~4.3) emprega
-\textbf{spaCy}, \textbf{KeyBERT} \cite{grootendorst2020} e \textbf{TF-IDF}
-\cite{saltonbuckley1988}. As consultas às APIs externas são realizadas por meio de
-requisições HTTP com a biblioteca \textbf{httpx}, com suporte a requisições
-assíncronas e controle de taxa.
+\textbf{spaCy} e \textbf{KeyphraseVectorizers} (PatternRank) \cite{schopf2022},
+\textbf{BM25F} \cite{robertson2004}, \textbf{KeyBERT} \cite{grootendorst2020},
+RRF \cite{cormack2009} e C-value \cite{frantzi2000}. As consultas às APIs externas
+são realizadas por meio de requisições HTTP com a biblioteca \textbf{httpx}, com
+suporte a requisições assíncronas, controle de taxa e novas tentativas em caso
+de falha de rede. Os gráficos são gerados com \textbf{matplotlib} e o ajuste da
+curva~S, com \textbf{SciPy}. O relatório é renderizado a partir de um
+\textit{template} \textbf{Jinja2} e compilado por um serviço \textbf{TeX Live}
+dedicado; a revisão ortográfica e gramatical utiliza o \textbf{LanguageTool}.
+Todos os serviços de infraestrutura --- PostgreSQL, MinIO, ChromaDB, Ollama,
+TeX Live e LanguageTool --- são orquestrados localmente por \textbf{Docker
+Compose}.
 
-  A interface \textit{web} do sistema é desenvolvida com \textbf{React}, utilizando o \textbf{Vite} como ferramenta de \textit{build} e ambiente de desenvolvimento, o \textbf{Zustand} para gerenciamento de estado e o \textbf{Tailwind CSS} para a construção da camada visual. Essa escolha busca proporcionar uma aplicação responsiva, modular e de fácil manutenção. Entre as funcionalidades já disponíveis na interface, destacam-se o assistente guiado (\textit{wizard}) de quatro etapas para condução de toda a pesquisa, a edição manual dos campos de consulta em cada etapa e o registro de auditoria do uso de IA por sessão; a edição integrada do relatório final em LaTeX e sua exportação em PDF permanecem como funcionalidades planejadas, conforme detalhado na Seção~\ref{sec:estado-atual}.
+  A interface \textit{web} do sistema é desenvolvida com \textbf{React}, utilizando o \textbf{Vite} como ferramenta de \textit{build} e ambiente de desenvolvimento, o \textbf{Zustand} para gerenciamento de estado e o \textbf{Tailwind CSS} para a construção da camada visual. Essa escolha busca proporcionar uma aplicação responsiva, modular e de fácil manutenção. Entre as funcionalidades disponíveis na interface, destacam-se o assistente guiado (\textit{wizard}) de quatro etapas para condução de toda a pesquisa, a edição manual dos campos de consulta em cada etapa, o registro de auditoria do uso de IA por sessão, a tela de configurações e, na última etapa, o formulário do relatório e o editor LaTeX com painel de imagens, revisão, compilação em PDF e exportação, conforme detalhado na Seção~\ref{sec:estado-atual}.
 
-  Sobre a arquitetura da persistência de artefatos gerados (gráficos e, futuramente, o relatório compilado), está planejada a adoção do \textbf{MinIO}, um servidor de armazenamento de objetos de código aberto compatível com a API S3 da Amazon, que pode ser executado em infraestrutura própria (\textit{self-hosted}). O MinIO já é utilizado pelo Exército Brasileiro em outro ambiente, e o plano de integração prevê um contêiner Docker local, no mesmo padrão hoje empregado para o PostgreSQL, configurado para eventualmente apontar ou replicar para a instância remota do MinIO do Exército --- permitindo que o desenvolvimento local funcione de forma independente, mas com um caminho claro de promoção para o ambiente institucional real.
+  A persistência de artefatos gerados (gráficos, figuras fixas, anexos, \texttt{.tex} e PDF) utiliza o \textbf{MinIO}, executado em um contêiner Docker local, no mesmo padrão empregado para o PostgreSQL, e configurável para apontar ou replicar para a instância remota do MinIO do Exército --- permitindo que o desenvolvimento local funcione de forma independente, mas com um caminho claro de promoção para o ambiente institucional real.
 
 %% TODO (imagem pendente): diagrama simples do plano de persistência MinIO
 %% (contêiner local <-> instância remota do Exército).
@@ -2040,16 +2209,18 @@ assíncronas e controle de taxa.
 
   O modelo de dados relacional do sistema é implementado com o ORM
 \textbf{SQLAlchemy} em sua API assíncrona declarativa, versionado por
-migrações \textbf{Alembic}, com \textbf{SQLite} como banco de desenvolvimento e
-\textbf{PostgreSQL} como banco de produção (Seção~\ref{sec:hexagonal}). O
+migrações \textbf{Alembic}, com \textbf{PostgreSQL} como banco de dados
+(Seção~\ref{sec:hexagonal}). O
 esquema ativo é organizado em torno de uma entidade central ---
 \texttt{research\_session} ---, que representa uma execução completa do fluxo
 de prospecção (Figura~\ref{fig:fluxograma}) e da qual derivam, por chave
 estrangeira, as demais entidades do domínio: os parâmetros de entrada da
-sessão, as \textit{queries} de busca geradas, o registro de chamadas de IA e,
-indiretamente, por meio das \textit{queries}, os documentos de patente e
-artigo recuperados. A Tabela~\ref{tab:entidades-bd} resume as entidades do
-esquema ativo e seu papel no domínio.
+sessão, as \textit{queries} de busca geradas, o registro de chamadas de IA,
+as seções e o manifesto do relatório e, indiretamente, por meio das
+\textit{queries}, os documentos de patente e artigo recuperados e os gráficos
+gerados. Um segundo grupo, independente das sessões, armazena as
+configurações editáveis em tempo de execução. A Tabela~\ref{tab:entidades-bd}
+resume as entidades do esquema ativo e seu papel no domínio.
 
 \begin{table}[H]
 \centering
@@ -2059,13 +2230,17 @@ esquema ativo e seu papel no domínio.
 \toprule
 \textbf{Entidade} & \textbf{Papel} \\
 \midrule
-\texttt{research\_session} & Entidade central (\textit{hub}); uma linha por execução do fluxo de prospecção \\
+\texttt{research\_session} & Entidade central (\textit{hub}); uma linha por execução do fluxo de prospecção, com a etapa corrente do assistente para retomada no ponto certo \\
 \texttt{session\_input} & Parâmetros de entrada da sessão; auto-relacionada (tema original vs.\ variante refinada por IA) \\
 \texttt{session\_probe\_query} & \textit{Queries} de busca por fonte (OPS, Scopus); auto-relacionada (\textit{query} de exploração inicial vs.\ \textit{query} final escolhida) \\
 \texttt{session\_ai\_call} & Registro (\textit{log}) somente-inserção de cada chamada de IA feita durante o assistente guiado \\
 \texttt{patent}\slash\texttt{article} & Documentos recuperados, deduplicados globalmente por \texttt{dedup\_key}, independentemente de sessão ou \textit{query} \\
 \texttt{probe\_query\_patent}\newline\texttt{probe\_query\_article} & Entidades associativas que resolvem o relacionamento muitos-para-muitos entre \textit{queries} e documentos \\
 \texttt{probe\_query\_term} & Termos extraídos por PLN local a partir dos documentos de uma \textit{query} de exploração \\
+\texttt{session\_chart} & Gráfico gerado para uma \textit{query} final: chave do PNG no MinIO e resumo numérico (JSON) usado na redação do relatório \\
+\texttt{session\_report\_}\allowbreak\texttt{section} & Uma seção do relatório: contexto recuperado pelo RAG, texto gerado e fontes citáveis (JSON) \\
+\texttt{session\_report} & Manifesto do relatório da sessão: chaves do \texttt{.tex} e do PDF no MinIO e dados do formulário \\
+\texttt{app\_settings},\newline \texttt{llm\_provider\_}\allowbreak\texttt{configs},\newline \texttt{llm\_call\_site\_}\allowbreak\texttt{bindings},\newline \texttt{search\_api\_}\allowbreak\texttt{selection} & Configurações editáveis em tempo de execução: parâmetros operacionais, provedores/modelos de LLM, vínculo de cada ponto de uso e APIs de busca ativas \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -2136,7 +2311,8 @@ empregados no esquema e onde cada um ocorre.
 \toprule
 \textbf{Tipo} & \textbf{Onde ocorre} & \textbf{Observação} \\
 \midrule
-Um-para-muitos & \texttt{research\_session} $\rightarrow$\newline \texttt{session\_input},\newline \texttt{session\_probe\_query},\newline \texttt{session\_ai\_call} & Exclusão em cascata (\textit{cascade delete-orphan}) a partir da sessão \\
+Um-para-muitos & \texttt{research\_session} $\rightarrow$\newline \texttt{session\_input},\newline \texttt{session\_probe\_query},\newline \texttt{session\_ai\_call},\newline \texttt{session\_report\_section};\newline \texttt{session\_probe\_query} $\rightarrow$\newline \texttt{session\_chart} & Exclusão em cascata (\textit{cascade delete-orphan}) a partir da sessão \\
+Um-para-um & \texttt{research\_session} $\rightarrow$\newline \texttt{session\_report} & Um único relatório montado por sessão, sobrescrito a cada nova montagem \\
 Auto-relacionamento (unário, opcional) & \texttt{session\_input}.\texttt{parent\_id};\newline \texttt{session\_probe\_query}.\texttt{parent\_id} & Distingue estágios do fluxo (raiz/exploração vs.\ variante/final) dentro da mesma tabela \\
 Muitos-para-muitos com atributo (entidade associativa) & \texttt{session\_probe\_query} $\leftrightarrow$ \texttt{patent}\slash\texttt{article}, via\newline \texttt{probe\_query\_patent}\newline \texttt{probe\_query\_article} & \texttt{relevance\_score} é atributo do par \textit{query}--documento, não de nenhum dos dois isoladamente \\
 Deduplicação global (unicidade) & \texttt{patent}.\texttt{dedup\_key};\newline \texttt{article}.\texttt{dedup\_key} & Garante uma única linha por documento, ainda que recuperado por múltiplas \textit{queries} ou sessões \\
@@ -2150,80 +2326,94 @@ Deduplicação global (unicidade) & \texttt{patent}.\texttt{dedup\_key};\newline
 \begin{figure}[H]
     \centering
     \includegraphics[width=1\textwidth]{img/modelo_dados_der.png}
-    \caption{Diagrama entidade-relacionamento do esquema relacional ativo.}
+    \caption{Diagrama entidade-relacionamento do núcleo do esquema relacional ativo (sessões, consultas e documentos). As tabelas de gráficos, relatório e configurações estão descritas na Tabela~\ref{tab:entidades-bd}.}
     \label{fig:modelo-dados-der}
 \end{figure}
 
   \subsection{Estado Atual de Desenvolvimento}
   \label{sec:estado-atual}
 
-  Na presente fase do projeto (VE), o protótipo desenvolvido contempla as
-seguintes funcionalidades implementadas e testadas:
+  No estágio atual do projeto, o protótipo desenvolvido contempla, de ponta a
+ponta, as seguintes funcionalidades implementadas e testadas:
 
   \textbf{Arquitetura e estrutura do \textit{backend}:} a API REST com FastAPI está estruturada
 segundo o padrão de arquitetura hexagonal descrito na
 Seção~\ref{sec:hexagonal}, com os \textit{endpoints} de interação com IA e
 busca (\texttt{/api/v1/chat/*}), de gerenciamento de sessões
-(\texttt{/api/v1/research-session/*} e \texttt{/api/v1/session-input/*}) e de
-geração de relatórios gráficos (\texttt{/api/v1/report/*}) implementados e
-documentados via Swagger. O modelo de dados ativo segue o esquema relacional
-detalhado na Seção~\ref{sec:modelagem-bd} --- organizado em torno de uma
-entidade central de sessão de pesquisa (\textit{research\_session}), com
-auto-relacionamentos e relacionamentos muitos-para-muitos entre \textit{queries}
-e documentos ---, implementado com SQLAlchemy assíncrono e gerenciado por
-migrações versionadas (Alembic), com PostgreSQL como banco de produção.
+(\texttt{/api/v1/research-session/*} e \texttt{/api/v1/session-input/*}), de
+geração de gráficos e do relatório (\texttt{/api/v1/report/*}), de inferência
+estatística (\texttt{/api/v1/inference/*}) e de configuração
+(\texttt{/api/v1/config/*}) implementados e documentados via Swagger. O modelo
+de dados ativo segue o esquema relacional detalhado na
+Seção~\ref{sec:modelagem-bd}, implementado com SQLAlchemy assíncrono e
+gerenciado por migrações versionadas (Alembic), com PostgreSQL como banco de
+dados. Os módulos puros do núcleo (complexidade de consulta, curva~S,
+estatística, posicionamento de figuras, citações, validação e revisão de texto)
+são cobertos por testes unitários automatizados.
 
   \textbf{Integração com OPS, Scopus e Lens:} os construtores de consulta e
 serviços de busca para OPS e Scopus foram implementados e testados com consultas reais,
 validando a capacidade de recuperação de patentes e artigos a partir de termos
-fornecidos, incluindo um mecanismo de verificação automática da complexidade
+fornecidos, incluindo o mecanismo de verificação automática da complexidade
 estrutural de cada consulta antes do envio, com nova tentativa e simplificação
 assistida por LLM em caso de consulta excessivamente complexa. O tratamento de
-erros, paginação e controle de taxa estão implementados para ambas as APIs; a
-integração com a plataforma Lens está prevista, mas ainda não exposta na
-interface do usuário.
+erros, paginação, controle de taxa e novas tentativas em falhas de rede estão
+implementados para ambas as APIs, e a busca final distingue o total real de
+documentos informado pela base da amostra efetivamente analisada. Os
+construtores de consulta da plataforma Lens estão implementados, mas a fonte
+ainda não é exposta na interface do usuário.
 
   \textbf{Extração de termos:} implementada como um pipeline local de
-Processamento de Linguagem Natural (spaCy, KeyBERT e TF-IDF), sem uso de LLM
-nesta etapa específica (Seção~\ref{sec:extracao-termos}), conectado à interface
-de seleção de termos apresentada ao usuário.
+Processamento de Linguagem Natural (PatternRank, BM25F, KeyBERT, RRF e
+C-value), sem uso de LLM nesta etapa específica
+(Seção~\ref{sec:extracao-termos}), conectado à interface de seleção de termos
+apresentada ao usuário. O pipeline substituiu uma primeira versão baseada em
+\textit{noun chunks}, TF-IDF e KeyBERT combinados linearmente.
 
-  \textbf{Geração de gráficos e curva~S:} implementada e conectada a uma rota
-dedicada, que calcula os pontos de leitura GP/MP/SP e o diagnóstico de
-confiabilidade do ajuste descritos na Seção~\ref{sec:curva-s}, gerando as
-imagens dos gráficos a partir dos documentos já persistidos da busca final da
-sessão.
-
-  \textbf{Integração com Ollama e RAG local:} o cliente para o Ollama foi
-implementado, com suporte a geração de texto e de \textit{embeddings}. A
-indexação de documentos no ChromaDB e a recuperação por similaridade estão
-parcialmente implementadas; a geração textual das seções do relatório final por
-meio do modelo local, com o contexto recuperado do RAG injetado como texto puro
-no \textit{prompt} (conforme a Seção~\ref{sec:rag}), permanece como trabalho em
-andamento, ainda não conectada a uma rota de produção.
-
-  \textbf{Persistência de artefatos (MinIO):} ainda não implementada --- os
-gráficos gerados hoje ficam apenas em disco local do processo do
-\textit{backend}, sem replicação ou armazenamento externo, conforme detalhado
-na Seção~3.5.
+  \textbf{Geração de gráficos e curva~S:} implementada e conectada a rotas
+dedicadas, que geram as figuras previstas no padrão REPTEC --- volume anual,
+principais depositantes e instituições, quadros das classificações CPC e das
+áreas de estudo mais frequentes e curvas~S de patentes e de artigos com os
+pontos GP/MP/SP e o diagnóstico de confiabilidade do ajuste
+(Seção~\ref{sec:curva-s}) ---, a partir dos documentos já persistidos da busca
+final da sessão. Nomes de depositantes ou instituições com mais de 45
+caracteres são abreviados automaticamente, para não distorcer os gráficos.
 
   \textbf{Estimação de completude amostral e estabilidade de \textit{ranking}
-(Chao1/\textit{bootstrap}):} ainda não implementada --- não há, no protótipo
-atual, nenhum estimador de riqueza de espécies nem reamostragem por
-\textit{bootstrap} sobre os agregados apresentados no relatório
-(Seção~\ref{sec:chao1bootstrap}); o único indicador correlato hoje existente é
-um limiar arbitrário de saturação (90\% do valor acumulado) usado no módulo de
-visualização mais antigo, hoje desconectado das rotas de produção, e que não
-constitui um estimador estatístico propriamente dito.
+(Chao1/\textit{bootstrap}):} implementada como uma rota de inferência
+estatística sobre a busca final (Seção~\ref{sec:chao1bootstrap}), que
+enriquece iterativamente a amostra até sua saturação ou até o limite de tempo
+configurado.
+
+  \textbf{RAG local e geração do relatório:} implementados e conectados a
+rotas de produção. A indexação dos documentos da busca final no ChromaDB, a
+recuperação por similaridade com corte relativo de relevância e a redação das
+seções por LLM local são executadas seção a seção; as seções de texto fixo,
+as figuras, as citações, o quadro de busca, as assinaturas e a bibliografia
+são produzidos de forma determinística, e o \texttt{.tex} resultante segue o
+\textit{template} REPTEC (Seção~\ref{sec:fase5}). A compilação em PDF é realizada pelo
+serviço TeX Live dedicado.
+
+  \textbf{Persistência de artefatos (MinIO):} implementada --- os gráficos, as
+figuras fixas da Metodologia, as imagens anexadas pelo usuário, o
+\texttt{.tex} e o PDF são armazenados no MinIO, com as respectivas chaves
+registradas no PostgreSQL.
 
   \textbf{Interface \textit{web}:} implementada como um assistente guiado de
 quatro etapas (submissão de parâmetros, exploração inicial, exploração final e
-geração de relatório), funcionalmente completo até a etapa de análise dos
-resultados da busca final, incluindo edição de campos, regeneração de
-consultas, gerenciamento de sessões e registro de auditoria de uso de IA; a
-etapa de geração e edição do relatório final permanece, no momento, como uma
-tela de espaço reservado (\textit{placeholder}), a ser implementada nas
-próximas fases do cronograma.
+geração de relatório), incluindo edição de campos e da consulta completa,
+regeneração de consultas, gerenciamento e retomada de sessões, registro de
+auditoria de uso de IA e tela de configurações. A etapa de geração de
+relatório reúne o formulário do relatório (número, destinatário, objetivo,
+local, referências administrativas, bibliografia e assinaturas, todos
+validados), a geração seção a seção e um editor LaTeX com painel de imagens e
+anexos, revisão do texto, compilação em PDF e exportação em \texttt{.zip}.
+
+  Permanecem pendentes a validação do sistema contra o LLM disponibilizado na
+intranet do Exército --- até aqui, a geração do relatório foi testada contra
+modelos locais executados via Ollama --- e a execução de casos reais de
+prospecção para avaliação da qualidade dos relatórios gerados, prevista na
+fase VF do cronograma.
   
 % ============================================================
 %  CAPÍTULO 4 — PIPELINE
@@ -2325,124 +2515,146 @@ pontuar e ranquear os termos mais relevantes a partir de título e resumo de
 cada documento recuperado. Diferentemente da função de complexidade de
 consulta (Seção~\ref{sec:complexidade}), que é uma métrica original criada
 pelos autores, o pipeline de extração de termos combina métodos consagrados na
-literatura de recuperação de informação (TF-IDF e KeyBERT), organizados por
-uma sequência de filtros --- estes sim, decisões de projeto específicas deste
-trabalho --- detalhada passo a passo a seguir.
+literatura de recuperação de informação (PatternRank, BM25F, KeyBERT, RRF e
+C-value, Seção~\ref{sec:filtragem-documentos}), organizados por uma sequência
+de filtros --- estes sim, decisões de projeto específicas deste trabalho ---
+detalhada passo a passo a seguir.
 
   \begin{enumerate}[label=\textbf{Passo \arabic*.}, leftmargin=2.2cm]
 
-    \item \textbf{Geração de candidatos.} A biblioteca spaCy extrai os
-    \textit{noun chunks} (grupos nominais) de título e resumo de cada
-    documento, tratados como duas listas de texto separadas --- os escores de
-    título e de resumo nunca são calculados sobre um texto combinado. Cada
-    \textit{noun chunk} é quebrado em sub-n-gramas de uma a três palavras.
+    \item \textbf{Limpeza e delimitação do texto.} Título e resumo de cada
+    documento são convertidos para minúsculas, com remoção de URLs e
+    substituição de hífens por espaços, e mantidos alinhados por documento
+    (o BM25F exige saber qual título pertence a qual resumo). Vírgulas e
+    pontos e vírgulas são convertidos em pontos, e todo texto recebe
+    pontuação final: sem essas fronteiras explícitas, o padrão gramatical do
+    passo seguinte "vaza" do fim de um título para o início do próximo, ou
+    entre itens de uma lista, produzindo candidatos que não existem em
+    nenhum dos textos originais.
 
-    \item \textbf{Corte por fronteiras de token.} Antes de gerar os
-    sub-n-gramas, a sequência de \textit{tokens} do \textit{noun chunk} é
-    cortada sempre que um token pertencer a um dicionário de cerca de 90
-    palavras de fronteira, agrupadas em cinco categorias: pronomes relativos e
-    conjunções (\textit{wherein, whereby, which, that, who}), conjunções
-    coordenativas e subordinativas (\textit{and, or, if, because}), verbos de
-    "\textit{boilerplate}" típicos de texto de patente (\textit{comprising,
-    including, having, configured, disposed, coupled}), preposições
-    (\textit{using, based, via, from, into, between, during}) e advérbios
-    (\textit{respectively, particularly, substantially, approximately}). O
-    mesmo corte é aplicado quando a classe gramatical (\textit{part-of-speech},
-    POS) do token é preposição, conjunção coordenativa, conjunção
-    subordinativa, pontuação, espaço ou numeral --- garantindo que nenhum
-    n-grama atravesse esses elementos.
+    \item \textbf{Geração de candidatos (PatternRank).} Sobre o conjunto de
+    textos, são extraídas as frases nominais maximais que obedecem ao padrão
+    gramatical \textit{adjetivo* substantivo+} \cite{schopf2022}, com até
+    cinco palavras. Cada candidato já é uma expressão gramaticalmente
+    completa, e não uma janela arbitrária de palavras.
 
-    \item \textbf{Limpeza de bordas.} Tokens nas extremidades inicial ou final
-    de um candidato são removidos se sua classe gramatical for artigo,
-    preposição, conjunção coordenativa, conjunção subordinativa, partícula,
-    pontuação, espaço ou símbolo --- evitando candidatos como "the autonomous
-    vehicle" em vez de "autonomous vehicle".
+    \item \textbf{Filtro de termos originais.} São removidos os unigramas
+    idênticos aos termos já informados pelo usuário no tema e na descrição;
+    expressões de duas ou mais palavras são mantidas, ainda que contenham um
+    termo original, por acrescentarem especificidade.
 
-    \item \textbf{Pontuação por TF-IDF.} Calculada separadamente para título e
-    resumo com o método clássico de ponderação por frequência de termo e
-    frequência inversa de documento \cite{saltonbuckley1988}: candidatos que
-    aparecem em poucos documentos do conjunto recuperado, mas com frequência
-    relativamente alta nos documentos em que aparecem, recebem escore mais
-    alto. Para n-gramas de múltiplas palavras cujos tokens componentes estejam
-    todos no vocabulário ajustado, o escore é a média aritmética dos escores
-    TF-IDF de cada token.
-
-    \item \textbf{Pontuação por KeyBERT.} Calculada também separadamente para
-    título e resumo, usando \textit{embeddings} de sentença
-    \cite{grootendorst2020, reimers2019}: o texto do grupo (todos os títulos,
-    ou todos os resumos, dos documentos recuperados) é convertido em um vetor,
-    cada candidato também, e o escore é a similaridade de cosseno entre os
-    dois vetores, restrita à lista de candidatos já filtrada nos Passos 1 a 3.
-    Os escores brutos do KeyBERT, por já corresponderem a uma similaridade de
-    cosseno, ficam naturalmente no intervalo $[0,1]$; ainda assim, são
-    renormalizados dividindo cada escore pelo valor máximo do próprio grupo,
-    de modo que o candidato mais similar do grupo sempre receba exatamente 1.
-
-    \item \textbf{Combinação por fonte e agregação.} Os dois escores (TF-IDF e
-    KeyBERT) são combinados por fonte segundo
-    $\text{escore}_{\text{fonte}} = 0{,}6 \times \text{TF-IDF}_{\text{norm}} +
-    0{,}4 \times \text{KeyBERT}_{\text{norm}}$, e, em seguida, agregados entre
-    título e resumo com peso 3:1 em favor do título --- premissa de que termos
-    que aparecem no título de um documento são, em média, mais representativos
-    de seu conteúdo do que termos que aparecem apenas no resumo:
-    $\text{escore}_{\text{base}} = (3 \times \text{escore}_{\text{título}} + 1
-    \times \text{escore}_{\text{resumo}}) / 4$. Quando o candidato aparece
-    apenas em uma das duas fontes, usa-se diretamente o escore dessa fonte.
-
-    \item \textbf{Ajustes por tamanho de n-grama e padrão gramatical.} Ao
-    escore-base soma-se uma penalidade de $-0{,}4$ para unigramas (palavras
-    isoladas tendem a ser pouco informativas) e um bônus de $+0{,}25$ para
-    trigramas (tendem a capturar conceitos técnicos completos, como
-    \textit{"convolutional neural network"}); bigramas não recebem ajuste. Uma
-    penalidade adicional de $-0{,}8$ é aplicada quando a sequência de classes
-    gramaticais do candidato corresponde a um dos padrões tipicamente pouco
-    informativos previamente catalogados --- por exemplo, dois verbos
-    consecutivos, ou a sequência advérbio-verbo-substantivo --- penalidade
-    suficiente, na prática, para empurrar o candidato abaixo do limiar de
-    corte mesmo que seu escore-base fosse relativamente alto. O escore final
-    de cada candidato é sempre mantido não negativo: $\text{final} =
-    \max(0,\; \text{escore}_{\text{base}} + \text{bônus} + \text{penalidade})$.
-
-    \item \textbf{Filtro de qualidade lexical.} Além dos filtros gramaticais
-    dos Passos 2 e 3, um candidato é descartado se a primeira ou a última
-    palavra pertencer a uma lista de cerca de 55 palavras de fronteira
-    lexical (\textit{a, an, the, of, is, are, this, that, high, low, new,
-    such, about}), ou se qualquer palavra do candidato pertencer a uma lista
+    \item \textbf{Filtro de qualidade lexical.} Palavras de uma lista de cerca
+    de 55 palavras de fronteira lexical (\textit{a, an, the, of, is, are,
+    this, that, high, low, new, such, about}) são removidas repetidamente das
+    extremidades do candidato (\textit{"the good permeability"}
+    $\rightarrow$ \textit{"good permeability"} $\rightarrow$
+    \textit{"permeability"}), em vez de o candidato inteiro ser descartado; o
+    candidato é descartado se qualquer palavra restante pertencer a uma lista
     de termos estruturais típicos de patentes (\textit{wherein, comprising,
-    said, first, second, configured, plurality, substantially, device}) ou de
-    termos estruturais típicos de texto acadêmico (\textit{proposed, novel,
-    improved, significant, method, technique, framework, model, system,
-    based, compared}).
+    said, first, second, configured, plurality, substantially, device}) ou
+    de texto acadêmico (\textit{proposed, novel, improved, significant,
+    method, technique, framework, model, system, based, compared}).
+    Candidatos que convergem para a mesma forma após o corte são
+    deduplicados.
 
-    \item \textbf{Corte por limiar mínimo.} Candidatos com escore final
-    inferior a $0{,}35$ são descartados.
+    \item \textbf{Canal léxico (BM25F).} Para cada candidato $t$ e documento
+    $d$, a frequência do candidato em cada campo é normalizada pelo tamanho
+    do campo e ponderada pelo peso do campo --- 3 para o título e 1 para o
+    resumo, premissa de que termos presentes no título são, em média, mais
+    representativos do conteúdo do documento \cite{robertson2004}:
+    $$
+    \tilde{f}_{t,d} = w_{\text{tít}} \frac{f_{t,d}^{\text{tít}}}{B_{d}^{\text{tít}}} + w_{\text{res}} \frac{f_{t,d}^{\text{res}}}{B_{d}^{\text{res}}}, \qquad B_{d}^{c} = (1 - b) + b \frac{|d^{c}|}{\overline{|d^{c}|}},
+    $$
+    e o escore agregado sobre os $N$ documentos, dos quais $n_t$ contêm o
+    candidato, é
+    $$
+    \text{BM25F}(t) = \sum_{d} \frac{\tilde{f}_{t,d}}{k_1 + \tilde{f}_{t,d}} \cdot \ln\left(1 + \frac{N - n_t + 0{,}5}{n_t + 0{,}5}\right),
+    $$
+    com $k_1 = 1{,}2$ e $b = 0{,}75$, valores usuais na literatura
+    \cite{robertson2009}.
 
-    \item \textbf{Filtro de sobreposição (subsunção).} Entre os candidatos
-    remanescentes, ranqueados em ordem decrescente de escore, um candidato é
-    descartado se sua razão de sobreposição de palavras com outro termo já
-    selecionado (de escore mais alto) for igual ou superior a $0{,}66$, onde a
-    razão de sobreposição é definida como
-    $\text{overlap}(a, b) = |palavras(a) \cap palavras(b)| \,/\, \min(|palavras(a)|,
-    |palavras(b)|)$. Por exemplo, entre \textit{"desalination"} e \textit{"water
-    desalination"}, a razão é $1/\min(1,2) = 1{,}0$, e apenas o segundo termo é
-    mantido, por conter estritamente mais informação; já entre \textit{"salt
-    water"} e \textit{"water desalination"}, a razão é $1/\min(2,2) = 0{,}5$,
-    abaixo do limiar, e ambos são mantidos por não serem redundantes entre si.
-    Esse filtro de sobreposição --- de custo computacional aproximadamente
-    linear no número de candidatos já selecionados --- substitui, no sistema
-    desenvolvido, um mecanismo de Relevância Marginal Máxima
-    (\textit{Maximal Marginal Relevance}, MMR) originalmente cogitado, mas
-    descartado por apresentar custo cúbico no número total de candidatos.
+    \item \textbf{Canal semântico (KeyBERT).} Cada candidato e o texto do
+    conjunto de documentos são convertidos em \textit{embeddings} de
+    sentença, e o escore do candidato é a similaridade de cosseno entre os
+    dois vetores \cite{grootendorst2020, reimers2019}.
 
-    \item \textbf{Corte final.} No máximo 60 termos são retornados, já
-    ordenados pelo escore final ajustado.
+    \item \textbf{Primeira fusão (saliência).} Os dois canais são combinados
+    por RRF \cite{cormack2009}, com $k = 60$:
+    $\text{saliência}(t) = \frac{1}{60 + \text{pos}_{\text{BM25F}}(t)} +
+    \frac{1}{60 + \text{pos}_{\text{KeyBERT}}(t)}$.
+
+    \item \textbf{Qualidade estrutural.} Cada candidato recebe um escore de
+    qualidade estrutural: $-0{,}4$ para unigramas (palavras isoladas tendem a
+    ser pouco informativas), $0$ para bigramas e $+0{,}25$ para trigramas ou
+    maiores (tendem a capturar conceitos técnicos completos, como
+    \textit{"convolutional neural network"}), acrescido de $-0{,}8$ quando a
+    sequência de classes gramaticais do candidato corresponde a um padrão
+    catalogado como pouco informativo --- por exemplo, dois verbos
+    consecutivos ou a sequência advérbio-verbo-substantivo.
+
+    \item \textbf{Segunda fusão (escore final).} Saliência e qualidade
+    estrutural são novamente combinadas por RRF, produzindo o escore final
+    do candidato. Como ambas as fusões operam sobre posições, e não sobre
+    escores, nenhum peso precisa ser calibrado entre escalas diferentes.
+
+    \item \textbf{Redundância entre termos aninhados (C-value).} Para cada
+    candidato $a$, com $|a|$ palavras e frequência $f(a)$, sendo $T_a$ o
+    conjunto de candidatos mais longos que o contêm de forma contígua,
+    calcula-se \cite{frantzi2000}
+    $$
+    \text{C-value}(a) =
+    \begin{cases}
+      \log_2 |a| \cdot f(a), & \text{se } T_a = \emptyset, \\[4pt]
+      \log_2 |a| \cdot \left( f(a) - \dfrac{1}{|T_a|} \displaystyle\sum_{b \in T_a} f(b) \right), & \text{caso contrário},
+    \end{cases}
+    $$
+    (com $|a|$ limitado inferiormente a 2, para que unigramas não recebam
+    $\log_2 1 = 0$). Candidatos com C-value não positivo --- que ocorrem
+    apenas como parte de expressões mais longas, sem uso independente --- são
+    descartados. Em seguida, entre os remanescentes ranqueados pelo escore
+    final, um candidato contido de forma contígua em outro já mantido, de
+    posição superior, é descartado: entre \textit{"ultrafiltration
+    membrane"} e \textit{"composite ultrafiltration membrane"}, apenas o de
+    maior escore permanece. Esse passo substitui um filtro anterior de
+    sobreposição de palavras e, antes dele, um mecanismo de Relevância
+    Marginal Máxima (\textit{Maximal Marginal Relevance}, MMR) descartado
+    por apresentar custo cúbico no número de candidatos.
+
+    \item \textbf{Limiar e corte final.} São mantidos os candidatos com
+    escore final igual ou superior a $0{,}024$ --- limiar calibrado para a
+    escala do RRF, cujos valores ficam, com $k = 60$, aproximadamente entre
+    $0{,}018$ e $0{,}033$ ---, completados, se necessário, pelos melhores
+    candidatos abaixo do limiar até um mínimo de 10 termos, e limitados a no
+    máximo 60 termos, já ordenados pelo escore final.
 
   \end{enumerate}
 
+  O pipeline descrito substituiu uma primeira versão, na qual os candidatos
+eram sub-n-gramas de uma a três palavras extraídos de \textit{noun chunks} do
+spaCy e o escore era uma combinação linear fixa de TF-IDF
+\cite{saltonbuckley1988} e KeyBERT ($0{,}6 \times \text{TF-IDF} + 0{,}4 \times
+\text{KeyBERT}$), calculada separadamente para título e resumo. Em uma
+comparação direta sobre os mesmos conjuntos de documentos de dez domínios
+tecnológicos distintos (de dessalinização a biossensores), a versão atual foi
+cerca de 3,6 vezes mais rápida (37,3~s contra 10,4~s no total) --- o KeyBERT
+passou a ser chamado uma única vez por requisição, e o conjunto de candidatos
+brutos caiu de até 182 para cerca de 50 --- e obteve nota média de qualidade,
+atribuída pelos autores aos termos retornados, de 8,1 contra 5,7, sem nenhum
+domínio avaliado como pior. O ganho mais visível foi o fim do truncamento
+sistemático em três palavras, presente em nove dos dez casos da versão
+anterior: expressões corretas de quatro ou cinco palavras passaram a ser
+extraídas. Em contrapartida, a fusão por posições penaliza unigramas
+frequentes com menos força que a penalidade aditiva anterior, admitindo de
+dois a quatro unigramas fracos a mais por caso em domínios com palavras de alta
+frequência, e o padrão gramatical adotado não cobre gerúndios modificadores
+(como em \textit{"privacy preserving"}). O limiar de $0{,}024$ foi calibrado
+sobre esse conjunto de teste e deve ser revisto à medida que houver histórico
+real de seleção de termos pelos usuários.
+
 %% TODO (imagem pendente): fluxograma do pipeline de extração de termos,
-%% seguindo os onze passos acima (noun chunks -> cortes por fronteira ->
-%% TF-IDF/KeyBERT -> combinação -> ajustes -> filtros de qualidade -> limiar
-%% -> sobreposição -> corte final).
+%% seguindo os onze passos acima (limpeza -> PatternRank -> filtros ->
+%% BM25F / KeyBERT -> RRF 1 -> qualidade estrutural -> RRF 2 -> C-value ->
+%% aninhamento -> limiar/corte).
 % \begin{figure}[H]
 %     \centering
 %     \includegraphics[width=0.9\textwidth]{img/pipeline_extracao_termos.png}
@@ -2451,48 +2663,49 @@ trabalho --- detalhada passo a passo a seguir.
 % \end{figure}
 
   \paragraph{Exemplo numérico de cálculo.} Para ilustrar a aplicação conjunta
-das fórmulas dos Passos 4 a 10, considere um candidato trigrama
-\textit{"autonomous vehicle navigation"}, extraído de um conjunto de
-documentos sobre veículos autônomos, com os seguintes escores hipotéticos já
-calculados nos Passos 4 e 5: $\text{TF-IDF}_{\text{norm}}^{\text{título}} =
-0{,}72$, $\text{KeyBERT}_{\text{norm}}^{\text{título}} = 0{,}85$,
-$\text{TF-IDF}_{\text{norm}}^{\text{resumo}} = 0{,}55$,
-$\text{KeyBERT}_{\text{norm}}^{\text{resumo}} = 0{,}80$. Aplicando o Passo 6:
+dos Passos 7 a 11, considere dois candidatos extraídos de um conjunto de
+documentos sobre veículos autônomos: o trigrama \textit{"autonomous vehicle
+navigation"}, 2.º colocado no canal BM25F e 1.º no KeyBERT, e o unigrama
+\textit{"vehicle"}, 1.º no BM25F (por ser muito frequente) e apenas 9.º no
+KeyBERT. Aplicando o Passo 7:
 
 $$
-\text{escore}_{\text{título}} = 0{,}6(0{,}72) + 0{,}4(0{,}85) = 0{,}432 + 0{,}340 = 0{,}772
+\text{saliência}(\text{autonomous vehicle navigation}) = \frac{1}{60 + 2} + \frac{1}{60 + 1} = 0{,}01613 + 0{,}01639 = 0{,}03252
 $$
 $$
-\text{escore}_{\text{resumo}} = 0{,}6(0{,}55) + 0{,}4(0{,}80) = 0{,}330 + 0{,}320 = 0{,}650
-$$
-$$
-\text{escore}_{\text{base}} = \frac{3(0{,}772) + 1(0{,}650)}{4} = \frac{2{,}316 + 0{,}650}{4} = \frac{2{,}966}{4} = 0{,}7415
+\text{saliência}(\text{vehicle}) = \frac{1}{60 + 1} + \frac{1}{60 + 9} = 0{,}01639 + 0{,}01449 = 0{,}03088
 $$
 
-  Como o candidato é um trigrama sem padrão gramatical penalizado, o Passo 7
-soma o bônus de trigrama: $\text{final} = 0{,}7415 + 0{,}25 = 0{,}9915$,
-resultado bem acima do limiar de corte de $0{,}35$ (Passo 9). Suponha agora um
-segundo candidato, também trigrama, \textit{"vehicle navigation system"}, com
-escore final $0{,}61$ já calculado pelos mesmos passos. No Passo 10, a razão
-de sobreposição entre os dois candidatos é
+  O trigrama, portanto, ocupa a 1.ª posição de saliência e o unigrama, a
+2.ª: estar bem posicionado nos dois canais supera ser o primeiro em apenas
+um. No Passo 8, o trigrama recebe $+0{,}25$ de qualidade estrutural e o
+unigrama, $-0{,}4$; supondo que, no \textit{ranking} de qualidade estrutural do
+lote, o trigrama ocupe a 3.ª posição e o unigrama a 40.ª, o Passo 9 resulta em
 
 $$
-\text{overlap} = \frac{|\{vehicle, navigation\}|}{\min(3,3)} = \frac{2}{3} \approx 0{,}667,
+\text{final}(\text{autonomous vehicle navigation}) = \frac{1}{60 + 1} + \frac{1}{60 + 3} = 0{,}01639 + 0{,}01587 = 0{,}03226
+$$
+$$
+\text{final}(\text{vehicle}) = \frac{1}{60 + 2} + \frac{1}{60 + 40} = 0{,}01613 + 0{,}01000 = 0{,}02613
 $$
 
-  acima do limiar de $0{,}66$; como \textit{"autonomous vehicle
-navigation"} tem escore mais alto ($0{,}9915 > 0{,}61$), o segundo candidato é
-descartado por redundância, e apenas o primeiro permanece na lista final
-apresentada ao usuário.
+  Ambos superam o limiar de $0{,}024$ (Passo 11), mas com uma margem bem
+maior para o trigrama, mais específico. Se o lote contivesse também
+\textit{"vehicle navigation"}, com escore final inferior ao de
+\textit{"autonomous vehicle navigation"}, ele seria descartado no Passo 10,
+por estar contido de forma contígua em um termo de posição superior.
 
   A lista ranqueada resultante é apresentada ao
 usuário com indicação de relevância, junto da escolha, por fonte, do nível de
 abrangência desejado para a consulta final (específica, balanceada ou ampla) ---
 sendo a diferença entre esses três níveis, na prática, o limiar mínimo de
-escore utilizado para selecionar quais termos são oferecidos ao LLM como
-contexto na fase seguinte (0,4 para a variante específica; 0,3 para a
-balanceada; 0,2 para a ampla): quanto mais específica a variante, maior o limiar e
-menor o conjunto de termos considerado. Esta fase é crítica para a qualidade
+escore utilizado para selecionar quais dos termos marcados pelo usuário são
+oferecidos ao LLM como contexto na fase seguinte. Como o escore final do RRF
+vive em uma faixa estreita, ele é antes normalizado para o intervalo $[0, 1]$
+(normalização mín--máx sobre os termos selecionados), e os limiares são
+aplicados sobre esse valor: 0,4 para a variante específica, 0,3 para a
+balanceada e 0,2 para a ampla. Quanto mais específica a variante, maior o
+limiar e menor o conjunto de termos considerado. Esta fase é crítica para a qualidade
 dos resultados finais, pois as consultas construídas a partir de termos
 extraídos dos próprios documentos recuperados tendem a ser mais específicas e
 representativas do universo em questão --- patentes ou artigos --- do que
@@ -2515,32 +2728,164 @@ excessivo de termos encadeados por operadores \texttt{OR} podem ser rejeitadas
 ou truncadas, o que exige uma estratégia de particionamento e combinação de
 resultados implementada no serviço de busca.
 
-  \subsection{Fase 5: Geração do Relatório}
+  Três decisões de robustez da busca final têm impacto direto sobre a
+fidelidade dos indicadores do relatório. Primeiro, o sistema distingue o
+\textbf{total real} de documentos informado pela base para a consulta --- ou,
+quando a base não o informa, a soma das contagens por ano --- da
+\textbf{amostra} efetivamente baixada e analisada: o total real é o que aparece
+no quadro de busca do relatório, e a amostra, o que fundamenta as análises.
+Segundo, na contagem de artigos por ano, base da curva~S científica, falhas de
+rede são repetidas automaticamente e, persistindo, o ano afetado é
+\textbf{omitido} da série, e nunca registrado como zero --- um zero falso criaria
+um "vale" artificial que distorceria o ajuste logístico. Terceiro, nomes de
+depositantes em escrita não latina (chinês, japonês, coreano) são substituídos
+pela forma latinizada fornecida pela própria API OPS, já que o compilador
+LaTeX descarta esses caracteres e o depositante apareceria em branco nos
+gráficos e no texto.
 
-  A fase de geração de relatório é composta por etapas com diferentes níveis de
-maturidade de implementação. Na primeira, já implementada e conectada a uma
-rota de produção, o módulo de consolidação de dados agrega os documentos
-coletados por ano, por depositante e por classificação CPC para as patentes, e
-por ano, por periódico e por área de estudo para os artigos, além de ajustar a
-curva~S da tecnologia pesquisada e calcular os pontos GP/MP/SP com seu
-diagnóstico de confiabilidade (Seção~\ref{sec:curva-s}), gerando as imagens dos
-gráficos correspondentes. Em paralelo, encontra-se em desenvolvimento a etapa
-de indexação, no ChromaDB e por meio do RAGService, da amostra de temas
-recuperados na busca final e do conjunto de relatórios de referência já
-elaborados pela AGITEC, bem como a geração
-textual, propriamente dita, das dez seções do relatório no padrão REPTec
-\cite{agitec2024, reptec2023tetra}: Finalidade, Referências Institucionais,
-Objetivo, Introdução, Metodologia, Informações Científicas, Informações
-Tecnológicas, Tendências e Ciclo de Vida, Conclusão e Referências
-Bibliográficas --- cada seção a ser gerada com contexto recuperado pelo RAG local
-descrito na Seção~\ref{sec:rag}, concatenado como texto puro no \textit{prompt} enviado
-ao modelo local, garantindo embasamento nas fontes
-reais identificadas e mitigando alucinações \cite{ji2022}. O relatório final,
-quando essa etapa estiver concluída, será produzido em LaTeX, já formatado no padrão REPTEC/AGITEC, em português formal, e disponibilizado para edição e
-exportação. A persistência dos gráficos e do relatório final em armazenamento
-de objetos (MinIO, Seção~3.5), em vez de apenas em disco local, é a última
-etapa planejada dessa fase. A duração típica estimada para a fase completa,
-uma vez concluída, é de 60 a 120 segundos.
+  \subsection{Fase 5: Geração do Relatório}
+  \label{sec:fase5}
+
+  A última fase transforma os documentos da busca final em um relatório no
+padrão REPTEC/AGITEC \cite{agitec2024, reptec2023tetra}, editável e
+compilável em PDF. Ela é organizada em cinco etapas: consolidação e gráficos,
+redação das seções, montagem do documento, revisão e exportação.
+
+    \subsubsection{Consolidação e gráficos}
+
+  O módulo de consolidação agrega os documentos coletados por ano, por
+depositante e por classificação CPC para as patentes, e por ano, por
+instituição e por área de estudo para os artigos, ajusta as curvas~S de
+patentes e de artigos e calcula os pontos GP/MP/SP com seu diagnóstico de
+confiabilidade (Seção~\ref{sec:curva-s}). Somente as figuras previstas no
+padrão REPTEC são geradas: histórico anual de patentes e de artigos,
+principais depositantes e instituições, quadros com as dez classificações CPC
+e as dez áreas de estudo mais frequentes e as duas curvas~S. As séries
+consideram apenas anos completos, as classificações IPC são tratadas como CPC
+e descritas pelos títulos oficiais da classificação, e nomes com mais de 45
+caracteres são abreviados. O título de cada figura não é desenhado na
+imagem, mas escrito na legenda LaTeX, seguida da indicação "Fonte: O autor.",
+como no relatório de referência. Cada gráfico é armazenado no MinIO junto de
+seu resumo numérico, e é esse resumo --- e não a imagem --- que o modelo de
+linguagem recebe para descrever a figura.
+
+    \subsubsection{Redação das seções}
+
+  Nem toda seção do relatório passa pelo modelo de linguagem. A estrutura,
+extraída de um REPTEC real \cite{reptec2023tetra}, separa o que depende dos
+dados da busca do que é essencialmente igual em todo relatório, como resume a
+Tabela~\ref{tab:secoes-relatorio}.
+
+\begin{table}[H]
+\centering
+\caption{Seções do relatório e forma de produção}
+\label{tab:secoes-relatorio}
+\begin{tabular}{p{5.0cm}p{8.2cm}}
+\toprule
+\textbf{Seção} & \textbf{Como é produzida} \\
+\midrule
+Capa e sumário & \textit{Template} LaTeX \\
+1 Finalidade & Texto fixo, interpolando o tema e o destinatário informados \\
+2 Referências & Documentos administrativos informados pelo usuário (DIEx, ofícios) \\
+3 Objetivo & Texto informado pelo usuário \\
+4 Introdução & LLM, com contexto do RAG \\
+5 Metodologia (5.1 a 5.4) & Texto fixo com as figuras de referência sobre curva~S \cite{madeo2019, kucharavy2011}, descrição genérica do apoio computacional e interpolação das palavras-chave, do período e das bases consultadas \\
+6 Resultados (6.1 Científicas, 6.2 Tecnológicas, 6.3 Tendências e Ciclo de Vida) & LLM, uma chamada por subseção, com contexto do RAG e resumos numéricos dos gráficos; a 6.2 inclui o quadro com as consultas de busca e o total real de documentos \\
+7 Conclusão & LLM, com estrutura orientada (estágio do ciclo de vida, destaques e recomendação) \\
+8 Referências bibliográficas & Bibliografia fixa da Metodologia, obras efetivamente citadas no texto e obras adicionadas pelo usuário \\
+Local, data e assinaturas & Formulário (nome, posto/graduação e função de quem elabora, revisa e aprova) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+  Cada seção redigida por LLM passa por duas requisições separadas: a
+primeira indexa os documentos da sessão, se ainda não indexados, e recupera e
+persiste o contexto da seção (Seção~\ref{sec:rag}); a segunda monta o
+\textit{prompt} com esse contexto, chama o modelo e persiste o texto. Essa
+divisão permite à interface mostrar o andamento seção a seção e mantém cada
+chamada ao modelo restrita ao contexto de uma única seção, o que é relevante
+para modelos locais de janela de contexto pequena.
+
+  O \textit{prompt} de sistema impõe texto impessoal e proíbe expressões que
+revelam o funcionamento interno do sistema (escores de relevância, "N/A",
+"no contexto fornecido"). Em torno do modelo, módulos determinísticos
+garantem o que não pode depender dele:
+
+  \begin{itemize}
+    \item \textbf{Figuras no contexto.} O modelo é instruído a seguir o padrão
+    do relatório de referência --- apresentar a figura, exibi-la e, em seguida,
+    interpretar seus números --- escrevendo marcadores para a referência e
+    para a posição de cada figura. Um pós-processador converte os marcadores
+    em comandos LaTeX; se o modelo cita uma figura sem posicioná-la, ela é
+    inserida logo após o parágrafo que a cita, e figuras não citadas vão para
+    o fim da seção, na ordem do relatório de referência. O mesmo
+    pós-processador corrige "Figura" e "Quadro" conforme o tipo do elemento,
+    ajustando a concordância do artigo ("a Figura", "o Quadro").
+    \item \textbf{Ciclo de vida calculado.} O estágio da tecnologia
+    (emergente, crescimento, maturidade ou saturação) é calculado a partir de
+    GP, MP e SP e entregue ao modelo como fato, e não inferido por ele.
+    \item \textbf{Citações rastreáveis.} Só são aceitas citações no formato
+    "(SOBRENOME et al., ano)" que correspondam a documentos recuperados pelo
+    RAG; citações inventadas são removidas do texto, autores homônimos
+    recebem sufixo de letra (2020a, 2020b), e as referências ABNT das obras
+    efetivamente citadas são acrescentadas à seção de referências.
+    \item \textbf{Validação do texto.} Números são convertidos para o padrão
+    brasileiro (17,3\%; 1.800) e o texto é inspecionado em busca de vestígios
+    do \textit{pipeline}; se algum for encontrado, a seção é regenerada uma vez
+    com instrução de correção e, persistindo o problema, a geração falha com
+    mensagem explícita, em vez de produzir um texto defeituoso.
+  \end{itemize}
+
+    \subsubsection{Montagem do documento}
+
+  A montagem reúne as seções persistidas e as imagens já armazenadas no
+MinIO --- sem disparar nenhuma nova geração --- e renderiza o \textit{template}
+LaTeX, que reproduz a formatação do relatório de referência: cabeçalho com o
+número do relatório e o tema, rodapé "Página $x$ de $y$", títulos de seção em
+negrito e caixa alta, texto justificado com recuo de parágrafo, espaçamento
+de 1,5, figuras e quadros numerados com legenda e fonte, e bloco de
+assinaturas no formato "NOME -- POSTO", com a função na linha seguinte. O
+\texttt{.tex} resultante é armazenado no MinIO junto de uma cópia de
+referência, usada depois pela revisão para identificar o que o usuário
+editou. A compilação em PDF é uma ação separada, sempre disparada pelo
+usuário, executada pelo serviço TeX Live dedicado; uma falha de compilação não
+apaga o \texttt{.tex} já montado.
+
+    \subsubsection{Edição e revisão}
+
+  O \texttt{.tex} é aberto em um editor na própria interface, com um painel
+lateral de imagens --- as geradas pelo sistema, as figuras fixas e as
+anexadas pelo usuário --- a partir do qual cada imagem pode ser inserida no
+documento, aberta, baixada ou, no caso dos anexos, excluída. A revisão do
+documento combina três verificações:
+
+  \begin{enumerate}[label=(\alph*)]
+    \item \textbf{Verificação de LaTeX}: chaves e ambientes desbalanceados,
+    referências a rótulos ou imagens inexistentes, caracteres especiais sem
+    escape e erros do último registro de compilação.
+    \item \textbf{LanguageTool}: ortografia, acentuação, concordância e
+    gramática, aplicados apenas às seções geradas por LLM e às linhas
+    editadas pelo usuário --- identificadas pela comparação com a cópia de
+    referência da montagem ---, de modo que o texto fixo, já revisado, não é
+    reprocessado. Os comandos LaTeX são enviados como marcação, e não como
+    texto, para não gerarem falsos positivos.
+    \item \textbf{Revisão por LLM (opcional)}: uma segunda opinião, com ponto
+    de uso de LLM próprio --- o que permite empregar um modelo melhor em
+    português que o da redação ---, restrita a concordância, acentuação e
+    ortografia. Uma sugestão só é aceita se o trecho original existir
+    literalmente no texto e se a correção não alterar números, citações ou
+    comandos LaTeX.
+  \end{enumerate}
+
+  As sugestões são apresentadas por seção, e o usuário aplica ou ignora cada
+uma individualmente.
+
+    \subsubsection{Exportação}
+
+  Além do PDF, o sistema exporta um pacote \texttt{.zip} com o \texttt{.tex} e
+todas as imagens nele referenciadas, nomeado segundo o número e o ano do
+relatório, o que permite ao usuário continuar a edição em qualquer ambiente
+LaTeX, como o Overleaf.
 
 
 % ------------------------------------------------------------
@@ -2703,23 +3048,34 @@ apoio à decisão, e não como substituto do especialista \cite{lewis2020, ji202
 
   \subsection{Limitações}
 
-  O sistema apresenta algumas limitações que devem ser consideradas. O modelo
-de linguagem Qwen~2.5~(3B) \cite{zhao2023}, embora adequado para o contexto
-local, possui capacidade inferior à de modelos maiores \cite{brown2020}, com
-possível impacto na qualidade do português formal gerado e na profundidade das
-análises. O banco de dados vetorial ChromaDB \cite{gao2024}, em sua configuração
-atual, comporta até 100 documentos indexados por pesquisa (50 patentes e 50
-artigos), o que pode ser insuficiente para temas com grande volume de literatura. A persistência dos gráficos gerados ocorre, no momento, apenas em disco local do processo do \textit{backend}, sem replicação em armazenamento de objetos --- limitação a ser sanada pela integração planejada do MinIO (Seção~3.5), ainda não implementada. Por fim, o sistema depende
-de chave de acesso institucional para a API Scopus, o que pode limitar sua
-disponibilidade em contextos sem convênio ativo com a Elsevier.
+  O sistema apresenta algumas limitações que devem ser consideradas. Os
+modelos de linguagem locais testados (Qwen~2.5~(3B) e Gemma~3~(4B))
+\cite{zhao2023}, embora adequados ao contexto local, possuem capacidade
+inferior à de modelos maiores \cite{brown2020}, com impacto observado na
+qualidade do português formal gerado --- sobretudo na concordância verbal com
+sujeito distante --- e na profundidade das análises; a etapa de revisão
+(Seção~\ref{sec:fase5}) detecta boa parte desses erros, mas não substitui a
+leitura do especialista, e a qualidade do texto deverá ser reavaliada com o LLM
+disponibilizado na intranet do Exército, ainda não testado. O corpus do RAG é
+composto apenas por título e resumo dos documentos da busca final, e, como os
+resumos de artigos nem sempre são devolvidos pelas APIs, tende a ser
+majoritariamente de patentes, o que pode empobrecer a fundamentação das seções
+sobre a produção científica. O limiar de corte da extração de termos foi
+calibrado sobre um conjunto de teste, e não sobre histórico real de uso. Por
+fim, o sistema depende de chave de acesso institucional para a API Scopus, o
+que pode limitar sua disponibilidade em contextos sem convênio ativo com a
+Elsevier.
 
   Adicionalmente, a heterogeneidade dos dados retornados pelas diferentes APIs
 impõe desafios de normalização que, apesar de tratados pelo módulo de
 consolidação, podem resultar em inconsistências pontuais quando as
 APIs alteram seus formatos de resposta. O fenômeno de alucinação dos LLMs
-\cite{ji2022}, embora mitigado pela adoção do RAG \cite{lewis2020}, não é
-completamente eliminado, o que reforça a necessidade de revisão humana dos
-relatórios gerados antes de sua utilização em decisões estratégicas.
+\cite{ji2022}, embora mitigado pela adoção do RAG \cite{lewis2020}, pela
+restrição das citações aos documentos recuperados e pela produção
+determinística das seções fixas, dos números dos gráficos e do estágio do
+ciclo de vida, não é completamente eliminado, o que reforça a necessidade de
+revisão humana dos relatórios gerados antes de sua utilização em decisões
+estratégicas.
 
 % ============================================================
 %  REFERÊNCIAS
@@ -2863,6 +3219,19 @@ A relational model of data for large shared data banks.
 \textit{Communications of the ACM}, v.~13, n.~6, p.~377--387, 1970.
 DOI: 10.1145/362384.362685.
 
+\bibitem{cormack2009}
+CORMACK, G. V.; CLARKE, C. L. A.; BUETTCHER, S.
+Reciprocal rank fusion outperforms Condorcet and individual rank learning methods.
+In: INTERNATIONAL ACM SIGIR CONFERENCE ON RESEARCH AND DEVELOPMENT IN
+INFORMATION RETRIEVAL, 32., 2009, Boston. \textit{Proceedings} [...].
+New York: ACM, 2009. p.~758--759. DOI: 10.1145/1571941.1572114.
+
+\bibitem{frantzi2000}
+FRANTZI, K.; ANANIADOU, S.; MIMA, H.
+Automatic recognition of multi-word terms: the C-value/NC-value method.
+\textit{International Journal on Digital Libraries}, v.~3, n.~2, p.~115--130, 2000.
+DOI: 10.1007/s007999900023.
+
 \bibitem{mayerhoff2008}
 MAYERHOFF, Z. D. V. L.
 Uma análise sobre os estudos de prospecção tecnológica.
@@ -2900,6 +3269,19 @@ In: \textit{Conference on Empirical Methods in Natural Language Processing
 Disponível em: \url{https://arxiv.org/abs/1908.10084}.
 Acesso em: 05 maio 2026.
 
+\bibitem{robertson2004}
+ROBERTSON, S.; ZARAGOZA, H.; TAYLOR, M.
+Simple BM25 extension to multiple weighted fields.
+In: ACM INTERNATIONAL CONFERENCE ON INFORMATION AND KNOWLEDGE MANAGEMENT
+(CIKM), 13., 2004, Washington. \textit{Proceedings} [...]. New York: ACM,
+2004. p.~42--49. DOI: 10.1145/1031171.1031181.
+
+\bibitem{robertson2009}
+ROBERTSON, S.; ZARAGOZA, H.
+The probabilistic relevance framework: BM25 and beyond.
+\textit{Foundations and Trends in Information Retrieval}, v.~3, n.~4,
+p.~333--389, 2009. DOI: 10.1561/1500000019.
+
 \bibitem{rogers2003}
 ROGERS, E. M.
 \textit{Diffusion of Innovations}.
@@ -2910,6 +3292,14 @@ SALTON, G.; BUCKLEY, C.
 Term-weighting approaches in automatic text retrieval.
 \textit{Information Processing \& Management}, v.~24, n.~5, p.~513--523, 1988.
 DOI: 10.1016/0306-4573(88)90021-0.
+
+\bibitem{schopf2022}
+SCHOPF, T.; KLIMEK, S.; MATTHES, F.
+PatternRank: leveraging pretrained language models and part of speech for
+unsupervised keyphrase extraction.
+In: INTERNATIONAL CONFERENCE ON KNOWLEDGE DISCOVERY AND INFORMATION RETRIEVAL
+(KDIR), 14., 2022, Valletta. \textit{Proceedings} [...]. Setúbal: SciTePress,
+2022. p.~243--248. DOI: 10.5220/0011546600003335.
 
 \bibitem{vaswani2017}
 VASWANI, A. et al.
