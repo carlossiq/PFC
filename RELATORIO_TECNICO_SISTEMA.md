@@ -6,9 +6,9 @@
 
 ## 0. Visão Geral do Sistema
 
-O sistema é uma ferramenta de **prospecção tecnológica** (technology foresight): a partir de um tema de pesquisa informado pelo usuário, ele (1) refina o tema com apoio de LLM, (2) constrói e executa buscas exploratórias ("probe") em bases de patentes (EPO/OPS — Espacenet) e de artigos científicos (Scopus, com enriquecimento via OpenAlex), (3) extrai termos-chave relevantes dos resultados via NLP local, (4) usa esses termos para gerar uma query final (em três níveis de abrangência: específica, balanceada, ampla), (5) executa a busca final em maior volume, e (6) gera gráficos analíticos (curva S, distribuições, rankings) a partir dos documentos recuperados. O objetivo final — ainda em desenvolvimento — é compilar tudo isso em um relatório de prospecção tecnológica no padrão AGITEC/REPTEC, com apoio de um LLM local via RAG.
+O sistema é uma ferramenta de **prospecção tecnológica** (technology foresight): a partir de um tema de pesquisa informado pelo usuário, ele (1) refina o tema com apoio de LLM, (2) constrói e executa buscas exploratórias ("probe") em bases de patentes (EPO/OPS — Espacenet) e de artigos científicos (Scopus, com enriquecimento via OpenAlex), (3) extrai termos-chave relevantes dos resultados via NLP local, (4) usa esses termos para gerar uma query final (em três níveis de abrangência: específica, balanceada, ampla), (5) executa a busca final em maior volume, e (6) gera gráficos analíticos (curva S, distribuições, rankings) a partir dos documentos recuperados e (7) compila tudo isso em um relatório de prospecção tecnológica no padrão AGITEC/REPTEC (`.tex` editável no navegador + PDF), redigido por um LLM local via RAG, com revisão de texto assistida (LanguageTool + IA opcional) — ✅ implementado de ponta a ponta (§13).
 
-**Stack atual**: backend Python (FastAPI, async, SQLAlchemy 2.0 async), frontend React + TypeScript (Vite, Zustand, Tailwind), PostgreSQL como banco relacional, LLMs remotos (Anthropic Claude e Google Gemini) para as tarefas de linguagem natural, e um pipeline NLP local (spaCy + KeyBERT + TF-IDF) para extração de termos.
+**Stack atual**: backend Python (FastAPI, async, SQLAlchemy 2.0 async), frontend React + TypeScript (Vite, Zustand, Tailwind), PostgreSQL como banco relacional, MinIO (objetos: PNGs, `.tex`, PDF, anexos), ChromaDB (RAG), LLMs configuráveis **por ponto de uso** (`theme_candidates`, `probe_query`, `final_query`, `report_writing`, `report_review` — `LLMConfigResolver`, editável na tela de Configurações; provedores Anthropic, Gemini ou OpenAI-compatible/Ollama, hoje apontados para Ollama `gemma3:4b` local), um pipeline NLP local (spaCy/PatternRank + BM25F + KeyBERT + RRF + C-value, §5) para extração de termos, e containers auxiliares `latex-compiler` (TeX Live) e `languagetool` (revisão ortográfica/gramatical).
 
 ---
 
@@ -104,11 +104,23 @@ O módulo de report segue uma versão mais modesta do mesmo princípio: `report_
 | Análise de complexidade | `app/core/services/query_complexity.py` | `QueryComplexityAnalyzer` — pontua a complexidade estrutural de uma query booleana (§6) |
 | Deduplicação | `app/core/services/dedup_service.py` | Gera `dedup_key` a partir de identificadores primários ou título+ano normalizado |
 | Geração de relatórios/gráficos | `app/core/services/report_service.py` | Curva S, top entidades, distribuições (§10) — implementação ativa, conectada à rota |
-| RAG do relatório | `app/core/services/rag_service.py`, `report_writer_service.py` | Chunking/RAG contra `VectorStorePort` (adapter ChromaDB, §13) + orquestração das 7 seções de IA |
+| RAG do relatório | `app/core/services/rag_service.py`, `report_writer_service.py` | Chunking/RAG contra `VectorStorePort` (adapter ChromaDB, §13) + orquestração das 6 seções de IA |
 | Extração de termos (NLP) | `services/nlp/term_extraction.py` | Pipeline completo de extração/pontuação de termos (§5) |
 | Embeddings | `services/nlp/embedding_service.py` | Geração de embeddings (`all-MiniLM-L6-v2`) para relevância de documentos |
 | Relevância documento-tema | `services/nlp/relevance_service.py` | Similaridade de cosseno entre embedding do tema e do documento |
 | Filtro de idioma | `services/nlp/language_filter.py` | Descarta resumos que não estão em inglês (`langdetect`) |
+| Relatório: figuras | `app/core/services/report_figures.py` | Catálogo/whitelist de figuras e quadros REPTEC, marcadores `[[REF:id]]`/`[[FIG:id]]` → LaTeX (`place_figures`), concordância "a Figura"/"o Quadro" (§13.6) |
+| Relatório: ciclo de vida | `app/core/services/report_lifecycle.py` | Só anos completos, resumos numéricos dos gráficos, estágio do ciclo de vida a partir de GP/MP/SP (§13.6) |
+| Relatório: citações | `app/core/services/report_citations.py` | Citação "(SOBRENOME et al., ano)" e referência ABNT gerados a partir dos metadados do RAG; remove citações inventadas (§13.6) |
+| Relatório: qualidade do texto | `app/core/services/report_text_quality.py` | Números em pt-BR, detecção de vazamentos do pipeline ("N/A", "Relevância: 18%"...), 1 regeneração (§13.6) |
+| Relatório: formulário | `app/core/services/report_form_validation.py` | Validação de referências administrativas, bibliografia ABNT e assinaturas (nome/posto/função) |
+| Relatório: CPC | `app/core/services/cpc_titles.py` + `config/cpc_titles.json` | Títulos oficiais CPC/IPC (827 códigos, gerados por `scripts/build_cpc_titles.py`) |
+| Relatório: rótulos | `app/core/services/chart_labels.py` | Abrevia nomes > 45 caracteres nos gráficos (ISO 4/ABNT, remoção de stopwords, truncamento com "…", rótulos únicos) |
+| Relatório: revisão | `app/core/services/report_review.py` (puro) + `report_review_service.py` (I/O) | Lint de LaTeX, escopo (seções de IA + linhas editadas), LanguageTool, segunda opinião por IA (§13.7) |
+| Relatório: figuras fixas | `app/core/services/report_static_figures.py` | Sobe as figuras fixas da Metodologia (Madeo, Kucharavy) ao MinIO na inicialização |
+| Inferência estatística | `app/core/services/sample_statistics.py`, `statistical_inference_service.py` | Chao1 + bootstrap de estabilidade top-10 + relevância SBERT (§11) |
+| Extração de campos da query | `app/core/services/query_field_extractor.py` | Recupera título/resumo/CPC/área a partir de uma query editada em texto livre (OPS e Scopus) |
+| Config em banco | `app/core/services/llm_config_resolver.py`, `settings_sync_service.py`, `db/config_seed.py` | LLM por ponto de uso, `app_settings` editáveis em tempo de execução, seeds idempotentes (§9.1) |
 | LLM (Anthropic) | `services/llm/anthropic_service.py` | Cliente do Claude |
 | LLM (Gemini) | `services/llm/gemini_service.py` | Cliente do Gemini, com JSON mode nativo |
 | Normalização de saída LLM | `services/llm/normalizer.py`, `validators.py` | Camadas de defesa da saída estruturada (§8.5) |
@@ -135,8 +147,8 @@ O frontend (`frontend/src`) implementa um **wizard de 4 etapas** (Input → Expl
 4. **Sub-etapa — Resultados Iniciais** (`InitialResults.tsx`): exibe resultados reais; permite salvar progresso ou "Finalizar Sessão".
 5. **Sub-etapa — Amostragem de Termos** (`TermSampling.tsx`): mostra os termos extraídos via NLP local (não é chamada de LLM) com score de relevância; usuário marca quais manter e escolhe, por fonte, o tipo de query final (Específica/Balanceada/Ampla).
 6. **Etapa 2 — Exploração Final** (`FinalExploration.tsx`): revisão/edição da query final gerada por fonte; "Confirmar e buscar" dispara a busca final real (maior volume).
-7. **Sub-etapa — Análise de Resultados** (`FinalResults.tsx`): estatísticas agregadas (OPS) e lista bruta de itens (Scopus).
-8. **Etapa 3 — Geração do Relatório**: ainda não tem tela dedicada (placeholder "Conteúdo em construção") — a geração de gráficos já existe no backend (§10) mas a UI de relatório final/LaTeX (§13) está planejada.
+7. **Sub-etapa — Análise de Resultados** (`FinalResults.tsx`): estatísticas agregadas (OPS) e lista bruta de itens (Scopus); exibe o **total real** de documentos da base (`total_count`) separado da "amostra analisada", e avisa quando não há contagem por ano (curva S indisponível).
+8. **Etapa 3 — Geração do Relatório** (`ReportStep.tsx` → `ReportGeneration.tsx` + `ReportDocumentEditor.tsx`): formulário do relatório (número/ano, destinatário, objetivo, local, referências administrativas, bibliografia, assinaturas com Nome / Posto-Graduação / Função — validados em `utils/reportFormValidation.ts`), geração seção a seção (RAG → LLM), montagem do `.tex` e editor LaTeX no navegador com painel de imagens, revisão, compilação de PDF e download `.zip` (§13.8).
 
 ### 3.2 Tudo o que o usuário pode editar/configurar
 
@@ -144,7 +156,9 @@ O frontend (`frontend/src`) implementa um **wizard de 4 etapas** (Input → Expl
 - **Refinamento**: seleção entre 5 cartões de tema (entrada bruta + 4 gerados por IA); edição livre de qualquer campo do cartão selecionado; "Especificar" (afunilamento por IA, encadeável); regeneração das 4 variações.
 - **Queries probe (por fonte, OPS e Scopus independentemente)**: seleção de 1 dentre N tentativas geradas; edição dos campos estruturados (Título, Resumo, IPC/Área de Estudo, Ano — aceita intervalo); regeneração de novo lote.
 - **Amostragem de Termos**: checklist por termo (nenhuma seleção padrão); seletor do tipo de query final (específica/balanceada/ampla) por fonte.
-- **Exploração Final**: edição dos campos estruturados da query final por fonte; regeneração da variante escolhida.
+- **Exploração Final**: edição dos campos estruturados da query final por fonte; edição livre da query inteira (os campos Título/Resumo/CPC/Área continuam preenchidos, extraídos da query editada por `query_field_extractor.py` conforme a sintaxe de cada API); regeneração da variante escolhida.
+- **Geração do Relatório**: todos os campos do formulário (§3.1, item 8); texto de cada seção de IA (regenerável); o `.tex` inteiro, no editor; imagens anexadas pelo usuário; aplicação/rejeição individual de cada sugestão da revisão.
+- **Configurações**: modelo de LLM por ponto de uso, `app_settings` (ex.: `rag_relative_min_relevance`, `languagetool_language`), APIs de busca ativas e imagem de capa do relatório.
 - **Gerenciamento de sessão**: nome da sessão; salvar progresso a qualquer momento; finalizar sessão explicitamente; excluir sessão (com confirmação); retomar sessão incompleta (reidrata o formulário, mas reabre sempre na Etapa 0 preenchida — os resultados de busca não são persistidos e precisam ser reexecutados).
 - **Listagem de sessões**: busca textual (debounce 300ms) e filtro por status (Todas/Pendentes/Concluídas).
 
@@ -212,7 +226,36 @@ CRUD de sessões salvas, com reidratação completa para retomada:
 
 ### 4.4 `report_router.py` (prefixo `/report`)
 
-- `POST /report/{session_id}/graphics` → gera os PNGs de relatório a partir dos documentos **já persistidos** da busca final da sessão (`SessionProbeQuery.tipo IS NOT NULL`); **não dispara nenhuma busca nova**. Entrada: apenas `session_id` (path param). Saída: `{output_dir, patents_used, articles_used, charts: [{filename, path, chart, document_type}], skipped: [...]}`. Detalhes do que é gerado em §10.
+Gráficos (`report_router.py`) — todos a partir dos dados **já persistidos/compilados** da busca final; nenhum dispara busca nova. Cada PNG é enviado ao MinIO e registrado em `session_chart` (upsert por `(probe_query_id, chart_type)`) junto com um **resumo numérico** (`summary`, JSON) usado depois pelo prompt do relatório:
+
+| Rota | O que faz |
+|---|---|
+| `POST /report/{id}/graphics` | Curva S de **patentes** (Fisher-Pry, GP/MP/SP, §10) |
+| `POST /report/{id}/article-s-curve` | Curva S de artigos |
+| `POST /report/{id}/patents-yearly-volume`, `/yearly-volume` | Volume anual (só anos completos) |
+| `POST /report/{id}/top-entities` | Top depositantes/instituições (rótulos > 45 caracteres abreviados) |
+| `POST /report/{id}/top10-heatmap` | Quadro top-10 (classificações CPC / áreas de estudo) |
+| `GET /report/{id}/existing-chart?require_summary=` | Reaproveita um gráfico já gerado (com `require_summary=true`, só se já tiver resumo) |
+
+Documento do relatório (`report_document_router.py`, detalhes em §13):
+
+| Rota | O que faz |
+|---|---|
+| `POST /report/{id}/sections/{key}/rag` | Recupera e persiste o contexto RAG (+ `sources` citáveis) da seção |
+| `POST /report/{id}/sections/{key}/generate` | Chama o LLM, valida o texto (1 nova tentativa), persiste |
+| `POST /report/{id}/sections/static` | Seções fixas: Finalidade, Objetivo, Metodologia, Bibliografia |
+| `POST /report/{id}/assemble`, `/reassemble` | Renderiza o `.tex` (template Jinja2) e sobe ao MinIO, com baseline para a revisão |
+| `POST /report/{id}/compile-pdf`, `GET /{id}/pdf` | Compila via `latex-compiler` e devolve o PDF |
+| `GET /report/{id}/document` | `.tex` atual para o editor |
+| `GET /report/{id}/charts` | Imagens disponíveis (`origin`: gerada/fixa/anexo) |
+| `POST /report/{id}/attachments`, `DELETE /{id}/attachments/{filename}` | Anexos de imagem do usuário |
+| `POST /report/{id}/review` | Revisão: lint LaTeX + LanguageTool + IA opcional (§13.7) |
+| `POST /report/{id}/bundle` | `.zip` com o `.tex` e as imagens referenciadas (`REPTEC_num_ano.zip`) |
+
+### 4.4.1 `inference_router.py` (prefixo `/inference`) e `config_router.py` (prefixo `/config`)
+
+- `POST /inference/final-search` → inferência estatística sobre a busca final (Chao1 + bootstrap, §11). Não persiste.
+- `/config/settings`, `/config/search-apis`, `/config/llm/{providers,configs,call-sites}`, `/config/report-cover-image` → tela de Configurações: `app_settings`, APIs ativas, configurações de LLM e o vínculo de cada ponto de uso, imagem de capa.
 
 ### 4.5 `health_router.py`
 
@@ -228,7 +271,23 @@ CRUD de sessões salvas, com reidratação completa para retomada:
 
 Este é o módulo local (não-LLM) que extrai e pontua termos candidatos a partir de título+resumo dos documentos recuperados na busca probe, alimentando a etapa de Amostragem de Termos.
 
-### 5.1 Pipeline completo (`services/nlp/term_extraction.py::extract_and_rank_terms`)
+### 5.0 Pipeline atual: PatternRank + BM25F + KeyBERT + RRF + C-value
+
+> **Atualização**: o pipeline descrito em §5.1–§5.4 (noun chunks + TF-IDF + KeyBERT combinados linearmente 0,6/0,4) foi **substituído**. A comparação entre os dois está em `TESTE_EXTRACAO_TERMOS_BM25F_RRF.md`. §5.1–§5.4 ficam como registro histórico; filtros de qualidade (§5.2) e penalidades de POS/n-grama (§5.5) continuam em uso, agora como canal de "qualidade estrutural".
+
+`services/nlp/term_extraction.py::extract_and_rank_terms`, hoje:
+
+1. **Candidatos — PatternRank** (`KeyphraseCountVectorizer`, padrão gramatical adjetivo* + substantivo+): frases nominais maximais sobre todo o corpus, no lugar de noun chunks + janelas de 1 a 3 palavras.
+2. **Filtros**: remove unigramas idênticos aos termos originais do usuário (n-gramas com 2+ palavras são mantidos); filtros de qualidade de string (§5.2) aplicados **antes** da contagem de frequência.
+3. **Canal léxico — BM25F**: BM25 ponderado por campo (título peso 3,0; resumo 1,0 — `term_extraction_title_weight`/`abstract_weight`), `k1 = 1,2`, `b = 0,75`, com título e resumo alinhados por documento.
+4. **Canal semântico — KeyBERT**: similaridade de cosseno do candidato com o texto do corpus (mesmo modelo de antes).
+5. **1º estágio RRF** (*Reciprocal Rank Fusion*): `RRF(t) = Σ 1/(k + rank_i(t))`, `k = 60` (`term_extraction_rrf_k`), fundindo BM25F × KeyBERT → `salience_score`. Fundir **postos**, e não scores, elimina o problema de escalas diferentes entre os canais.
+6. **Qualidade estrutural**: preferência por tamanho de n-grama + penalidade por padrão POS ruim (§5.5).
+7. **2º estágio RRF**: saliência × qualidade estrutural → `final_rrf_score`.
+8. **C-value**: sinal de redundância entre termos aninhados (substitui o filtro de sobreposição de palavras de §5.4); em seguida, um termo contido de forma contígua em outro de posto maior é descartado ("ultrafiltration membrane" some quando "composite ultrafiltration membrane" já está na lista).
+9. **Limiar e corte**: `final_rrf_score ≥ 0,024` (`term_extraction_score_threshold`, recalibrado para a escala do RRF), mínimo de 10 termos retornados, teto de 60.
+
+### 5.1 Pipeline anterior (histórico) (`services/nlp/term_extraction.py::extract_and_rank_terms`)
 
 1. **Normalização dos parâmetros originais**: tema/descrição do usuário viram um conjunto de palavras, usado depois para excluir termos que o usuário já buscou.
 2. **Filtro de idioma** (aplicado a montante, antes desta etapa): `language_filter.py` descarta resumos não confiáveis como inglês.
@@ -256,7 +315,7 @@ Este é o módulo local (não-LLM) que extrai e pontua termos candidatos a parti
 - **Limpeza de bordas POS**: remove tokens iniciais/finais com POS em `{DET, ADP, CCONJ, SCONJ, PART, PUNCT, SPACE, SYM}`.
 - **`config/string_quality_filter.json`**: três listas — `boundary_stopwords` (~55 palavras; termo descartado se a **primeira ou última** palavra estiver na lista: `a, an, the, of, is, are, this, that, high, low, new, such, about…`); `patent_structural_words` (termo descartado se **qualquer** palavra bater: `wherein, comprising, said, first, second, opposing, planar, configured, plurality, substantially, device…`); `scholarly_structural_words` (mesmo critério, para boilerplate acadêmico: `proposed, novel, improved, significant, method, technique, framework, model, system, based, compared…`).
 
-### 5.3 Algoritmos: KeyBERT + TF-IDF
+### 5.3 Algoritmos: KeyBERT + TF-IDF (histórico)
 
 Os dois métodos de pontuação combinados são **KeyBERT** e **TF-IDF** (scikit-learn `TfidfVectorizer`) — spaCy é apenas o gerador de candidatos (noun chunks), não um método de pontuação.
 
@@ -264,7 +323,7 @@ Os dois métodos de pontuação combinados são **KeyBERT** e **TF-IDF** (scikit
 - **TF-IDF**: se o n-grama está diretamente no vocabulário ajustado, o score é a média da coluna TF-IDF entre documentos; se é multi-palavra e todos os tokens componentes estão no vocabulário, o score é a **média aritmética** dos scores TF-IDF dos tokens componentes (n-gramas com qualquer token ausente não recebem score parcial).
 - **Nota**: existe um `services/nlp/keyword_service.py` (`KeywordService`) separado, usando o modelo `all-MiniLM-L6-v2` — parece ser um utilitário independente/legado, **não conectado** ao pipeline principal de `extract_and_rank_terms` (que instancia seu próprio KeyBERT).
 
-### 5.4 Fórmulas de score e normalização
+### 5.4 Fórmulas de score e normalização (histórico; cosseno de §5.6 continua em uso)
 
 - **Similaridade de cosseno** (usada em `relevance_service.py`, filtro de documentos, não de termos): `cosine_similarity(embedding_tema, embedding_documento)`, com faixa teórica **[-1, 1]** — na prática, com embeddings de sentence-transformers, tende a valores não-negativos, mas o código não recorta/reescala essa faixa.
 - **Score bruto do KeyBERT**: já é um valor tipo similaridade-de-cosseno em **[0,1]**, renormalizado por grupo: `normalize(d) = {t: s / max(d.values()) para t,s em d}`.
@@ -396,6 +455,12 @@ _VARIANT_INSTRUCTIONS = {
 
 Além disso, o conjunto de termos extraídos (§5) que é oferecido à LLM como contexto varia por variante, via limiar de score mínimo: **específica: 0.4, balanceada: 0.3, ampla (genérica): 0.2** — a variante específica só recebe os termos de score mais alto; a genérica recebe mais termos com barra mais baixa. Cada variante passa pelo mesmo loop de retry por complexidade descrito em §6.3.
 
+### 7.3 Robustez da busca final (totais reais e contagem por ano)
+
+- **Total real × amostra**: `ChatService.run_final_search` devolve `total_count` — o total que a base informa para a query (ou, quando o Scopus não informa, a soma da contagem por ano), separado do número de documentos efetivamente baixados e analisados. O relatório usa o total real no quadro de busca ("Patentes (1.800) = …") e a amostra só nas análises; o frontend mostra ambos.
+- **Scopus, contagem por ano** (base da curva S de artigos): falhas de rede em um ano são repetidas sequencialmente numa segunda passada e **nunca registradas como 0** — um ano que falha de vez é omitido da série, em vez de criar um "vale" falso que distorceria o ajuste logístico. `services/search/scopus_service.py` repete `httpx.TransportError` (erro de rede) até 4 vezes (`_MAX_RETRIES = 4`).
+- **OPS, nomes de depositantes em escrita não latina** (chinês, japonês, coreano): `ops_service.py::_pick_party_names` usa a forma `epodoc` (latinizada) quando o nome original não é latino — antes, esses depositantes apareciam em branco nos gráficos, porque o LaTeX descarta CJK.
+
 ---
 
 ## 8. Engenharia de Prompts para a LLM Remota
@@ -447,7 +512,7 @@ A restrição de complexidade é injetada em **dois pontos**:
 ### 8.5 Enforcement de saída estruturada — defesa em camadas
 
 1. **JSON mode nativo (só Gemini)**: `generation_config = genai.types.GenerationConfig(response_mime_type="application/json")` — reduz bastante erros de parsing (comentário no código). O Anthropic **não** usa JSON mode/function-calling — depende só de instrução textual ("Return ONLY valid JSON") e extração pós-hoc de blocos ```` ```json ```` ou parse bruto, levantando `LLMJSONParseError` em falha.
-2. **Reparo de JSON malformado**: regex que remove vírgulas finais antes de re-parsear (usado no Gemini); no fluxo de `refine-topic`, há ainda uma recuperação tolerante a candidato individual corrompido (`_salvage_candidates`), que extrai cada objeto `{...}` do array por contagem de profundidade de chaves, descartando apenas o candidato malformado em vez de falhar a chamada inteira.
+2. **Reparo de JSON malformado**: `services/llm/base.py::parse_llm_json` (usado por Gemini e Ollama) remove vírgulas finais e **insere vírgulas faltantes** entre membros antes de re-parsear — erro típico de modelos locais pequenos ("Expecting ',' delimiter"). O laço de geração da query final também refaz a chamada ao LLM quando a resposta vem malformada (guardando `last_error`), em vez de falhar na primeira tentativa; no fluxo de `refine-topic`, há ainda uma recuperação tolerante a candidato individual corrompido (`_salvage_candidates`), que extrai cada objeto `{...}` do array por contagem de profundidade de chaves, descartando apenas o candidato malformado em vez de falhar a chamada inteira.
 3. **Validação de schema Pydantic**: `LLMOutput(**json_normalizado)` — primeira camada de validação de tipos/formato.
 4. **`validators.py`**: funções puras de checagem pós-geração — `is_valid_term()` rejeita stopwords/palavras genéricas isoladas; `validate_group()` checa a forma `{operator, terms}` e força `operator ∈ {"AND","OR"}`; `filter_to_enabled_fields()` remove qualquer campo que a LLM tenha produzido mas que não esteja na lista de campos habilitados.
 5. **`normalizer.py::LLMOutputNormalizer.normalize()`**: re-molda o objeto conforme os campos habilitados por configuração/feature-flag, zerando campos não habilitados.
@@ -467,16 +532,20 @@ Este é o schema **hoje efetivamente usado por toda a aplicação em produção*
 
 | Tabela | Papel |
 |---|---|
-| `research_session` | Uma execução do wizard (id, public_id/UUID, nome, `completed`, `completed_at`, timestamps) |
+| `research_session` | Uma execução do wizard (id, public_id/UUID, nome, `completed`, `completed_at`, `current_step`/`current_substep` para retomar no ponto certo, timestamps) |
 | `session_input` | Input do usuário (tema/descrição/keywords/área/anos); auto-referenciada por `parent_id` — a linha raiz (`parent_id=NULL`) é a entrada bruta, a linha filha é a variação escolhida/refinada por IA |
 | `session_probe_query` | Uma query gerada (probe ou final) por fonte; `fonte ∈ {ops, scopus}`; `tipo ∈ {NULL, specific, balanced, generic}` — ver §9.2 |
 | `session_ai_call` | Log append-only de toda chamada de LLM da sessão (etapa, provedor, modelo, tokens, tentativas, duração) — a base do log de auditoria exibido no frontend |
 | `patent` / `article` | Documentos deduplicados globalmente por `dedup_key`, reutilizados entre sessões e entre estágio probe/final |
 | `probe_query_patent` / `probe_query_article` | Tabelas de associação N:N entre `session_probe_query` e `patent`/`article`, carregando `relevance_score` |
 | `probe_query_term` | Termos extraídos (§5), com `score`, `frequency`, `selected` — só populada para linhas de `tipo IS NULL` (extração de termos é etapa exclusiva do estágio probe) |
-| `session_chart` | Um PNG de report gerado (§10), com `object_key` (chave MinIO) — FK pra `session_probe_query`, unique `(probe_query_id, chart_type)` |
-| `session_report_section` | Texto de uma seção do relatório LaTeX (§13.1/13.2) — `rag_context`/`generated_text`/`status`, FK pra `research_session`, unique `(session_id, section_key)` |
-| `session_report` | Manifesto do `.tex`/PDF montado (§13.2) — `tex_object_key`/`pdf_object_key` (chaves MinIO), FK única pra `research_session` |
+| `session_chart` | Um PNG de report gerado (§10), com `object_key` (chave MinIO) e `summary` (JSON: resumo numérico do gráfico — total, pico, top-N, GP/MP/SP — que alimenta o prompt da seção de resultados) — FK pra `session_probe_query`, unique `(probe_query_id, chart_type)` |
+| `session_report_section` | Texto de uma seção do relatório LaTeX (§13.1/13.2) — `rag_context`/`generated_text`/`status` e `sources` (JSON: citação + referência ABNT de cada documento recuperado pelo RAG, §13.6), FK pra `research_session`, unique `(session_id, section_key)` |
+| `session_report` | Manifesto do `.tex`/PDF montado (§13.2) — `tex_object_key`/`pdf_object_key` (chaves MinIO; ao lado do `.tex` editável fica no MinIO a cópia `main.assembled.tex`, baseline usado pela revisão para detectar linhas editadas), `assemble_payload`, FK única pra `research_session` |
+
+**Tabelas de configuração** (`db/config_models.py`, semeadas por `db/config_seed.py`): `app_settings` (parâmetros editáveis em tempo de execução, com tipo/faixa/descrição — ex.: `rag_top_k_per_section`, `rag_relative_min_relevance`, `languagetool_language`), `llm_provider_configs` e `llm_call_site_bindings` (vínculo de cada ponto de uso de LLM (`theme_candidates`, `probe_query`, `final_query`, `report_writing`, `report_review`), e `search_api_selection`. O seed é **idempotente**: `seed_missing_app_settings` e `seed_missing_call_site_bindings` inserem só chaves/pontos de uso ausentes, sem sobrescrever valores já editados pelo usuário — assim um banco existente recebe as configurações novas sem perder as antigas.
+
+Documentação gerada do schema: `notes/db_schema_atual.{dbml,md,html}`, regenerada a partir dos metadados SQLAlchemy por `scripts/generate_db_schema_docs.py` (16 tabelas).
 
 ### 9.2 Reuso das tabelas "probe" para os dados "final" (via `tipo`/`parent_id`)
 
@@ -489,7 +558,9 @@ As tabelas `patent`, `article`, `probe_query_patent`, `probe_query_article` **n�
 
 Ou seja: não existe um banco separado ou um prefixo de nome de tabela chamado literalmente "probe" versus "final" — o mecanismo de reuso é o par de colunas `tipo`/`parent_id` dentro da mesma tabela `session_probe_query`, e as tabelas de documentos/associação/deduplicação são inteiramente compartilhadas entre os dois estágios.
 
-### 9.3 O que ainda falta: estatísticas dedicadas da busca final OPS
+### 9.3 Estatísticas da busca final: sem tabela dedicada
+
+> **Atualização**: os gráficos agora são persistidos (PNG no MinIO + `session_chart.summary`), então o texto abaixo vale só para os agregados brutos — ainda não há uma tabela `session_metrics`.
 
 Não existe uma tabela dedicada de estatísticas (ex.: `session_metrics`) — os dados para a curva S, top depositantes/instituições, top temas, top CPC/áreas de estudo são hoje **computados sob demanda, não persistidos**, pela rota `POST /report/{session_id}/graphics` (§4.4, §10), que consulta `patent`/`article` via `probe_query_patent`/`probe_query_article` filtrando `session_probe_query.tipo IS NOT NULL` (documentos do estágio final), e devolve arquivos PNG — nenhuma linha nova é criada no banco. Esta é exatamente a peça mencionada como "só foi feita pro OPS": a agregação de estatísticas (depositantes, CPC, contagem por ano) hoje só acontece de fato para a fonte OPS dentro de `run_final_search` (`/chat/final/search`), que já devolve dados agregados prontos (`depositants`, `cpc`, `title`, `patents_by_year`) em vez de lista bruta — diferente do Scopus, que devolve lista de itens crus.
 
@@ -498,7 +569,7 @@ Não existe uma tabela dedicada de estatísticas (ex.: `session_metrics`) — os
 Existem **dois outros grupos de tabelas** no banco, criados por `db/init_db.py` via `create_all` (não por Alembic), mas **não usados pelo fluxo real hoje**:
 
 - **`db/models.py`** (schema genérico de documentos: `scholarly_documents`, `patent_documents`, `*_dedup_registry`): tem código de repositório funcional (`services/db/repositories.py`) e adaptadores hexagonais conectados a um `ResearchService`, mas esse `ResearchService`/`build_research_service` nunca é efetivamente chamado por nenhuma rota ativa — é infraestrutura pronta, mas desconectada do caminho de execução real.
-- **`db/research_models.py`** (schema legado `research`, `research_metrics`, `research_token_usage`, `research_phases` etc.): **`notes/db_schema_atual.md` está desatualizado** ao afirmar que rotas como `research_router.py`/`metrics_aggregator.py` ainda usam este schema — essas rotas **não existem mais** na árvore atual do projeto (confirmado por busca no repositório). O `report_router.py` real usa exclusivamente o schema session-centric (§9.1).
+- **`db/research_models.py`** (schema legado `research`, `research_metrics`, `research_token_usage`, `research_phases` etc.): versões antigas de `notes/db_schema_atual.md` afirmavam que rotas como `research_router.py`/`metrics_aggregator.py` ainda usam este schema (o arquivo foi regenerado e hoje documenta só o schema ativo) — essas rotas **não existem mais** na árvore atual do projeto (confirmado por busca no repositório). O `report_router.py` real usa exclusivamente o schema session-centric (§9.1).
 
 Essa distinção é importante para o relatório: o sistema tem "peças fantasma" no banco (schema criado, mas sem escritor ativo) que não devem ser descritas como funcionalidade em uso.
 
@@ -513,14 +584,21 @@ O cálculo estatístico e a renderização foram separados em dois módulos (ver
 - **`app/core/services/s_curve.py`** — ajuste do modelo logístico (Fisher-Pry), puro (`numpy`/`scipy`, sem I/O, sem matplotlib).
 - **`app/core/services/report_service.py::ReportService`** — orquestração e renderização dos PNGs (`matplotlib`/`numpy`/`pandas`), conectado à rota `POST /report/{session_id}/graphics` (§4.4). Computação pura sobre dicts já extraídos pela rota (sem acesso a banco), salvando os PNGs em `output_dir/session_{id}/`.
 
-Gera, quando há dados suficientes (senão marca em `skipped`):
+Gráficos que entram no relatório. Uma lista fechada, a whitelist `FIGURE_SPECS` em `report_figures.py`, cada um gerado por uma rota própria (§4.4):
 
-- Curva S + evolução temporal (patentes e artigos, separadamente)
-- Top depositantes, top inventores (só patentes)
-- Top autores, top periódicos (só artigos)
-- Distribuição CPC, distribuição IPC (só patentes)
-- Distribuição por área de estudo (só artigos)
-- Distribuição geográfica (patentes por país; artigos por país de afiliação)
+- Curva S (Fisher-Pry, com GP/MP/SP) de patentes e de artigos
+- Volume anual de patentes e de artigos ("Artigos por Ano")
+- Top depositantes (patentes) e top instituições (artigos)
+- Quadros top-10 (heatmap): 10 classificações CPC mais encontradas (patentes; códigos IPC são tratados como CPC em todo o relatório, com títulos oficiais de `config/cpc_titles.json`) e áreas de estudo relacionadas (artigos)
+
+Top inventores, top autores, distribuição geográfica e o gráfico de distribuição por área de estudo saíram do relatório por pedido do usuário. Não aparecem no padrão REPTEC.
+
+Regras de renderização adotadas:
+
+- **Sem título dentro do PNG.** O título vai na legenda LaTeX (`\caption`), seguida de "Fonte: O autor.", no padrão REPTEC.
+- **Só anos completos.** O ano corrente é descartado das séries (`report_lifecycle.complete_years_only`), porque um ano parcial parece queda e distorce o ajuste.
+- **Nomes longos abreviados.** Nomes de depositantes ou instituições com mais de 45 caracteres passam por `chart_labels.abbreviate_labels` para não achatar o gráfico.
+- **Resumo numérico.** Cada gráfico devolve um resumo (total, pico, top-N, GP/MP/SP), persistido em `session_chart.summary` e usado pelo prompt para descrever a figura com números reais.
 
 > **Nota**: existe também um módulo mais antigo, `services/report_visualizations.py::TechProspectingVisualizations`, com lógica semelhante mas **não conectado a nenhuma rota** — seu ajuste de curva S usa parâmetros fixos (`k=2`, `x0=len(anos)/2`), sem regressão real. O módulo realmente ativo é o descrito acima.
 
@@ -616,11 +694,19 @@ Período simulado: 2000–2025 (26 anos). Esse teste é um argumento de validaç
 
 ---
 
-## 11. 🔜 Planejado: Módulo de Inferência Estatística (Chao1 + Bootstrap)
+## 11. ✅ Implementado: Módulo de Inferência Estatística (Chao1 + Bootstrap)
 
-**Status: não implementado.** Busca no repositório inteiro por "chao1", "bootstrap", "saturation", "sample completeness", "estimator" não encontrou nenhuma implementação estatística correspondente — o único campo relacionado é `saturation_point = total_acumulado * 0.9` em `services/report_visualizations.py` (o módulo **não conectado**, §10.1), um limiar arbitrário, não um estimador de riqueza de espécies. `requirements.txt` não lista `statsmodels` nem qualquer biblioteca de reamostragem estatística além de `scipy`/`scikit-learn` genéricos.
+**Status: implementado.** O cálculo puro está em `app/core/services/sample_statistics.py`. A orquestração fica em `statistical_inference_service.py`, exposta pela rota `POST /inference/final-search` (§4.4.1), que não persiste nada:
 
-O módulo planejado consistiria em:
+- **`chao1_estimate` / `chao1_diagnostics`**: estimam a riqueza pela fórmula de Chao1 com correção de viés, `S_chao1 = S_obs + f1·(f1−1) / (2·(f2+1))`. Devolvem também a saturação (`S_obs / S_chao1`), `f1`, `f2` e `f1_ratio`.
+- **`is_sample_insufficient`**: critério composto. A amostra é insuficiente se qualquer uma destas condições valer:
+  - saturação < 0,5;
+  - `f1_ratio` > 0,7;
+  - `f2` < 5.
+- **`bootstrap_topk_stability`**: faz 1.000 reamostragens multinomiais vetorizadas. Para cada item do top-10 original, mede a fração das reamostragens em que ele continua no top-10.
+- **Laço de enriquecimento**: `StatisticalInferenceService` repete `ChatService.run_final_search`, pedindo mais iterações, até a amostra saturar ou o tempo configurado acabar. Em seguida resume o resultado em top-10, estabilidade de cada item e relevância semântica ao tema (SBERT).
+
+A motivação original do módulo continua valendo:
 - **Estimador Chao1**: para verificar a **saturação da amostra** — se o número de termos/entidades únicas observadas já se aproxima do total estimado da "população" real, ou se ainda há descobertas relevantes não capturadas por falta de volume amostral. Aplicável principalmente sobre a contagem de depositantes/instituições/autores únicos, e sobre a diversidade de termos/CPC observada.
 - **Bootstrap**: para verificar a **estabilidade dos rankings top-10** (top depositantes, top instituições, top temas, top CPC) — reamostrando os documentos com reposição múltiplas vezes e observando a variância da composição/ordem do top-10 resultante. Um ranking instável (que muda muito entre reamostragens) é sinal de que a amostra ainda é pequena demais para aquele agregado específico.
 - **Aplicação esperada**: como CPC e áreas de estudo tendem a ter cardinalidade baixa (poucas categorias distintas), a saturação (Chao1) e a estabilidade de ranking (bootstrap) devem ser atingidas com amostras relativamente pequenas. Já depositantes/instituições têm cardinalidade alta (muitas entidades distintas, cauda longa), então é esperado que esses rankings exijam volumes de amostra maiores para estabilizar — o módulo serviria justamente para **detectar e sinalizar automaticamente** quando é necessário aumentar o volume da busca final antes de confiar no ranking apresentado.
@@ -637,24 +723,45 @@ O módulo planejado consistiria em:
 
 ---
 
-## 13. ✅ Implementado (backend): Relatório LaTeX via RAG local + LLM (padrão REPTEC/AGITEC)
+## 13. ✅ Implementado: Relatório LaTeX via RAG local + LLM (padrão REPTEC/AGITEC)
 
-**Status: pipeline de backend implementado e testado (unitário); tela dedicada no frontend ainda 🔜 (continua placeholder em `OutrosSteps.tsx`, ver §3).**
+**Status: implementado de ponta a ponta.** Isso inclui o backend, a tela "Geração do Relatório" com editor LaTeX no navegador (§13.8), a compilação de PDF, a revisão de texto (§13.7) e o download `.zip`. Há testes unitários para os módulos puros.
 
-A estrutura real do relatório (capa, sumário, 8 seções numeradas, bloco de assinaturas) foi extraída de um REPTEC real do AGITEC (`notes/REPTEC_001_2023_TETRA.pdf`, relatório 001/2023 sobre TETRA), não inventada. Ela deixou claro que nem toda seção deve passar por LLM:
+A estrutura do relatório foi extraída de um REPTEC real do AGITEC (`notes/REPTEC_001_2023_TETRA.pdf`, relatório 001/2023 sobre TETRA), e não inventada. Essa estrutura cobre a capa, o sumário, as 8 seções numeradas, o bloco de assinaturas e a formatação. O modelo deixou claro que nem toda seção deve passar por LLM:
 
 | Seção | Como é produzida |
 |---|---|
-| Capa, Sumário | Estáticas (template Jinja2 + `\tableofcontents` do LaTeX) |
-| 1 Finalidade, 3 Objetivo, 4 Introdução | **IA** (RAG + LLM) |
-| 2 Referências (DIEx/Ofício que originou o pedido) | Dado administrativo, inserido pelo usuário |
-| 5 Metodologia (5.1/5.2/5.3) | Texto-base **fixo/local**, quase idêntico em todo REPTEC - só interpola palavras-chave/período/bases desta pesquisa (`config/prompts/report_static_sections.py`); nunca passa por LLM |
-| 6 Resultados (6.1 Científicas / 6.2 Tecnológicas / 6.3 Ciclo de Vida) | **IA** (RAG + LLM), uma chamada por subseção - a mais importante, inclui os gráficos já gerados por `ReportService` (§10) embutidos no `.tex` |
-| 7 Conclusão | **IA** (RAG + LLM) |
-| 8 Referências Bibliográficas | **Fixa** (as mesmas obras citadas pelo texto-base da Metodologia) **+ adicionadas pelo usuário** - nunca gerada por LLM, pra não arriscar citação inventada (mesma regra já em `REPORT_SYSTEM_PROMPT`) |
-| Assinaturas (Elaborado/Revisado/Aprovado) | Nomes/postos default de config, sobrescrevíveis por requisição |
+| Capa, Sumário | Estáticas: template Jinja2 com título em negrito e `\tableofcontents`. O sumário tem `tocdepth` 1 e itens em caixa alta. |
+| 1 Finalidade | **Fixa**: `render_finalidade(tema, destinatario)` gera "Apresentar o relatório de Prospecção Tecnológica sobre <tema> a fim de fornecer informações … para <destinatário>". Saiu do fluxo de IA. |
+| 2 Referências (DIEx/Ofício que originou o pedido) | Dado administrativo inserido pelo usuário e validado em `report_form_validation.py` |
+| 3 Objetivo | Texto do usuário (campo do formulário), gravado como seção estática |
+| 4 Introdução | **IA** (RAG + LLM) |
+| 5 Metodologia (5.1–5.4) | **Fixa**. Não passa por LLM (detalhes abaixo da tabela). |
+| 6 Resultados (6.1 Científicas / 6.2 Tecnológicas / 6.3 Tendências e Ciclo de Vida) | **IA** (RAG + LLM), uma chamada por subseção. Cada subseção recebe os resumos numéricos dos gráficos, que o texto posiciona e comenta (§13.6). 6.2 termina no quadro de busca, com a query e o **total real** de documentos da base. |
+| 7 Conclusão | **IA** (RAG + LLM), com estrutura orientada (estágio do ciclo de vida, destaques, recomendação) |
+| 8 Referências Bibliográficas | Bibliografia fixa da Metodologia, mais as obras **efetivamente citadas** no texto de IA (geradas dos metadados, §13.6), mais as adicionadas pelo usuário. O LLM nunca escreve referências. |
+| Local e data, Assinaturas (Elaborado/Revisado/Aprovado) | `render_local_data` ("Rio de Janeiro, 10 de agosto de 2023."). As assinaturas saem no formato **NOME – POSTO/GRAD** em negrito e centralizado, com a **Função** na linha de baixo. Os três campos são editáveis no formulário. |
 
-Total: **7 seções de IA** (`finalidade`, `objetivo`, `introducao`, `informacoes_cientificas`, `informacoes_tecnologicas`, `tendencias_ciclo_vida`, `conclusao` - as chaves de `ReportWriterService.AI_SECTIONS`), das 10 originalmente esboçadas em `config/prompts/report_prompts.py` (`metodologia`, `referencias` e `referencias_bibliograficas` saíram do fluxo de LLM).
+A Metodologia usa um texto-base quase idêntico em todo REPTEC:
+
+- 5.1–5.3 trazem as figuras fixas de Madeo e Kucharavy, que ficam persistidas no MinIO (`config/report_figures/*`) e são enviadas na inicialização por `report_static_figures.py`.
+- 5.4, "Apoio Computacional à Prospecção", descreve em termos gerais o apoio computacional, sem citar modelos nem a plataforma:
+  - uso de LLM para elaborar as queries;
+  - extração de termos com BM25F e KeyBERT;
+  - buscas exploratórias (probe);
+  - fusão por RRF.
+- O último parágrafo interpola as palavras-chave, o período e as bases desta pesquisa, omitindo o que faltar (`config/prompts/report_static_sections.py::render_metodologia`).
+
+Total: **6 seções de IA**, as chaves de `ReportWriterService.AI_SECTIONS`: `objetivo`, `introducao`, `informacoes_cientificas`, `informacoes_tecnologicas`, `tendencias_ciclo_vida` e `conclusao`. Das 10 esboçadas originalmente, `finalidade`, `metodologia`, `referencias` e `referencias_bibliograficas` saíram do fluxo de LLM. Na montagem, o objetivo informado pelo usuário tem precedência.
+
+**Formatação REPTEC** (`config/prompts/report_latex_template.py`):
+
+- **Fonte e espaçamento.** `babel` brazilian, fonte `tgtermes`, espaçamento 1,5, texto justificado com recuo na primeira linha.
+- **Cabeçalho e rodapé** (`fancyhdr`). O cabeçalho, à direita, traz "REPTEC nº/ano – TEMA". O rodapé traz "Página x de y", com `lastpage` e `\pageref*` para não virar link.
+- **Seções.** `titlesec` com título em negrito e caixa alta ("1 FINALIDADE").
+- **Figuras e quadros.** `\DeclareCaptionType{quadro}` e as macros `\figura[fonte]{título}{arquivo}` e `\quadroimg`, com legenda acima e "Fonte: O autor." abaixo.
+
+A imagem `latex-compiler` instala só esses pacotes via `tlmgr`: `lastpage`, `titlesec`, `tocloft` e as dependências.
 
 ### 13.1 Processo fatiado por seção, em duas rotas independentes
 
@@ -665,7 +772,14 @@ Pedido de design explícito: cada seção de IA passa por **duas chamadas HTTP s
 
 Motivação dupla: (1) o frontend sabe exatamente qual etapa está em andamento (loading granular por seção, não uma barra de progresso opaca), e (2) cada chamada ao LLM carrega só o prompt+contexto de **uma** seção, não o relatório inteiro - reduz a janela de tokens por chamada, relevante porque o LLM usado nessa etapa é um recurso compartilhado da intranet (§13.3).
 
-Seções fixas/locais têm rota própria, sem RAG/LLM: `POST /report/{session_id}/sections/static` (Metodologia + Referências Bibliográficas, a partir de `config/prompts/report_static_sections.py`).
+Seções fixas/locais têm rota própria, sem RAG/LLM: `POST /report/{session_id}/sections/static` (Finalidade, Objetivo, Metodologia + Referências Bibliográficas, a partir de `config/prompts/report_static_sections.py`).
+
+Detalhes do RAG por seção:
+
+- **Corte relativo de relevância.** Um trecho só entra no contexto se o score dele for pelo menos `rag_relative_min_relevance` (padrão 0,75, editável em Configurações) vezes o score do trecho mais relevante. Isso corta documentos periféricos que o `top_k` traria de qualquer jeito.
+- **Contexto sem scores.** O contexto enviado ao LLM não leva score de similaridade, para evitar que "Relevância: 18%" vaze para o texto.
+- **Fontes citáveis.** Junto do contexto, a rota persiste `sources`: a citação e a referência ABNT de cada documento recuperado.
+- **Reindexação.** O índice tem versão (`_INDEX_VERSION`), e um índice antigo, sem metadados de citação, é reindexado.
 
 ### 13.2 Montagem do `.tex` e compilação de PDF - duas rotas, PDF só sob demanda
 
@@ -689,9 +803,54 @@ Os embeddings usados pra indexar/consultar o RAG **reaproveitam o `EmbeddingPort
 Corpus indexado por sessão: título + resumo (`abstract`) dos documentos (`Patent`/`Article`, §9.1) da busca final dessa sessão, isolados por `session_id` no metadata de cada chunk (coleção única `report_rag`, não uma coleção por sessão). `Patent.abstract`/`Article.abstract` já existem como colunas e já são preenchidos no fluxo real (`session_probe_documents.py`) - mas, como o payload de artigos da busca final normalmente chega vazio do frontend (`buildProbeQueryPayload` - ver comentário em `report_router.py::generate_article_s_curve`), o corpus de RAG hoje é majoritariamente de **patentes**; o código de indexação trata artigos ausentes normalmente, sem erro.
 
 ### 13.5 O que ainda não existe
-- Tela "Geração do Relatório" no frontend - segue placeholder ("Conteúdo em construção") em `OutrosSteps.tsx`.
-- Correção do payload de artigos da busca final pra persistir abstracts de artigo de forma confiável (§13.4).
-- Qualquer verificação em produção contra o endpoint real da intranet - testado até aqui contra Ollama local (container) e testes unitários com fakes/mocks para `TextGenerationPort`/`VectorStorePort`.
+- Verificação em produção contra o endpoint real da intranet. Até aqui o pipeline foi testado contra o Ollama local (container, `gemma3:4b`) e por testes unitários com fakes/mocks de `TextGenerationPort`/`VectorStorePort`.
+- **Limitação conhecida:** modelos locais pequenos, como o `gemma3:4b`, erram concordância verbal com sujeito distante. A revisão (§13.7) detecta esses erros, e o ponto de uso `report_review` pode apontar para um modelo melhor em português do que o da redação.
+- Sessões com relatório antigo precisam **regenerar as seções e remontar o `.tex`** para receber as melhorias de §13.6. O `.tex` persistido não é reescrito automaticamente.
+
+### 13.6 Qualidade do texto gerado: figuras, números, citações e ciclo de vida
+
+O LLM redige, e módulos puros em Python garantem o que não pode depender do modelo:
+
+- **Figuras no contexto** (`report_figures.py`), no padrão REPTEC: o texto apresenta a figura, a figura aparece e em seguida vem um parágrafo que interpreta os números.
+  - O prompt exige esse padrão e dá um exemplo. O LLM escreve "A Figura [[REF:id]] apresenta…" e, em linha própria, `[[FIG:id]]`.
+  - `place_figures`, um pós-processador puro, converte os marcadores em `\ref{}` e no bloco `\figura`/`\quadroimg`.
+  - Se o LLM cita uma figura sem posicioná-la, ela entra logo após o parágrafo que a cita. Figura não citada vai para o fim da seção, na ordem REPTEC: histórico, top, quadro, curva S.
+  - Só figuras da whitelist entram (§10.1).
+  - `_fix_figure_word` corrige "Figura"/"Quadro" conforme o tipo, com concordância do artigo (a/o, da/do, na/no, pela/pelo, à/ao).
+- **Ciclo de vida calculado, não inferido** (`report_lifecycle.py`). O estágio (Emergente, Crescimento, Maturidade ou Saturação) é determinado em Python a partir de GP/MP/SP da curva S. O estágio geral segue a curva de **patentes**. O LLM recebe o estágio pronto como fato e não o deduz.
+- **Citações rastreáveis** (`report_citations.py`):
+  - só são aceitas citações "(SOBRENOME et al., ano)" que existam em `sources`, e as inventadas são removidas (`filter_citations`);
+  - homônimos recebem sufixo de letra (2020a/2020b);
+  - nomes em escrita não latina não geram citação;
+  - as referências ABNT das obras realmente citadas entram na seção 8.
+- **Validador de texto** (`report_text_quality.py`):
+  - corrige números para pt-BR ("17,3%", "1.800");
+  - detecta vazamentos do pipeline, como "[Informação não disponível]", "(Fonte: N/A)", "Relevância: 18%", "no contexto fornecido" e listas vazias;
+  - diante de vazamento, regenera **uma** vez com instrução de correção e, se persistir, levanta `SectionQualityError`.
+- **Prompt de sistema** (`config/prompts/report_prompts.py`): texto impessoal, sem "Fonte:", sem N/A e sem scores de relevância. Os títulos oficiais CPC entram como fatos.
+- **Escape LaTeX**: `escape_latex` mantém os indicadores ordinais º/ª, para que "DIEx Nº 256" e "1º Ten" saiam corretos, e remove CJK, que o pdflatex não compila.
+
+### 13.7 Revisão do `.tex` no editor (LanguageTool + IA opcional)
+
+`POST /report/{id}/review` (`report_review.py`, parte pura, + `report_review_service.py`, I/O) revisa o `.tex` atual do editor:
+
+1. **Lint de LaTeX** (`lint_latex`, limitado ao corpo do documento): chaves e ambientes desbalanceados, `\ref` sem rótulo, imagens referenciadas inexistentes, caracteres especiais sem escape e erros do último log de compilação.
+2. **Escopo** (`review_scope`): revisa só as **seções geradas por IA** e as **linhas editadas pelo usuário**. As linhas editadas saem da comparação com o baseline `main.assembled.tex` salvo na montagem. Texto fixo e revisado (Metodologia etc.) não é reprocessado.
+3. **LanguageTool** (container `erikvl87/languagetool:6.8`, porta 8010, `Java_Xmx=1g`, idioma `languagetool_language`, padrão pt-BR, editável em Configurações). O texto vai pela API *annotated text*, em que comandos LaTeX viram marcação e não são analisados. Só categorias úteis são mantidas: ortografia, acentuação, concordância e gramática.
+4. **IA opcional** (ponto de uso `report_review`): segunda opinião por parágrafo, restrita a concordância, acentuação e ortografia. A sugestão só é aceita se o trecho original existir literalmente e se a correção não mexer em números, citações ou comandos LaTeX (`validate_ai_suggestion`). Sugestões sobrepostas às do LanguageTool são descartadas.
+
+O frontend (`ReviewPanel.tsx` + `utils/reviewApply.ts`) lista as sugestões por seção. O usuário aplica ou ignora cada uma individualmente, com recálculo de offsets. Se o LanguageTool ou a IA falhar, o painel mostra um aviso e os problemas de LaTeX continuam valendo.
+
+### 13.8 Tela "Geração do Relatório" e editor
+
+- **Formulário** (`ReportGeneration.tsx`): número/ano, destinatário, objetivo, local, referências administrativas, bibliografia adicional e as três assinaturas (Nome, Posto/Graduação, Função). Tudo passa pelas mesmas validações no frontend (`utils/reportFormValidation.ts`) e no backend (`report_form_validation.py`), que recusam valores de preenchimento como "sdasd".
+- **Editor** (`ReportDocumentEditor.tsx`): editor do `.tex` com as ações Salvar, Revisão, Download `.zip` (ícone à esquerda de Compilar) e Compilar PDF. Mensagens de erro do backend (`detail`) aparecem na tela.
+- **Painel de imagens**:
+  - abre e fecha pelo botão com ícone de imagem na barra lateral (`ReportImagesToggleButton.tsx`), verde quando ativo; fechado, fica oculto;
+  - cada imagem tem um menu: Adicionar ao `.tex`, Abrir em nova aba, Download e Excluir (este só para anexos);
+  - o subpainel "Anexos" tem um botão "+" para enviar imagens próprias;
+  - inserir uma imagem **preserva a posição de rolagem** do editor.
+- **Bundle** `.zip` (`POST /bundle`): `.tex` + todas as imagens referenciadas (geradas, fixas e anexos), nomeado `REPTEC_<num>_<ano>.zip`. O nome vem no header `Content-Disposition`, exposto via CORS.
 
 ---
 
@@ -721,40 +880,43 @@ A parte antes descrita como faltante em §12 já existe: `SessionChart.object_ke
 [Busca real - OPS/Scopus] resultados diversificados por ano, filtrados por idioma
       │  (Scopus: resumos enriquecidos via OpenAlex)
       ▼
-[NLP local] spaCy (candidatos) + KeyBERT + TF-IDF (§5) ──► termos rankeados
+[NLP local] PatternRank (candidatos) + BM25F + KeyBERT → RRF + C-value (§5) ──► termos rankeados
       │  (usuário seleciona termos + variante: específica/balanceada/ampla)
       ▼
 [LLM remota] Gerar query FINAL da variante escolhida, usando termos selecionados
       │  QueryComplexityAnalyzer + retry novamente
       ▼
-[Busca real - OPS/Scopus, volume maior] até 250-500 resultados
-      │
+[Busca real - OPS/Scopus, volume maior] até 250-500 resultados + total_count real (§7.3)
+      │  (opcional: POST /inference/final-search - Chao1 + bootstrap, §11)
       ▼
 [Persistência PostgreSQL] research_session → session_input → session_probe_query
       │  (tipo=NULL para probe, tipo=variant para final) → patent/article (dedup global)
       ▼
-[ReportService] gráficos (curva S logística + top entidades + distribuições) → PNG
+[ReportService] gráficos da whitelist (curva S + volume anual + top + quadros CPC/área) → PNG + resumo numérico
       │
       ▼
-[MinIO] upload dos PNGs, chave salva no Postgres (SessionChart)
+[MinIO] upload dos PNGs, chave + summary salvos no Postgres (SessionChart)
       │
-      ▼  (por seção de IA - finalidade/objetivo/introdução/resultados x3/conclusão)
+      ▼  (por seção de IA - objetivo/introdução/resultados x3/conclusão)
 [RAG local - ChromaDB + EmbeddingPort] POST .../sections/{key}/rag
-      │  indexa título+resumo da busca final (isolado por session_id), recupera contexto
+      │  indexa título+resumo da busca final (isolado por session_id), recupera contexto + sources citáveis
       ▼
 [LLM local/intranet - OpenAI-compatible] POST .../sections/{key}/generate
-      │  só texto (prompt + contexto já recuperado) sai pro LLM; nunca vetores
+      │  só texto sai pro LLM; citações filtradas, números pt-BR, validador + 1 retry (§13.6)
       ▼
-[Seções fixas/locais] POST .../sections/static (Metodologia + Referências Bibliográficas)
+[Seções fixas/locais] POST .../sections/static (Finalidade, Objetivo, Metodologia 5.1-5.4, Bibliografia)
       │
       ▼
-[Relatório LaTeX, padrão REPTEC/AGITEC] POST .../assemble → .tex editável no MinIO
+[Relatório LaTeX, padrão REPTEC/AGITEC] POST .../assemble → place_figures → .tex editável + baseline no MinIO
       │
-      ▼  🔜 (sob demanda do usuário, rota separada - nunca automático)
+      ▼
+[Editor no frontend] edição do .tex, painel de imagens/anexos
+      │  POST .../review → lint LaTeX + LanguageTool + IA opcional (§13.7)
+      ▼  (sob demanda do usuário, rota separada - nunca automático)
 [Compilação PDF] POST .../compile-pdf → latex-compiler (TeX Live) → PDF no MinIO
       │
-      ▼  🔜 (planejado, não implementado)
-[Tela "Geração do Relatório" no frontend]
+      ▼
+[Download] POST .../bundle → REPTEC_num_ano.zip (.tex + imagens)
 ```
 
 ---
@@ -764,11 +926,12 @@ A parte antes descrita como faltante em §12 já existe: `SessionChart.object_ke
 Estes pontos foram verificados diretamente no código-fonte atual e **contradizem documentação antiga presente no repositório** — não usar as fontes abaixo como base para o relatório sem esta ressalva:
 
 - **`ambinte.md`** (raiz do repositório): é uma análise de uma versão **anterior** do projeto (caminho de outro usuário/máquina, referencia `research_router.py`, `param_init.py`/`ParamInit`, `ResearchService` como rotas/tabelas ativas). Nenhuma dessas rotas/tabelas existe mais na árvore atual — confirmado por busca direta nos diretórios de rotas. **Não usar como fonte.**
-- **`notes/db_schema_atual.md`**: desatualizado ao afirmar que `research_router.py`/`report_router.py`/`metrics_aggregator.py` usam o schema legado (`db/research_models.py`) — o `report_router.py` real usa exclusivamente o schema session-centric (§9.1, §9.4).
+- **`notes/db_schema_atual.md`**: ✅ regenerado a partir dos modelos SQLAlchemy (`scripts/generate_db_schema_docs.py`) e agora confiável; versões antigas afirmavam que `research_router.py`/`metrics_aggregator.py` usavam o schema legado (§9.4).
 - **`frontend/BPMN_IMPLEMENTATION.md`**: descreve uma arquitetura de frontend diferente e nunca construída (`types/flow.ts`, `services/flowApi.ts`, `store/flowStore.ts`, rotas `/flow/*`, exportação PDF/DOCX) — a implementação real usa `/chat/*`, `useFormStore.ts` e os componentes em `components/steps/*` (§3).
 - **`config/prompts/probe_system_prompt copy.txt`**: backup obsoleto — `PromptLoader` só carrega `probe_system_prompt.txt`. A cópia serve apenas como evidência histórica de que o bloco de restrição de complexidade foi adicionado depois.
 - **`tests/test_routes.py`**: testa endpoints que não existem mais (pré-refatoração hexagonal). Só os testes de `/health` continuam válidos.
 - **`services/token_cost_calculator.py`**: código morto, não importado em nenhum lugar do app.
 - **`services/nlp/keyword_service.py`**: utilitário separado, não conectado ao pipeline principal de extração de termos (§5.3).
+- **`session_chart` com `chart_type` fora da whitelist** (ex.: `top_inventors`, `geographic_distribution` de sessões antigas): continuam no banco, mas nunca entram no `.tex` nem no painel de imagens (§10.1).
 - **`services/report_visualizations.py`**: implementação mais antiga de gráficos, com ajuste de curva S simplificado (parâmetros fixos, não regressão real) — não conectada a nenhuma rota; a implementação de produção é `app/core/services/report_service.py` (§10).
 - **`db/models.py` e `db/research_models.py`**: schemas criados no banco na inicialização, com código de repositório/adaptador em parte funcional, mas sem nenhum caminho de execução real que escreva neles hoje (§9.4).

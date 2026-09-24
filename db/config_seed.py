@@ -92,6 +92,8 @@ _SETTINGS_SEED: list[_SettingSeed] = [
     _SettingSeed("test_mode", "bool", "general", "Modo de teste", "Força o uso do MockLLMService (respostas falsas, sem custo/rede) em todas as chamadas de IA - usado só pela suíte de testes automatizados. Ligado fora de testes, a aplicação para de chamar qualquer IA de verdade em qualquer call site."),
     _SettingSeed("llm_keybert_model", "str", "general", "Modelo do KeyBERT", "Modelo sentence-transformers usado pelo canal semântico do TermExtractor (KeyBERT) e pelo RAG do relatório. Carregado uma única vez no boot - trocar aqui só faz efeito depois de reiniciar o backend. Alternativas: 'all-mpnet-base-v2' (melhor pra patentes/textos técnicos), 'allenai/specter' (papers acadêmicos)."),
     _SettingSeed("ollama_request_timeout_seconds", "int", "general", "Timeout do Ollama (s)", "Tempo máximo de espera pelas chamadas a um servidor Ollama/compatível (local ou intranet) antes de desistir. Aumentar demais deixa o app esperar muito tempo se o servidor travar; diminuir demais pode cortar respostas de modelos legitimamente lentos (ex: modelos grandes na intranet) antes de terminarem.", 10, 1200, 10),
+    _SettingSeed("rag_relative_min_relevance", "float", "general", "Corte relativo do RAG", "Fração do score do trecho mais relevante abaixo da qual um trecho recuperado pelo RAG é descartado antes de ir pro prompt do relatório. Aumentar demais (perto de 1) deixa só os pouquíssimos trechos mais próximos do tema, podendo faltar contexto; diminuir demais (perto de 0) deixa entrar documentos periféricos, e a IA passa a tratar assuntos laterais como centrais.", 0.0, 1.0, 0.05),
+    _SettingSeed("languagetool_language", "str", "general", "Idioma da revisão de texto", "Código de idioma do LanguageTool usado no botão \"Revisão\" do editor do relatório (ortografia, acentuação e concordância). O padrão é pt-BR; trocar só faz sentido se o relatório for redigido em outra variante (ex.: pt-PT)."),
     _SettingSeed("rag_top_k_per_section", "int", "general", "Top-K do RAG por seção", "Quantos trechos o RAG (ChromaDB) recupera por seção do relatório antes de montar o prompt de geração de texto. Aumentar demais deixa o prompt maior e mais caro sem necessariamente melhorar o texto gerado; diminuir demais pode faltar contexto relevante pra IA escrever a seção.", 1, 20, 1),
 ]
 
@@ -133,6 +135,36 @@ async def seed_app_settings(session: AsyncSession) -> None:
         )
     await session.commit()
     logger.info("app_settings_seeded", count=len(_SETTINGS_SEED))
+
+
+async def seed_missing_app_settings(session: AsyncSession) -> None:
+    """Configurações acrescentadas em _SETTINGS_SEED DEPOIS do seed inicial
+    (ex.: rag_relative_min_relevance, languagetool_language) - seed_app_settings
+    só roda com a tabela vazia, então sem isso elas nunca chegariam a um banco
+    já existente. Idempotente: só insere chaves ausentes, nunca altera valor
+    editado pelo usuário."""
+    existing = set((await session.execute(select(AppSetting.key))).scalars())
+    missing = [seed for seed in _SETTINGS_SEED if seed.key not in existing]
+    for seed in missing:
+        current_value = _current_value_as_str(seed.key, seed.value_type)
+        session.add(
+            AppSetting(
+                key=seed.key,
+                value=current_value,
+                value_type=seed.value_type,
+                category=seed.category,
+                is_secret=seed.is_secret,
+                min_value=seed.min_value,
+                max_value=seed.max_value,
+                step=seed.step,
+                label=seed.label,
+                description=seed.description,
+                default_value=None if seed.is_secret else current_value,
+            )
+        )
+    if missing:
+        await session.commit()
+        logger.info("app_settings_added", keys=[seed.key for seed in missing])
 
 
 async def seed_search_api_selection(session: AsyncSession) -> None:
@@ -225,6 +257,7 @@ async def seed_missing_call_site_bindings(session: AsyncSession) -> None:
 
 async def seed_all_config(session: AsyncSession) -> None:
     await seed_app_settings(session)
+    await seed_missing_app_settings(session)
     await seed_search_api_selection(session)
     await seed_llm_configs_and_bindings(session)
     await seed_missing_call_site_bindings(session)

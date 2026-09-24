@@ -5,11 +5,11 @@ chamador (mesmo padrão de app/core/services/report_service.py) - nenhum
 acesso a ORM/banco aqui, e nenhuma chamada de rede além das duas portas
 injetadas (RAGService/TextGenerationPort).
 
-Só cobre as 7 seções redigidas por IA (Finalidade, Objetivo, Introdução,
-Resultados - Informações Científicas/Tecnológicas/Tendências, Conclusão).
-Metodologia, Referências e Referências Bibliográficas são fixas/locais (ver
-config/prompts/report_static_sections.py) - nunca passam por aqui, pra
-evitar citação inventada por LLM.
+Só cobre as 6 seções redigidas por IA (Objetivo - quando o usuário não o
+escreve -, Introdução, Resultados - Informações Científicas/Tecnológicas/
+Tendências, Conclusão). Finalidade, Metodologia, Referências e Referências
+Bibliográficas são fixas/locais (ver config/prompts/report_static_sections.py)
+- nunca passam por aqui, pra evitar texto/citação inventados por LLM.
 """
 
 from __future__ import annotations
@@ -173,9 +173,10 @@ class SectionQualityError(RuntimeError):
 # automaticamente na próxima seção (ver ensure_session_indexed).
 _INDEX_VERSION = "2"
 
-# Fração do score do documento mais relevante abaixo da qual um trecho é
-# descartado - corta documentos periféricos (ex.: "artificial stone" num
-# relatório sobre placas solares) que o top_k traria de qualquer jeito.
+# Padrão da fração do score do documento mais relevante abaixo da qual um
+# trecho é descartado - corta documentos periféricos (ex.: "artificial
+# stone" num relatório sobre placas solares) que o top_k traria de qualquer
+# jeito. Editável em Configurações (settings.rag_relative_min_relevance).
 _RELATIVE_MIN_RELEVANCE = 0.75
 
 
@@ -274,7 +275,7 @@ class ReportWriterService:
         (contexto pro LLM, fontes citáveis). O tema entra na busca (sem ele
         a busca era só o nome da seção e trazia documentos periféricos);
         trechos bem menos relevantes que o melhor são descartados
-        (_RELATIVE_MIN_RELEVANCE). O contexto NÃO leva score de similaridade
+        (settings.rag_relative_min_relevance). O contexto NÃO leva score de similaridade
         nem "Fonte: N/A" - o LLM tratava esses valores como dados."""
         if self._rag is None:
             raise RAGUnavailableError("ChromaDB indisponível - verifique o container 'chromadb'.")
@@ -292,7 +293,8 @@ class ReportWriterService:
             return "", []
 
         best = max(r.get("relevance_score", 0) for r in results)
-        kept = [r for r in results if r.get("relevance_score", 0) >= best * _RELATIVE_MIN_RELEVANCE]
+        ratio = getattr(self._settings, "rag_relative_min_relevance", _RELATIVE_MIN_RELEVANCE)
+        kept = [r for r in results if r.get("relevance_score", 0) >= best * ratio]
 
         raw_sources = [
             {"citation": m["citation"], "reference": m["reference"]}

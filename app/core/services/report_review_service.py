@@ -49,9 +49,12 @@ Se não houver erros, responda {"correcoes": []}."""
 
 
 class ReportReviewService:
-    def __init__(self, languagetool_url: str, language: str, llm_resolver: Any) -> None:
+    def __init__(self, languagetool_url: str, language: str, llm_resolver: Any, settings: Any = None) -> None:
         self._languagetool_url = languagetool_url.rstrip("/")
-        self._language = language
+        self._default_language = language
+        # Settings "vivo" (ver settings_sync_service.py): o idioma editado em
+        # Configurações vale na próxima revisão, sem reiniciar o backend.
+        self._settings = settings
         self._llm_resolver = llm_resolver
         self._client = httpx.AsyncClient(timeout=60)
 
@@ -102,7 +105,7 @@ class ReportReviewService:
                 response = await self._client.post(
                     f"{self._languagetool_url}/v2/check",
                     data={
-                        "language": self._language,
+                        "language": self._language(),
                         "data": json.dumps(annotation, ensure_ascii=False),
                         "disabledRules": ",".join(DISABLED_LANGUAGETOOL_RULES),
                     },
@@ -181,6 +184,9 @@ class ReportReviewService:
             f"A revisão por IA falhou em {failures} de {len(paragraphs)} parágrafos - tente de novo." if failures else None
         )
         return [s for batch in batches for s in batch], warning
+
+    def _language(self) -> str:
+        return getattr(self._settings, "languagetool_language", None) or self._default_language
 
     async def close(self) -> None:
         await self._client.aclose()

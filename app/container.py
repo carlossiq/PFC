@@ -215,6 +215,7 @@ async def build_container(settings: Settings) -> dict[str, Any]:
         languagetool_url=settings.languagetool_url,
         language=settings.languagetool_language,
         llm_resolver=llm_resolver,
+        settings=settings,
     )
     _services_to_close.append(report_review_service)
     inference_service = StatisticalInferenceService(

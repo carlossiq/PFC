@@ -10,16 +10,7 @@
 #erd3 svg.erDiagram .row-rect-even rect { stroke: none !important; }
 </style>
 <p style="font-size:13px;color:#73726c;max-width:860px;margin:0 0 12px;">
-  Esquema atual do módulo <strong>session-centric</strong> (o que está sendo evoluído agora, em
-  <code>db/research_session_models.py</code>, migrado via Alembic). O <code>research_session</code>
-  antigo (com <code>status</code>) virou <code>completed: boolean</code>; <code>llm_candidate</code> e
-  <code>search_run</code> saíram do desenho — a refinação de estratégia agora é o auto-relacionamento
-  <code>session_input.parent_id</code>, e cada busca por fonte vira uma linha em
-  <code>session_probe_query</code>. <code>patent</code>/<code>article</code> são desnormalizados e
-  deduplicados globalmente (não pertencem a uma sessão específica), e se conectam às buscas via
-  tabelas de associação N:N. <code>session_metrics</code> e <code>session_asset</code> do esquema
-  antigo não existem aqui ainda — métricas e relatório continuam rodando sobre uma tabela
-  <code>research</code> legada e desconectada (<code>db/research_models.py</code>), fora deste diagrama.
+  Esquema ativo: <strong>sessão de prospecção</strong> (<code>db/research_session_models.py</code>, migrado via Alembic) e <strong>configuração editável</strong> (<code>db/config_models.py</code>). Inclui os gráficos do relatório (<code>session_chart</code>, com o resumo numérico em <code>summary</code>), as seções redigidas (<code>session_report_section</code>, com as citações em <code>sources</code>) e o documento montado (<code>session_report</code>). Gerado por <code>scripts/generate_db_schema_docs.py</code>.
 </p>
 <div id="erd3"></div>
 <script type="module">
@@ -45,131 +36,226 @@ mermaid.initialize({
 });
 
 const diagram = `erDiagram
-
+  direction TB
   research_session {
-    int id PK
-    string public_id UK
-    string name
-    boolean completed
-    string patent_source
-    string scholarly_source
-    float relevance_threshold
-    timestamp created_at
-    timestamp updated_at
+  Int id PK ""
+  String public_id UK ""
+  String name "optional"
+  Boolean completed ""
+  DateTime completed_at "optional; setado uma vez, quando completed vira true"
+  String patent_source "optional"
+  String scholarly_source "optional"
+  Int current_step "passo do wizard onde a sessão parou (retomada)"
+  Int current_substep "optional; subpasso do wizard (retomada)"
+  Float relevance_threshold ""
+  DateTime created_at ""
+  DateTime updated_at ""
   }
 
   session_input {
-    int id PK
-    int session_id FK
-    int parent_id FK
-    string theme
-    text description
-    string area_of_study
-    json keywords
-    int year_from
-    int year_to
-    int iterations
+  Int id PK ""
+  Int session_id FK ""
+  Int parent_id FK "optional; self - refino do input raiz"
+  String theme ""
+  Text description "optional"
+  String area_of_study "optional"
+  JSON keywords "optional"
+  Int year_from "optional"
+  Int year_to "optional"
+  Int iterations ""
   }
 
   session_probe_query {
-    int id PK
-    int session_id FK
-    string fonte UK
-    text query_text
-    json fields
-    int year_from
-    int year_to
-    float complexity_score
-    string complexity_level
-    int result_count
-    int iterations
-    timestamp created_at
+  Int id PK ""
+  Int session_id FK "UK composta"
+  String fonte "UK composta; ops | scopus"
+  String tipo "optional; UK composta; null=probe | specific|balanced|generic"
+  Int parent_id FK "optional; self - query final refina a query probe"
+  Text query_text ""
+  JSON fields "optional"
+  Int year_from "optional"
+  Int year_to "optional"
+  Float complexity_score "optional"
+  String complexity_level "optional"
+  Int result_count "optional; tamanho da amostra baixada"
+  Int iterations ""
+  DateTime created_at ""
   }
 
   session_ai_call {
-    int id PK
-    int session_id FK
-    string step
-    string provider
-    string model
-    float duration_ms
-    int input_tokens
-    int output_tokens
-    int total_tokens
-    int attempts
-    timestamp created_at
+  Int id PK ""
+  Int session_id FK ""
+  String step ""
+  String provider ""
+  String model ""
+  Float duration_ms ""
+  Int input_tokens "optional"
+  Int output_tokens "optional"
+  Int total_tokens "optional"
+  Int attempts ""
+  DateTime created_at ""
   }
 
   patent {
-    int id PK
-    string dedup_key UK
-    string source
-    string source_record_id
-    text title
-    text abstract
-    string publication_number
-    string application_number
-    string family_id
-    json applicants
-    json inventors
-    json ipc_codes
-    json cpc_codes
-    string filing_date
-    string publication_date
-    string grant_date
-    int year
-    string legal_status
-    string country
-    timestamp created_at
+  Int id PK ""
+  String dedup_key UK ""
+  String source ""
+  String source_record_id "optional"
+  Text title ""
+  Text abstract "optional"
+  String publication_number "optional"
+  String application_number "optional"
+  String family_id "optional"
+  JSON applicants "optional"
+  JSON inventors "optional"
+  JSON ipc_codes "optional"
+  JSON cpc_codes "optional"
+  String filing_date "optional"
+  String publication_date "optional"
+  String grant_date "optional"
+  Int year "optional"
+  String legal_status "optional"
+  String country "optional"
+  DateTime created_at ""
   }
 
   article {
-    int id PK
-    string dedup_key UK
-    string source
-    string source_record_id
-    text title
-    text abstract
-    string doi
-    json authors
-    json affiliations
-    json affiliation_countries
-    string journal_or_source
-    string volume
-    string issue
-    string pages
-    string publication_date
-    int year
-    json keywords
-    json field_of_study
-    int citations
-    timestamp created_at
+  Int id PK ""
+  String dedup_key UK ""
+  String source ""
+  String source_record_id "optional"
+  Text title ""
+  Text abstract "optional"
+  String doi "optional"
+  JSON authors "optional"
+  JSON affiliations "optional"
+  JSON affiliation_countries "optional"
+  String journal_or_source "optional"
+  String volume "optional"
+  String issue "optional"
+  String pages "optional"
+  String publication_date "optional"
+  Int year "optional"
+  JSON keywords "optional"
+  JSON field_of_study "optional"
+  Int citations "optional"
+  DateTime created_at ""
   }
 
   probe_query_patent {
-    int id PK
-    int probe_query_id FK
-    int patent_id FK
-    float relevance_score
-    timestamp created_at
+  Int id PK ""
+  Int probe_query_id FK "UK composta"
+  Int patent_id FK "UK composta"
+  Float relevance_score "optional"
+  DateTime created_at ""
   }
 
   probe_query_article {
-    int id PK
-    int probe_query_id FK
-    int article_id FK
-    float relevance_score
-    timestamp created_at
+  Int id PK ""
+  Int probe_query_id FK "UK composta"
+  Int article_id FK "UK composta"
+  Float relevance_score "optional"
+  DateTime created_at ""
   }
 
-  research_session ||--o{ session_input : "define"
-  session_input ||--o{ session_input : "refina"
-  research_session ||--o{ session_probe_query : "executa"
-  research_session ||--o{ session_ai_call : "registra"
-  session_probe_query ||--o{ probe_query_patent : "encontra"
-  patent ||--o{ probe_query_patent : "aparece em"
-  session_probe_query ||--o{ probe_query_article : "encontra"
-  article ||--o{ probe_query_article : "aparece em"
+  probe_query_term {
+  Int id PK ""
+  Int probe_query_id FK "UK composta"
+  String term "UK composta"
+  Float score ""
+  Int frequency ""
+  Boolean selected ""
+  DateTime created_at ""
+  }
+
+  session_chart {
+  Int id PK ""
+  Int probe_query_id FK "UK composta"
+  String document_type "patent | article"
+  String chart_type "UK composta; s_curve|yearly_volume|top_depositants|top_institutions|top10_heatmap"
+  String object_key "PNG no MinIO"
+  String content_type ""
+  Int projection_years "optional; só s_curve"
+  JSON fit_quality "optional; só s_curve: r_squared/reliable/warning"
+  JSON summary "optional; resumo numérico do gráfico (texto dos Resultados)"
+  DateTime created_at ""
+  DateTime updated_at ""
+  }
+
+  session_report_section {
+  Int id PK ""
+  Int session_id FK "UK composta"
+  String section_key "UK composta; objetivo|introducao|informacoes_*|tendencias_ciclo_vida|conclusao|finalidade|metodologia|..."
+  Text rag_context "optional; trechos do RAG enviados ao LLM"
+  JSON sources "optional; citações (AUTOR, ano) + entrada ABNT"
+  Text generated_text "optional; já escapado para LaTeX"
+  String status ""
+  DateTime created_at ""
+  DateTime updated_at ""
+  }
+
+  session_report {
+  Int id PK ""
+  Int session_id FK ""
+  String tex_object_key "main.tex no MinIO (+ main.assembled.tex)"
+  String pdf_object_key "optional"
+  String status "tex_ready | complete | pdf_failed"
+  JSON assemble_payload "optional; capa/assinaturas/quadro - reusado no Remontar"
+  DateTime created_at ""
+  DateTime updated_at ""
+  }
+
+  app_settings {
+  String key PK "ex.: rag_relative_min_relevance, languagetool_language"
+  Text value ""
+  String value_type ""
+  String category ""
+  Boolean is_secret ""
+  Float min_value "optional"
+  Float max_value "optional"
+  Float step "optional"
+  String label "optional"
+  Text description "optional"
+  Text default_value "optional"
+  DateTime updated_at ""
+  }
+
+  llm_provider_configs {
+  Int id PK ""
+  String provider_code "UK composta"
+  String model "UK composta"
+  String api_key ""
+  String base_url "UK composta"
+  DateTime created_at ""
+  DateTime updated_at ""
+  }
+
+  llm_call_site_bindings {
+  String call_site PK "theme_candidates|probe_query|final_query|report_writing|report_review"
+  Int config_id FK ""
+  DateTime updated_at ""
+  }
+
+  search_api_selection {
+  String family PK "patent | scholarly"
+  String active_provider_code ""
+  DateTime updated_at ""
+  }
+
+  research_session||--o{session_input:"define"
+  session_input||--o{session_input:"refina"
+  research_session||--o{session_probe_query:"executa"
+  session_probe_query||--o{session_probe_query:"refina"
+  research_session||--o{session_ai_call:"registra"
+  session_probe_query||--o{probe_query_patent:"encontra"
+  patent||--o{probe_query_patent:"aparece em"
+  session_probe_query||--o{probe_query_article:"encontra"
+  article||--o{probe_query_article:"aparece em"
+  session_probe_query||--o{probe_query_term:"extrai"
+  session_probe_query||--o{session_chart:"gera gráfico"
+  research_session||--o{session_report_section:"redige seção"
+  research_session||--o|session_report:"monta relatório"
+  llm_provider_configs||--o{llm_call_site_bindings:"atende"
 `;
 
 const { svg } = await mermaid.render('erd3-svg', diagram);

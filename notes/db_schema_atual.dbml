@@ -1,6 +1,7 @@
 // Diagrama do Banco de Dados — Prospecção Tecnológica (PFC)
-// Grupo 1 (ativo): research_session e tabelas dependentes — db/research_session_models.py
-// Cole este arquivo em https://dbdiagram.io/home (New Diagram > cole no editor DBML)
+// GERADO por scripts/generate_db_schema_docs.py a partir dos modelos SQLAlchemy - não editar à mão.
+// Grupo 1 (sessão, db/research_session_models.py) + Grupo 4 (configuração, db/config_models.py).
+// Cole em https://dbdiagram.io/home (New Diagram > cole no editor DBML).
 
 Table research_session {
   id integer [pk]
@@ -10,6 +11,8 @@ Table research_session {
   completed_at datetime [note: "setado uma vez, quando completed vira true"]
   patent_source varchar
   scholarly_source varchar
+  current_step integer [not null, note: "passo do wizard onde a sessão parou (retomada)"]
+  current_substep integer [note: "subpasso do wizard (retomada)"]
   relevance_threshold float [not null]
   created_at datetime [not null]
   updated_at datetime [not null]
@@ -18,7 +21,7 @@ Table research_session {
 Table session_input {
   id integer [pk]
   session_id integer [not null]
-  parent_id integer [note: "self, optional — refino do input raiz"]
+  parent_id integer [note: "self - refino do input raiz"]
   theme varchar [not null]
   description text
   area_of_study varchar
@@ -33,14 +36,14 @@ Table session_probe_query {
   session_id integer [not null]
   fonte varchar [not null, note: "ops | scopus"]
   tipo varchar [note: "null=probe | specific|balanced|generic"]
-  parent_id integer [note: "self, optional — query final refina a query probe"]
+  parent_id integer [note: "self - query final refina a query probe"]
   query_text text [not null]
   fields json
   year_from integer
   year_to integer
   complexity_score float
   complexity_level varchar
-  result_count integer
+  result_count integer [note: "tamanho da amostra baixada"]
   iterations integer [not null]
   created_at datetime [not null]
 
@@ -147,6 +150,92 @@ Table probe_query_term {
   }
 }
 
+Table session_chart {
+  id integer [pk]
+  probe_query_id integer [not null]
+  document_type varchar [not null, note: "patent | article"]
+  chart_type varchar [not null, note: "s_curve|yearly_volume|top_depositants|top_institutions|top10_heatmap"]
+  object_key varchar [not null, note: "PNG no MinIO"]
+  content_type varchar [not null]
+  projection_years integer [note: "só s_curve"]
+  fit_quality json [note: "só s_curve: r_squared/reliable/warning"]
+  summary json [note: "resumo numérico do gráfico (texto dos Resultados)"]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+
+  indexes {
+    (probe_query_id, chart_type) [unique]
+  }
+}
+
+Table session_report_section {
+  id integer [pk]
+  session_id integer [not null]
+  section_key varchar [not null, note: "objetivo|introducao|informacoes_*|tendencias_ciclo_vida|conclusao|finalidade|metodologia|..."]
+  rag_context text [note: "trechos do RAG enviados ao LLM"]
+  sources json [note: "citações (AUTOR, ano) + entrada ABNT"]
+  generated_text text [note: "já escapado para LaTeX"]
+  status varchar [not null]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+
+  indexes {
+    (session_id, section_key) [unique]
+  }
+}
+
+Table session_report {
+  id integer [pk]
+  session_id integer [unique, not null]
+  tex_object_key varchar [not null, note: "main.tex no MinIO (+ main.assembled.tex)"]
+  pdf_object_key varchar
+  status varchar [not null, note: "tex_ready | complete | pdf_failed"]
+  assemble_payload json [note: "capa/assinaturas/quadro - reusado no Remontar"]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+Table app_settings {
+  key varchar [pk, note: "ex.: rag_relative_min_relevance, languagetool_language"]
+  value text [not null]
+  value_type varchar [not null]
+  category varchar [not null]
+  is_secret boolean [not null]
+  min_value float
+  max_value float
+  step float
+  label varchar
+  description text
+  default_value text
+  updated_at datetime [not null]
+}
+
+Table llm_provider_configs {
+  id integer [pk]
+  provider_code varchar [not null]
+  model varchar [not null]
+  api_key varchar [not null]
+  base_url varchar [not null]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+
+  indexes {
+    (provider_code, base_url, model) [unique]
+  }
+}
+
+Table llm_call_site_bindings {
+  call_site varchar [pk, note: "theme_candidates|probe_query|final_query|report_writing|report_review"]
+  config_id integer [not null]
+  updated_at datetime [not null]
+}
+
+Table search_api_selection {
+  family varchar [pk, note: "patent | scholarly"]
+  active_provider_code varchar [not null]
+  updated_at datetime [not null]
+}
+
 Ref: session_input.session_id > research_session.id
 Ref: session_input.parent_id > session_input.id
 Ref: session_probe_query.session_id > research_session.id
@@ -157,3 +246,7 @@ Ref: probe_query_patent.patent_id > patent.id
 Ref: probe_query_article.probe_query_id > session_probe_query.id
 Ref: probe_query_article.article_id > article.id
 Ref: probe_query_term.probe_query_id > session_probe_query.id
+Ref: session_chart.probe_query_id > session_probe_query.id
+Ref: session_report_section.session_id > research_session.id
+Ref: session_report.session_id > research_session.id
+Ref: llm_call_site_bindings.config_id > llm_provider_configs.id

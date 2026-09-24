@@ -5,6 +5,13 @@
       "input_tokens": 376557,
       "output_tokens": 0,
       "files": 266
+    },
+    {
+      "date": "2026-09-24T02:44:49.471639+00:00",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "subagent_tokens": 474411,
+      "files": 241
     }
   ],
   "total_input_tokens": 376557,

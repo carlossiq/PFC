@@ -161,6 +161,10 @@ class Settings(BaseSettings):
     chroma_host: str = "localhost"
     chroma_port: int = 8001
     rag_top_k_per_section: int = 5
+    # Fração do score do trecho mais relevante abaixo da qual um trecho do RAG
+    # é descartado (corta documentos periféricos ao tema - ver
+    # ReportWriterService.build_rag_context).
+    rag_relative_min_relevance: float = 0.75
 
     # Compilação de PDF do relatório - serviço HTTP dedicado (texlive), só
     # chamado sob demanda (POST /report/{session_id}/compile-pdf), nunca
