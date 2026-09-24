@@ -663,3 +663,103 @@ export function openReportPdf(pdfBase64: string): void {
   window.open(objectUrl, '_blank')
 }
 
+
+// ---------------------------------------------------------------------
+// Revisão do .tex (botão "Revisão" do editor) - espelha
+// POST /report/{session_id}/review (ver app/core/services/report_review.py).
+// Nada é aplicado no backend: o editor aplica só o que o usuário aprovar.
+// ---------------------------------------------------------------------
+
+export interface ReviewLatexIssue {
+  line: number
+  message: string
+  severity: 'error' | 'warning'
+  offset: number | null
+  length: number
+  // Correção de um clique (substitui [offset, offset+length)) - null = só aviso.
+  replacement: string | null
+}
+
+export interface ReviewSuggestion {
+  offset: number
+  length: number
+  original: string
+  replacements: string[]
+  message: string
+  category: string
+  source: 'languagetool' | 'ia'
+  ruleId: string
+  section: string
+}
+
+export interface ReviewResult {
+  latexIssues: ReviewLatexIssue[]
+  suggestions: ReviewSuggestion[]
+  scopeSections: string[]
+  warnings: string[]
+}
+
+export async function reviewReportTex(
+  sessionId: number,
+  texContent: string,
+  options: { compileLog?: string | null; includeAi?: boolean } = {}
+): Promise<ReviewResult> {
+  const { data } = await apiClient.post(`/report/${sessionId}/review`, {
+    tex_content: texContent,
+    compile_log: options.compileLog ?? null,
+    include_ai: options.includeAi ?? false,
+  })
+  if (!data.success) throw new Error(data.message || 'Falha ao revisar o documento.')
+  const raw = data.data
+  return {
+    latexIssues: raw.latex_issues ?? [],
+    suggestions: (raw.suggestions ?? []).map(
+      (s: {
+        offset: number
+        length: number
+        original: string
+        replacements: string[]
+        message: string
+        category: string
+        source: 'languagetool' | 'ia'
+        rule_id: string
+        section: string
+      }) => ({
+        offset: s.offset,
+        length: s.length,
+        original: s.original,
+        replacements: s.replacements,
+        message: s.message,
+        category: s.category,
+        source: s.source,
+        ruleId: s.rule_id,
+        section: s.section,
+      })
+    ),
+    scopeSections: [...new Set<string>((raw.scope ?? []).map((r: { section: string }) => r.section))],
+    warnings: raw.warnings ?? [],
+  }
+}
+
+// Baixa um .zip com o .tex ATUAL do editor (inclusive edições ainda não
+// compiladas) e as imagens que ele usa - pra compilar/editar fora do
+// sistema. O nome vem do backend (Content-Disposition), ex.:
+// "REPTEC_001_2026.zip".
+export async function downloadReportBundle(sessionId: number, texContent: string): Promise<void> {
+  const response = await apiClient.post(
+    `/report/${sessionId}/bundle`,
+    { tex_content: texContent },
+    { responseType: 'blob' }
+  )
+  const disposition: string = response.headers['content-disposition'] ?? ''
+  const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? `relatorio_sessao_${sessionId}.zip`
+
+  const objectUrl = URL.createObjectURL(response.data as Blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(objectUrl)
+}

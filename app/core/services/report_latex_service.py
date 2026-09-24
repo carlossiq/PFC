@@ -39,6 +39,10 @@ class ReportLatexService:
     def _report_prefix(session_id: int) -> str:
         return f"sessions/{session_id}/report"
 
+    @classmethod
+    def assembled_key(cls, session_id: int) -> str:
+        return f"{cls._report_prefix(session_id)}/main.assembled.tex"
+
     @staticmethod
     def _basename(object_key: str) -> str:
         return object_key.rsplit("/", 1)[-1]
@@ -67,6 +71,10 @@ class ReportLatexService:
         prefix = self._report_prefix(session_id)
         tex_object_key = f"{prefix}/main.tex"
         await self._storage.upload(tex_object_key, tex_content.encode("utf-8"), "text/x-tex")
+        # Cópia de referência da versão MONTADA (main.tex é sobrescrito pelas
+        # edições do editor a cada compilação) - a revisão de texto compara
+        # com ela pra saber o que o usuário editou (ver report_review.py).
+        await self._storage.upload(self.assembled_key(session_id), tex_content.encode("utf-8"), "text/x-tex")
 
         image_object_keys: list[str] = []
         for source_key, data in image_bytes.items():

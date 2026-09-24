@@ -22,10 +22,11 @@ import base64
 import io
 import re
 import unicodedata
+import zipfile
 from datetime import date
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +35,7 @@ from app.adapters.driving.http.report_router import _resolve_final_probe_query_i
 from app.core.services.cpc_titles import describe_codes
 from app.core.services.report_citations import references_for_text
 from app.core.services.report_lifecycle import build_lifecycle, summary_text
+from app.core.services.report_review import referenced_image_files
 from app.core.services.report_writer_service import (
     RAGUnavailableError,
     ReportWriterService,
@@ -50,6 +52,7 @@ from app.core.services.report_form_validation import (
     signer_error,
     text_field_error,
 )
+from app.core.services.report_latex_service import ReportLatexService
 from app.core.services.report_static_figures import REPORT_STATIC_FIGURES
 from config.prompts.report_static_sections import (
     DEFAULT_BIBLIOGRAPHY,
@@ -84,6 +87,11 @@ from schemas.report_document import (
     ReportDocumentResponse,
     ReportPdfResponse,
     ReportSectionStatus,
+    ReviewLatexIssue,
+    ReviewRequest,
+    ReviewResponse,
+    ReviewScopeItem,
+    ReviewSuggestion,
     SectionGenerateRequest,
     SectionGenerateResponse,
     SectionRagResponse,
@@ -114,6 +122,10 @@ def _latex_svc(request: Request):
 
 def _storage(request: Request):
     return request.app.state.container["services"]["storage"]
+
+
+def _review_svc(request: Request):
+    return request.app.state.container["services"]["report_review"]
 
 
 # fonte (SessionProbeQuery.fonte) -> nome de exibição da base de dados, pra
@@ -838,43 +850,15 @@ async def reassemble_report_tex(
     return SuccessResponse(data=await _assemble_document(session, session_id, payload, request))
 
 
-@router.post("/{session_id}/compile-pdf", response_model=SuccessResponse[CompilePdfResponse])
-async def compile_report_pdf(
-    session_id: int,
-    request: Request,
-    payload: Optional[CompilePdfRequest] = None,
-    session: AsyncSession = Depends(get_db_session),
-) -> SuccessResponse[CompilePdfResponse]:
-    """Compila o .tex já montado (/assemble) em PDF - só roda quando o
-    usuário decide (nunca automaticamente). Falha de compilação não apaga
-    o .tex já persistido.
-
-    `payload.tex_content`, quando vem preenchido, é a edição livre feita na
-    tela do documento (ver ReportDocumentEditor.tsx) - como essa edição só
-    existe no front até este ponto (nenhuma outra rota a persiste), ela
-    sobrescreve o `.tex` no storage ANTES de compilar, senão o backend
-    compilaria a última versão MONTADA (/assemble), ignorando o que o
-    usuário escreveu depois."""
-    await _get_session_or_404(session, session_id)
-
-    report_result = await session.execute(select(SessionReport).where(SessionReport.session_id == session_id))
-    report_row = report_result.scalar_one_or_none()
-    if report_row is None:
-        raise HTTPException(
-            status_code=422, detail="Relatório ainda não montado - chame POST .../assemble primeiro."
-        )
-
-    if payload is not None and payload.tex_content is not None:
-        await _storage(request).upload(
-            report_row.tex_object_key, payload.tex_content.encode("utf-8"), "text/x-tex"
-        )
-
+async def _collect_image_keys(session: AsyncSession, session_id: int, storage) -> list[str]:
+    """Chaves no MinIO de todas as imagens que o .tex desta sessão pode
+    referenciar - gráficos (recorte feito no /assemble), capa, figuras fixas
+    da Metodologia e anexos. Usada pela compilação e pelo download do .zip."""
     charts_result = await session.execute(
         select(SessionChart)
         .join(SessionProbeQuery, SessionProbeQuery.id == SessionChart.probe_query_id)
         .where(SessionProbeQuery.session_id == session_id, SessionProbeQuery.tipo.isnot(None))
     )
-    storage = _storage(request)
     image_object_keys: list[str] = []
     for chart in charts_result.scalars().all():
         if not _is_report_chart(chart):
@@ -918,6 +902,42 @@ async def compile_report_pdf(
         except Exception as exc:
             logger.warning("report_static_figure_missing_at_compile", object_key=object_key, error=str(exc))
     image_object_keys.extend(await _list_attachment_keys(storage, session_id))
+    return image_object_keys
+
+
+@router.post("/{session_id}/compile-pdf", response_model=SuccessResponse[CompilePdfResponse])
+async def compile_report_pdf(
+    session_id: int,
+    request: Request,
+    payload: Optional[CompilePdfRequest] = None,
+    session: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[CompilePdfResponse]:
+    """Compila o .tex já montado (/assemble) em PDF - só roda quando o
+    usuário decide (nunca automaticamente). Falha de compilação não apaga
+    o .tex já persistido.
+
+    `payload.tex_content`, quando vem preenchido, é a edição livre feita na
+    tela do documento (ver ReportDocumentEditor.tsx) - como essa edição só
+    existe no front até este ponto (nenhuma outra rota a persiste), ela
+    sobrescreve o `.tex` no storage ANTES de compilar, senão o backend
+    compilaria a última versão MONTADA (/assemble), ignorando o que o
+    usuário escreveu depois."""
+    await _get_session_or_404(session, session_id)
+
+    report_result = await session.execute(select(SessionReport).where(SessionReport.session_id == session_id))
+    report_row = report_result.scalar_one_or_none()
+    if report_row is None:
+        raise HTTPException(
+            status_code=422, detail="Relatório ainda não montado - chame POST .../assemble primeiro."
+        )
+
+    if payload is not None and payload.tex_content is not None:
+        await _storage(request).upload(
+            report_row.tex_object_key, payload.tex_content.encode("utf-8"), "text/x-tex"
+        )
+
+    storage = _storage(request)
+    image_object_keys = await _collect_image_keys(session, session_id, storage)
 
     latex_svc = _latex_svc(request)
     result = await latex_svc.compile_pdf(session_id, report_row.tex_object_key, image_object_keys)
@@ -1129,3 +1149,111 @@ async def delete_report_attachment(
     await storage.delete(object_key)
     logger.info("report_attachment_deleted", session_id=session_id, filename=filename)
     return SuccessResponse(data={"filename": filename})
+
+
+@router.post("/{session_id}/review", response_model=SuccessResponse[ReviewResponse])
+async def review_report_tex(
+    session_id: int,
+    payload: ReviewRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[ReviewResponse]:
+    """Revisão do .tex do editor: problemas de LaTeX (documento todo) e
+    sugestões de ortografia/acentuação/concordância (LanguageTool e, se
+    `include_ai`, IA) só nas seções geradas por IA e nas linhas editadas -
+    ver report_review.py. Nunca altera o .tex: o front aplica o que o
+    usuário aprovar."""
+    await _get_session_or_404(session, session_id)
+    storage = _storage(request)
+
+    available_images = {chart.object_key.rsplit("/", 1)[-1] for chart in await _report_charts(session, session_id)}
+    available_images |= {key.rsplit("/", 1)[-1] for key in await _list_attachment_keys(storage, session_id)}
+    available_images |= set(REPORT_STATIC_FIGURES) | {REPORT_COVER_IMAGE_FILENAME}
+
+    try:
+        baseline: Optional[str] = (await storage.download(ReportLatexService.assembled_key(session_id))).decode("utf-8")
+    except Exception:
+        baseline = None
+
+    result = await _review_svc(request).review(
+        payload.tex_content,
+        baseline,
+        available_images,
+        compile_log=payload.compile_log,
+        include_ai=payload.include_ai,
+    )
+    return SuccessResponse(
+        data=ReviewResponse(
+            latex_issues=[ReviewLatexIssue(**issue.to_dict()) for issue in result.latex_issues],
+            suggestions=[ReviewSuggestion(**suggestion.to_dict()) for suggestion in result.suggestions],
+            scope=[ReviewScopeItem(start=r.start, end=r.end, section=r.section, reason=r.reason) for r in result.scope],
+            warnings=result.warnings,
+        )
+    )
+
+
+def _bundle_filename(report_row: Optional[SessionReport], session_id: int) -> str:
+    """"REPTEC_001_2026.zip" quando a capa já foi montada (número/ano em
+    assemble_payload); senão "relatorio_sessao_<id>.zip"."""
+    assembled = (report_row.assemble_payload or {}) if report_row else {}
+    numero = re.sub(r"[^0-9A-Za-z-]+", "", str(assembled.get("numero") or ""))
+    ano = re.sub(r"[^0-9]+", "", str(assembled.get("ano") or ""))
+    return f"REPTEC_{numero}_{ano}.zip" if numero and ano else f"relatorio_sessao_{session_id}.zip"
+
+
+@router.post("/{session_id}/bundle")
+async def download_report_bundle(
+    session_id: int,
+    request: Request,
+    payload: Optional[CompilePdfRequest] = None,
+    session: AsyncSession = Depends(get_db_session),
+) -> Response:
+    """.zip com o .tex e as imagens que ele usa - pra compilar/editar fora
+    do sistema (Overleaf, TeX local). `payload.tex_content` é o texto ATUAL
+    do editor (com edições ainda não compiladas); sem ele, usa o último .tex
+    salvo. Só entram as imagens referenciadas no documento (ver
+    report_review.referenced_image_files)."""
+    await _get_session_or_404(session, session_id)
+    report_result = await session.execute(select(SessionReport).where(SessionReport.session_id == session_id))
+    report_row = report_result.scalar_one_or_none()
+    storage = _storage(request)
+
+    if payload is not None and payload.tex_content is not None:
+        tex_content = payload.tex_content
+    elif report_row is not None:
+        tex_content = (await storage.download(report_row.tex_object_key)).decode("utf-8")
+    else:
+        raise HTTPException(status_code=422, detail="Relatório ainda não montado - chame POST .../assemble primeiro.")
+
+    wanted = referenced_image_files(tex_content)
+    keys_by_name = {key.rsplit("/", 1)[-1]: key for key in await _collect_image_keys(session, session_id, storage)}
+
+    buffer = io.BytesIO()
+    missing: list[str] = []
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("main.tex", tex_content.encode("utf-8"))
+        for filename in sorted(wanted):
+            key = keys_by_name.get(filename)
+            if key is None:
+                missing.append(filename)
+                continue
+            try:
+                archive.writestr(filename, await storage.download(key))
+            except Exception as exc:
+                logger.warning("report_bundle_image_download_failed", object_key=key, error=str(exc))
+                missing.append(filename)
+        if missing:
+            archive.writestr(
+                "LEIA-ME.txt",
+                "Imagens referenciadas no main.tex que não foram encontradas no sistema:\n"
+                + "\n".join(f"- {name}" for name in missing)
+                + "\n",
+            )
+
+    logger.info("report_bundle_built", session_id=session_id, images=len(wanted) - len(missing), missing=len(missing))
+    filename = _bundle_filename(report_row, session_id)
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

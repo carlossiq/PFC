@@ -190,6 +190,7 @@ async def build_container(settings: Settings) -> dict[str, Any]:
     from app.core.services.report_service import ReportService
     from app.core.services.report_writer_service import ReportWriterService
     from app.core.services.report_latex_service import ReportLatexService
+    from app.core.services.report_review_service import ReportReviewService
     from app.core.services.statistical_inference_service import StatisticalInferenceService
 
     chat_service = ChatService(
@@ -210,6 +211,12 @@ async def build_container(settings: Settings) -> dict[str, Any]:
         latex_compiler_url=settings.latex_compiler_url,
     )
     _services_to_close.append(report_latex_service)
+    report_review_service = ReportReviewService(
+        languagetool_url=settings.languagetool_url,
+        language=settings.languagetool_language,
+        llm_resolver=llm_resolver,
+    )
+    _services_to_close.append(report_review_service)
     inference_service = StatisticalInferenceService(
         chat_service=chat_service,
         embedding=embedding,
@@ -227,6 +234,7 @@ async def build_container(settings: Settings) -> dict[str, Any]:
             "report": report_service,
             "report_writer": report_writer_service,
             "report_latex": report_latex_service,
+            "report_review": report_review_service,
             "inference": inference_service,
             "storage": storage_service,
         },

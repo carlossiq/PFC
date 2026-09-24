@@ -215,3 +215,51 @@ class ReportChartsResponse(BaseModel):
 
 class ReportPdfResponse(BaseModel):
     pdf_base64: str
+
+
+class ReviewRequest(BaseModel):
+    """Corpo de POST /report/{session_id}/review - o .tex ATUAL do editor
+    (pode ter edições ainda não compiladas)."""
+
+    tex_content: str
+    # Log da última compilação que falhou (o front já tem em mãos) - vira
+    # "problemas de LaTeX" com a linha correspondente.
+    compile_log: Optional[str] = None
+    # Segunda opinião por IA (ponto de uso "report_review") - mais lenta,
+    # só quando o usuário pede.
+    include_ai: bool = False
+
+
+class ReviewLatexIssue(BaseModel):
+    line: int
+    message: str
+    severity: str
+    offset: Optional[int] = None
+    length: int = 0
+    replacement: Optional[str] = None
+
+
+class ReviewSuggestion(BaseModel):
+    offset: int
+    length: int
+    original: str
+    replacements: list[str]
+    message: str
+    category: str
+    source: str
+    rule_id: str = ""
+    section: str = ""
+
+
+class ReviewScopeItem(BaseModel):
+    start: int
+    end: int
+    section: str
+    reason: str
+
+
+class ReviewResponse(BaseModel):
+    latex_issues: list[ReviewLatexIssue] = Field(default_factory=list)
+    suggestions: list[ReviewSuggestion] = Field(default_factory=list)
+    scope: list[ReviewScopeItem] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)

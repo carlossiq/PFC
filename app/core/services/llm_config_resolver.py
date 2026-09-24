@@ -22,7 +22,10 @@ from core.logging import get_logger
 
 logger = get_logger(__name__)
 
-CALL_SITES = ("theme_candidates", "probe_query", "final_query", "report_writing")
+# report_review: segunda opinião de língua (concordância/acentuação) na
+# revisão do .tex - ponto próprio pra poder usar um modelo melhor em
+# português que o da redação (ver app/core/services/report_review_service.py).
+CALL_SITES = ("theme_candidates", "probe_query", "final_query", "report_writing", "report_review")
 
 
 class LLMConfigResolver:

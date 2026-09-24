@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, Download, ExternalLink, FilePlus2, Plus, Trash2, X } from 'lucide-react'
+import { ChevronLeft, Download, ExternalLink, FilePlus2, Loader2, Plus, Trash2, X } from 'lucide-react'
 import { Button } from '../Button'
 import { Tooltip } from '../Tooltip'
 import { LoadingScreen } from '../LoadingScreen'
@@ -13,6 +13,7 @@ import { TABS } from '../../constants/tabs'
 import {
   compileReportPdf,
   deleteReportAttachment,
+  downloadReportBundle,
   downloadReportImage,
   getReportCharts,
   getReportDocument,
@@ -20,9 +21,12 @@ import {
   openReportImage,
   openReportPdf,
   reassembleReport,
+  reviewReportTex,
   uploadReportAttachment,
   type ReportChart,
 } from '../../services/report'
+import { applyEdits, shiftOffset, type TextEdit } from '../../utils/reviewApply'
+import { ReviewPanel, type ReviewIssueItem, type ReviewSuggestionItem } from './ReviewPanel'
 
 function errorMessage(err: unknown, fallback: string): string {
   const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
@@ -140,8 +144,23 @@ export function ReportDocumentEditor({
 
   const [isCompiling, setIsCompiling] = useState(false)
   const [compileError, setCompileError] = useState<string | null>(null)
+  // Revisão do documento (ver ReviewPanel.tsx / report_review.py).
+  const [isReviewOpen, setIsReviewOpen] = useState(false)
+  const [reviewing, setReviewing] = useState<'basic' | 'ai' | null>(null)
+  const [reviewError, setReviewError] = useState<string | null>(null)
+  const [reviewIssues, setReviewIssues] = useState<ReviewIssueItem[]>([])
+  const [reviewSuggestions, setReviewSuggestions] = useState<ReviewSuggestionItem[]>([])
+  const [reviewScope, setReviewScope] = useState<string[]>([])
+  const [reviewWarnings, setReviewWarnings] = useState<string[]>([])
+  const [reviewStaleIds, setReviewStaleIds] = useState<Set<string>>(() => new Set())
+  const [hasAiReview, setHasAiReview] = useState(false)
+  // Muda a cada revisão concluída - recria o painel (key), zerando as
+  // seleções feitas sobre as sugestões da rodada anterior.
+  const [reviewRun, setReviewRun] = useState(0)
   const [compileSuccessMessage, setCompileSuccessMessage] = useState<string | null>(null)
   const [isLoadingPdf, setIsLoadingPdf] = useState(false)
+  const [isDownloadingBundle, setIsDownloadingBundle] = useState(false)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
   const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -238,6 +257,74 @@ export function ReportDocumentEditor({
     const end = textarea.selectionEnd
     setTexText((t) => t.slice(0, start) + snippet + t.slice(end))
     placeCaretKeepingScroll(textarea, start + snippet.length, scrollTop)
+  }
+
+  // --- Revisão (LaTeX + ortografia/acentuação/concordância) -------------
+
+  async function runReview(includeAi: boolean) {
+    const snapshot = texText
+    setReviewing(includeAi ? 'ai' : 'basic')
+    setIsReviewOpen(true)
+    setReviewError(null)
+    try {
+      const result = await reviewReportTex(sessionId, snapshot, { compileLog: compileError, includeAi })
+      setReviewIssues(
+        result.latexIssues.map((issue, i) => ({
+          ...issue,
+          id: `l-${i}`,
+          original: issue.offset === null ? '' : snapshot.slice(issue.offset, issue.offset + issue.length),
+        }))
+      )
+      setReviewSuggestions(result.suggestions.map((s, i) => ({ ...s, id: `s-${i}` })))
+      setReviewScope(result.scopeSections)
+      setReviewWarnings(result.warnings)
+      setReviewStaleIds(new Set())
+      setHasAiReview(includeAi)
+      setReviewRun((n) => n + 1)
+    } catch (err) {
+      console.error('Falha na revisão do documento:', err)
+      setReviewError(errorMessage(err, 'Não foi possível revisar o documento.'))
+    } finally {
+      setReviewing(null)
+    }
+  }
+
+  // Aplica as correções aprovadas SEM mexer na rolagem, remove as aplicadas
+  // do painel e reposiciona as que sobraram (as posições mudam quando uma
+  // correção antes delas troca o tamanho do texto). Correção cujo trecho
+  // mudou de lugar desde a revisão não é aplicada - fica "desatualizada".
+  function applyReviewEdits(edits: TextEdit[]) {
+    const textarea = textareaRef.current
+    const scrollTop = textarea?.scrollTop ?? 0
+    const result = applyEdits(texText, edits)
+    const applied = new Set(result.applied)
+    setTexText(result.text)
+    setReviewSuggestions((list) =>
+      list.filter((s) => !applied.has(s.id)).map((s) => ({ ...s, offset: shiftOffset(s.offset, result.shifts) }))
+    )
+    setReviewIssues((list) =>
+      list
+        .filter((issue) => !applied.has(issue.id))
+        .map((issue) => (issue.offset === null ? issue : { ...issue, offset: shiftOffset(issue.offset, result.shifts) }))
+    )
+    if (result.stale.length > 0) setReviewStaleIds((current) => new Set([...current, ...result.stale]))
+    if (textarea) {
+      requestAnimationFrame(() => {
+        textarea.scrollTop = scrollTop
+      })
+    }
+  }
+
+  // Seleciona o trecho no .tex e rola até ele.
+  function goToOffset(offset: number, length: number) {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    textarea.focus()
+    textarea.setSelectionRange(offset, offset + length)
+    // Rola pra que o trecho fique mais ou menos no meio da área visível.
+    const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 18
+    const line = texText.slice(0, offset).split('\n').length - 1
+    textarea.scrollTop = Math.max(0, line * lineHeight - textarea.clientHeight / 2)
   }
 
   async function handleUploadAttachment(e: React.ChangeEvent<HTMLInputElement>) {
@@ -367,6 +454,19 @@ export function ReportDocumentEditor({
     }
   }
 
+  async function handleDownloadBundle() {
+    setIsDownloadingBundle(true)
+    setDownloadError(null)
+    try {
+      await downloadReportBundle(sessionId, texText)
+    } catch (err) {
+      console.error('Falha ao baixar o .zip do relatório:', err)
+      setDownloadError(errorMessage(err, 'Não foi possível baixar o .zip do relatório.'))
+    } finally {
+      setIsDownloadingBundle(false)
+    }
+  }
+
   async function handleViewPdf() {
     setIsLoadingPdf(true)
     try {
@@ -425,6 +525,17 @@ export function ReportDocumentEditor({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-3 mb-3">
         <h2 className="text-lg font-bold text-gray-900">Documento do Relatório</h2>
         <div className="flex items-center gap-2">
+          <Tooltip label="Baixar .zip com o .tex atual e as imagens usadas no relatório" position="bottom">
+            <button
+              type="button"
+              onClick={handleDownloadBundle}
+              disabled={isDownloadingBundle || isLoadingDoc}
+              aria-label="Baixar .zip com o .tex e as imagens"
+              className="h-8 w-8 flex items-center justify-center rounded-md border border-gray-300 text-gray-600 hover:border-[#0f9448] hover:text-[#0f9448] disabled:opacity-50 disabled:hover:border-gray-300 disabled:hover:text-gray-600"
+            >
+              {isDownloadingBundle ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+            </button>
+          </Tooltip>
           <Button
             size="sm"
             variant={canCompile && !isCompiling ? 'primary' : 'secondary'}
@@ -443,10 +554,19 @@ export function ReportDocumentEditor({
           >
             {isLoadingPdf ? 'Abrindo...' : 'Visualizar PDF'}
           </Button>
-          <Tooltip label="Revisão automática de erros de compilação por IA - ainda não implementada." position="bottom">
+          <Tooltip
+            label="Verifica problemas de LaTeX no documento e sugere correções de ortografia, acentuação e concordância nas seções geradas por IA e nos trechos que você editou. Nada é alterado sem sua aprovação."
+            position="bottom"
+          >
             <span>
-              <Button size="sm" variant="secondary" disabled type="button">
-                Revisão de erros por IA
+              <Button
+                size="sm"
+                variant={isReviewOpen ? 'primary' : 'secondary'}
+                onClick={() => runReview(false)}
+                disabled={reviewing !== null || isLoadingDoc}
+                type="button"
+              >
+                {reviewing ? 'Revisando...' : 'Revisão'}
               </Button>
             </span>
           </Tooltip>
@@ -497,6 +617,20 @@ export function ReportDocumentEditor({
         onCancel={() => setShowReassembleConfirm(false)}
         isDangerous
       />
+
+      {downloadError && (
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2">
+          <p className="text-sm text-red-700">{downloadError}</p>
+          <button
+            type="button"
+            onClick={() => setDownloadError(null)}
+            className="shrink-0 text-red-700 hover:text-red-900"
+            aria-label="Fechar aviso"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {compileSuccessMessage && (
         <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-[#0f9448]/30 bg-[#0f9448]/10 px-3 py-2">
@@ -609,6 +743,25 @@ export function ReportDocumentEditor({
             </div>
           )}
         </div>
+
+        {isReviewOpen && (
+          <ReviewPanel
+            key={reviewRun}
+            issues={reviewIssues}
+            suggestions={reviewSuggestions}
+            scopeSections={reviewScope}
+            warnings={reviewError ? [reviewError, ...reviewWarnings] : reviewWarnings}
+            staleIds={reviewStaleIds}
+            hasAiResults={hasAiReview}
+            isReviewing={reviewing === 'basic'}
+            isReviewingAi={reviewing === 'ai'}
+            onClose={() => setIsReviewOpen(false)}
+            onRerun={() => runReview(false)}
+            onRunAi={() => runReview(true)}
+            onGoTo={goToOffset}
+            onApply={applyReviewEdits}
+          />
+        )}
       </div>
     </div>
   )

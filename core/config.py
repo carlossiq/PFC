@@ -166,6 +166,9 @@ class Settings(BaseSettings):
     # chamado sob demanda (POST /report/{session_id}/compile-pdf), nunca
     # automaticamente na montagem do .tex.
     latex_compiler_url: str = "http://localhost:8090"
+    # Revisão de língua do .tex (ver app/core/services/report_review.py).
+    languagetool_url: str = "http://localhost:8010"
+    languagetool_language: str = "pt-BR"
 
     # Fuzzy Matching de entidades (busca final OPS/Scopus)
     # Agrupa entidades que provavelmente são a mesma (variações de

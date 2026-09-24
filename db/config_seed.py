@@ -202,7 +202,29 @@ async def seed_llm_configs_and_bindings(session: AsyncSession) -> None:
     logger.info("llm_configs_and_bindings_seeded", providers=list(configs.keys()))
 
 
+async def seed_missing_call_site_bindings(session: AsyncSession) -> None:
+    """Pontos de uso de IA criados DEPOIS do seed inicial (ex.:
+    report_review) ganham um binding apontando pro mesmo modelo da redação
+    do relatório - seed_llm_configs_and_bindings só roda com o banco vazio.
+    Idempotente: nunca altera um binding já existente."""
+    from app.core.services.llm_config_resolver import CALL_SITES
+
+    existing = {row.call_site: row.config_id for row in (await session.execute(select(LLMCallSiteBinding))).scalars()}
+    fallback = existing.get("report_writing")
+    if fallback is None:
+        fallback = await session.scalar(select(LLMProviderConfig.id).order_by(LLMProviderConfig.id).limit(1))
+    if fallback is None:
+        return
+    missing = [call_site for call_site in CALL_SITES if call_site not in existing]
+    for call_site in missing:
+        session.add(LLMCallSiteBinding(call_site=call_site, config_id=fallback))
+    if missing:
+        await session.commit()
+        logger.info("llm_call_site_bindings_added", call_sites=missing, config_id=fallback)
+
+
 async def seed_all_config(session: AsyncSession) -> None:
     await seed_app_settings(session)
     await seed_search_api_selection(session)
     await seed_llm_configs_and_bindings(session)
+    await seed_missing_call_site_bindings(session)

@@ -116,7 +116,8 @@ class LLMCallSiteBinding(Base):
     Qual LLMProviderConfig cada chamada de IA do programa usa hoje.
     `call_site` é um dos 4 pontos fixos do código (ver
     app/core/services/llm_config_resolver.py::CALL_SITES):
-    "theme_candidates", "probe_query", "final_query", "report_writing".
+    "theme_candidates", "probe_query", "final_query", "report_writing",
+    "report_review".
     """
 
     __tablename__ = "llm_call_site_bindings"

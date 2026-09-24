@@ -122,6 +122,23 @@ services:
     networks:
       - pfc_network
 
+  # Revisão de língua do .tex (ortografia, acentuação, concordância) -
+  # chamado só sob demanda pelo botão "Revisão" do editor do relatório
+  # (POST /report/{session_id}/review, ver app/core/services/report_review.py).
+  # Imagem ~450 MB; depois de baixada funciona sem internet (intranet).
+  # Java_Xmx limita a memória da JVM (~1 GB é suficiente pra pt-BR sem
+  # n-gramas).
+  languagetool:
+    image: erikvl87/languagetool:6.8
+    container_name: pfc_languagetool
+    environment:
+      - Java_Xms=256m
+      - Java_Xmx=1g
+    ports:
+      - "8010:8010"
+    networks:
+      - pfc_network
+
 volumes:
   postgres_data:
   minio_data:

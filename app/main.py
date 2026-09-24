@@ -117,6 +117,10 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # Front e API em origens diferentes: sem isso o navegador esconde o
+        # Content-Disposition do JS e o download do .zip do relatório perde
+        # o nome ("REPTEC_001_2026.zip", ver /report/{id}/bundle).
+        expose_headers=["Content-Disposition"],
     )
 
     # Request logging middleware (deve ser adicionado por último para ser primeiro na cadeia)

@@ -105,6 +105,7 @@ export const CALL_SITE_LABELS: Record<string, string> = {
   probe_query: 'Geração de query (probe)',
   final_query: 'Geração de query final',
   report_writing: 'Redação do relatório',
+  report_review: 'Revisão de texto do relatório',
 }
 
 export interface CallSitesState {
