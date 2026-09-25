@@ -792,7 +792,7 @@ Persistência: `session_report_section` (uma linha por seção, upsert por `(ses
 
 O LLM usado nessa etapa é operado pelo Exército numa intranet, gratuito mas remoto (`OLLAMA_BASE_URL`/`OLLAMA_API_KEY` apontando pra um proxy compatível com a API de chat completions da OpenAI, ex. LiteLLM, em `/v1/chat/completions`) - só texto (prompt + contexto já recuperado pelo RAG) sai pra esse endpoint, nunca vetores. `app/adapters/driven/llm/openai_compatible_adapter.py` implementa um novo port, `TextGenerationPort` (`app/core/ports/outbound/text_generation_port.py` - deliberadamente menor que `LLMPort`, que é voltado a JSON estruturado das etapas de refino de tema/query, §6-§8), usando só `httpx`.
 
-Como o Ollama local também expõe esse mesmo formato OpenAI-compatible em `/v1`, **o mesmo adapter serve os dois ambientes** - testar o pipeline inteiro localmente antes de apontar pro endpoint real da intranet é só trocar `OLLAMA_BASE_URL`/`OLLAMA_API_KEY` no `.env`, sem mudar código. Container `ollama` (imagem oficial, `docker-compose.yml`) cobre esse teste local. `services/ollama_service.py` (API nativa do Ollama, `/api/generate`) não foi reaproveitado propositalmente, por esse motivo.
+Como o Ollama local também expõe esse mesmo formato OpenAI-compatible em `/v1`, **o mesmo adapter serve os dois ambientes** - e isso já foi exercitado de fato: o pipeline foi rodado tanto contra o Ollama local quanto contra o endpoint da intranet, trocando só `base_url`/`api_key` (pela tela de Configurações ou pelo `.env`), sem mudar código. Container `ollama` (imagem oficial, `docker-compose.yml`) cobre esse teste local. `services/ollama_service.py` (API nativa do Ollama, `/api/generate`) não foi reaproveitado propositalmente, por esse motivo.
 
 ### 13.4 RAG: ChromaDB como container, embeddings reaproveitados do pipeline existente
 
@@ -803,7 +803,6 @@ Os embeddings usados pra indexar/consultar o RAG **reaproveitam o `EmbeddingPort
 Corpus indexado por sessão: título + resumo (`abstract`) dos documentos (`Patent`/`Article`, §9.1) da busca final dessa sessão, isolados por `session_id` no metadata de cada chunk (coleção única `report_rag`, não uma coleção por sessão). `Patent.abstract`/`Article.abstract` já existem como colunas e já são preenchidos no fluxo real (`session_probe_documents.py`) - mas, como o payload de artigos da busca final normalmente chega vazio do frontend (`buildProbeQueryPayload` - ver comentário em `report_router.py::generate_article_s_curve`), o corpus de RAG hoje é majoritariamente de **patentes**; o código de indexação trata artigos ausentes normalmente, sem erro.
 
 ### 13.5 O que ainda não existe
-- Verificação em produção contra o endpoint real da intranet. Até aqui o pipeline foi testado contra o Ollama local (container, `gemma3:4b`) e por testes unitários com fakes/mocks de `TextGenerationPort`/`VectorStorePort`.
 - **Limitação conhecida:** modelos locais pequenos, como o `gemma3:4b`, erram concordância verbal com sujeito distante. A revisão (§13.7) detecta esses erros, e o ponto de uso `report_review` pode apontar para um modelo melhor em português do que o da redação.
 - Sessões com relatório antigo precisam **regenerar as seções e remontar o `.tex`** para receber as melhorias de §13.6. O `.tex` persistido não é reescrito automaticamente.
 

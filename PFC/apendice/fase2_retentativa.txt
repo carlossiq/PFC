@@ -1,0 +1,16 @@
+[CRITICAL RETRY #2] Previous query was TOO COMPLEX (score: <@71.4@>/100, max: 60). 
+Complexity breakdown:
+- OR operators: <@9@>
+- AND operators: <@4@>
+- Nesting depth: <@3@>
+- Total terms: <@16@>
+
+MUST simplify by:
+- Use ONLY 1-2 most important concepts (reduce terms)
+- Minimize OR operators within groups
+- Remove nesting: avoid complex AND/OR combinations
+- Use broader, more general search terms
+- Maximum 2 groups per field, 2-3 terms per group
+Keep it simple and focused!
+
+[LANGUAGE ERROR] The previous query contained non-English terms: <@"vigilância de fronteira"@>. MANDATORY RULE 1 requires ALL terms to be in English - translate every concept to its standard English technical term. Never copy a term directly from the user's input if it is not already in English.

@@ -1,0 +1,3 @@
+## RELEVANT FIELDS FOR THIS SEARCH
+
+This search targets PATENT documents. Populate TITLE, ABSTRACT, and IPC (technology classification) based on the theme. Leave other fields (CPC, APPLICANT, INVENTOR, AUTHORS, KEYWORDS, etc) empty unless explicitly mentioned in the input.

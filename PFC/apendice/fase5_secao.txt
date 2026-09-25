@@ -1,0 +1,45 @@
+DOCUMENTOS DE APOIO (use só o que for pertinente ao tema):
+## Documentos recuperados sobre o tema (Resultados - Tendências e Ciclo de Vida da Tecnologia)
+
+<@Documento 1 - citar como (SILVA et al., 2021)@>
+<@Persistent border surveillance with fixed-wing UAVs and thermal cameras@>
+
+<@This work presents a surveillance architecture based on fixed-wing unmanned aerial vehicles carrying thermal imaging payloads for night-time detection of border crossings.@>
+
+<@Documento 2 - citar como (NGUYEN et al., 2023)@>
+<@Multi-UAV path planning for wide-area border monitoring@>
+
+<@A cooperative path planning method is proposed for fleets of drones covering long land borders, reducing revisit time by 34% in simulated scenarios.@>
+
+<@Documento 3 - sem autoria identificada (não citar)@>
+<@Aerial surveillance apparatus with automatic target tracking@>
+
+<@An apparatus comprising an unmanned aircraft, a gimbal-mounted camera and an onboard processing unit that tracks moving targets and transmits alerts to a ground station.@>
+
+
+FIGURAS E QUADROS DESTA SEÇÃO (os números abaixo são os mesmos desenhados em cada imagem):
+- id: article_s_curve | Figura: Curva S relativa às informações científicas.
+  Dados: <@1.842 documentos acumulados entre 2005 e 2025; GP = 2014, MP = 2024, SP = 2033; saturação atual estimada em 61,3% do nível de saturação (3.004)@>
+- id: patent_s_curve | Figura: Curva S relativa às informações tecnológicas.
+  Dados: <@967 documentos acumulados entre 2008 e 2025; GP = 2017, MP = 2026, SP = 2034; saturação atual estimada em 38,9% do nível de saturação (2.486)@>
+
+COMO APRESENTAR CADA FIGURA/QUADRO (padrão do REPTEC - obrigatório para TODOS os itens da lista acima):
+1. Um parágrafo que APRESENTA a figura e cita pelo marcador [[REF:id]], precedido da palavra Figura ou Quadro. Ex.: "A Figura [[REF:article_s_curve]] mostra a distribuição das publicações científicas ao longo do tempo."
+2. Na linha seguinte, sozinho, o marcador [[FIG:id]] - é onde a imagem entra.
+3. Logo depois, um parágrafo que INTERPRETA os dados da figura: cite os números dela (totais, pico e ano do pico, primeiros colocados e suas quantidades), descreva a tendência (crescimento, estabilização, queda) e o que isso indica sobre o tema.
+Exemplo de estrutura:
+"No total, foram identificadas 321 publicações científicas entre 1992 e 2022. A Figura [[REF:article_yearly_volume]] mostra a distribuição dessas publicações ao longo do tempo.
+
+[[FIG:article_yearly_volume]]
+
+Entre 1993 e 2013, observa-se crescimento gradual, com o pico de 25 publicações em 2013; a partir de então, nota-se queda sustentada, chegando a 2 publicações em 2022, o que sugere redução do interesse acadêmico pela tecnologia."
+Regras: use cada figura exatamente uma vez; nunca coloque duas figuras seguidas sem texto entre elas; nunca termine a seção com figuras; não invente ids; todo número sobre uma figura deve vir dos "Dados" dela.
+
+ESTÁGIO DO CICLO DE VIDA (calculado a partir das curvas S - use exatamente estes estágios e anos, sem reinterpretar):
+<@- Publicações científicas (artigos): estágio de MATURIDADE (GP = 2014, MP = 2024, SP = 2033).@>
+<@- Depósitos de patentes: estágio de CRESCIMENTO (GP = 2017, MP = 2026, SP = 2034).@>
+GP = ponto de crescimento (10% da saturação), MP = ponto médio (50%), SP = ponto de saturação (90%).
+
+Escreva a subseção 6.3 TENDÊNCIAS E CICLO DE VIDA DA TECNOLOGIA do relatório de prospecção sobre: <@Autonomous UAV-based surveillance systems for border monitoring@>
+
+No estilo do REPTEC, em 3 a 5 parágrafos: descreva a evolução das publicações e dos depósitos ao longo do tempo; discuta SEPARADAMENTE a curva S dos artigos e a curva S das patentes, informando o estágio de cada uma e os anos GP/MP/SP acima (ex.: "MP = 2011"); interprete o que isso indica sobre o interesse acadêmico e comercial pela tecnologia.

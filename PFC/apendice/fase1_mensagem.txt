@@ -1,0 +1,9 @@
+Tema: <@Drones para vigilância de fronteiras@>
+Área de Estudo: <@Engenharia@>
+Palavras-chave: <@UAV, sensoriamento@>
+
+Campos fornecidos pelo usuário (retorne APENAS estes):
+- theme: SIM (sempre refine em 4 variações)
+- description: SIM (gere sempre uma descrição nova para cada variação, mesmo que nenhuma tenha sido informada)
+- area_of_study: SIM (PRESERVE exatamente: <@'Engenharia'@>)
+- keywords: SIM (PRESERVE exatamente: <@['UAV', 'sensoriamento']@>)

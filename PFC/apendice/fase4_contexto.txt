@@ -1,0 +1,22 @@
+## DOCUMENT TYPE
+
+PATENT
+
+## SEARCH VARIANT: BALANCED
+
+Build a BALANCED query with good recall and precision. Use mid-range scoring extracted terms. Allow broader OR groups (4–6 terms). Limit AND combinations to 1–2.
+
+## EXTRACTED TERMS (score > 0.3)
+
+<@- unmanned aerial vehicle (score: 1.000, freq: 42)@>
+<@- border surveillance (score: 0.866, freq: 27)@>
+<@- aerial surveillance system (score: 0.711, freq: 21)@>
+<@- drone detection (score: 0.599, freq: 18)@>
+<@- object tracking (score: 0.415, freq: 15)@>
+
+## PROBE-DISCOVERED CLASSIFICATION CODES
+
+<@- B64C 39/02@>
+<@- G06V 20/17@>
+<@- H04N 7/18@>
+<@- G08B 13/196@>

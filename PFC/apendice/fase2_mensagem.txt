@@ -1,0 +1,4 @@
+Theme: <@Autonomous UAV-based surveillance systems for border monitoring@>
+Description: <@Unmanned aerial vehicles equipped with electro-optical and thermal sensors for persistent detection and tracking of illegal crossings along land borders.@>
+Area of Study: <@Engenharia@>
+Keywords: <@UAV, sensoriamento@>
