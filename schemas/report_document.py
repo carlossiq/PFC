@@ -24,6 +24,10 @@ class SectionGenerateResponse(BaseModel):
     section_key: str
     generated_text: str
     status: str
+    # Incoerências com os fatos calculados que persistiram após regenerar
+    # (número sem lastro, "lidera" errado, estágio contraditório...) - o
+    # texto é aceito; o front mostra pro analista revisar.
+    warnings: list[str] = Field(default_factory=list)
 
 
 class SectionGenerateRequest(BaseModel):

@@ -27,9 +27,6 @@ export const SUBSTEPS = {
   // Etapa de Exploração Final
   RESULTS_ANALYSIS: 'results_analysis',
   CHART_CREATION: 'chart_creation',
-
-  // Etapa de Geração do Relatório
-  REPORTING: 'reporting',
 } as const
 
 export type SubstepType = typeof SUBSTEPS[keyof typeof SUBSTEPS]
@@ -57,7 +54,7 @@ export const stepsData = [
   },
   {
     name: 'Geração do Relatório',
-    substeps: [{ id: SUBSTEPS.REPORTING, name: 'Reportar' }],
+    substeps: [],
   },
 ] as const
 

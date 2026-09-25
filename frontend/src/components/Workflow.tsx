@@ -3,8 +3,17 @@ import { StepsBar } from "./Steps";
 import { ConfiguracoesTab } from "./ConfiguracoesTab";
 import { SearchPage } from "../pages/SearchPage";
 import { StatisticsPage } from "../pages/StatisticsPage";
-import { DocUserGuide } from "./DocUserGuide";
 import { DocFaq } from "./DocFaq";
+import { DocPage } from "./docs/DocPage";
+import { DocApi } from "./docs/DocApi";
+import type { DocPageData } from "../constants/docs/types";
+import { aboutPage } from "../constants/docs/about";
+import { introPage } from "../constants/docs/intro";
+import { userGuidePage } from "../constants/docs/userGuide";
+import { pipelinePage } from "../constants/docs/pipeline";
+import { termExtractionPage } from "../constants/docs/termExtraction";
+import { latexPage } from "../constants/docs/latex";
+import { errorsPage } from "../constants/docs/errors";
 import { Step1 } from "./steps/Step1";
 import { Step3 } from "./steps/Step3";
 import { InitialResults } from "./steps/InitialResults";
@@ -35,6 +44,18 @@ const tabContents = {
   [TABS.DOC_FAQ]: { title: "Documentação - FAQ", label: "FAQ" },
   [TABS.HELP]: { title: "Help", label: "Help" },
   [TABS.USER]: { title: "Profile", label: "Profile" },
+};
+
+// Abas de Documentação/Sobre que são só conteúdo estático (constants/docs) -
+// FAQ (acordeão) e Referência da API (link pro Swagger) têm componente próprio.
+const docPages: Partial<Record<number, DocPageData>> = {
+  [TABS.ABOUT]: aboutPage,
+  [TABS.DOCUMENTATION]: introPage,
+  [TABS.DOC_USER_GUIDE]: userGuidePage,
+  [TABS.DOC_PIPELINE]: pipelinePage,
+  [TABS.DOC_TERMS]: termExtractionPage,
+  [TABS.DOC_LATEX]: latexPage,
+  [TABS.DOC_ERRORS]: errorsPage,
 };
 
 export function WorkflowPage() {
@@ -170,6 +191,7 @@ export function WorkflowPage() {
 
   const currentTab = tabContents[tab as keyof typeof tabContents] || tabContents[TABS.SETTINGS];
   const isStartProspection = tab === TABS.START_PROSPECTION;
+  const docPage = docPages[tab];
 
   // "Refinar parâmetros" só navega (sem chamar IA de novo) quando já existem
   // candidatos gerados pro input atual - mesma assinatura comparada em
@@ -261,8 +283,10 @@ export function WorkflowPage() {
             <SearchPage />
           ) : tab === TABS.STATISTICS ? (
             <StatisticsPage />
-          ) : tab === TABS.DOC_USER_GUIDE ? (
-            <DocUserGuide />
+          ) : docPage ? (
+            <DocPage key={tab} {...docPage} />
+          ) : tab === TABS.DOC_API ? (
+            <DocApi />
           ) : tab === TABS.DOC_FAQ ? (
             <DocFaq />
           ) : (

@@ -5,24 +5,30 @@ Revisão do .tex do relatório no editor (botão "Revisão") - funções puras:
    (chaves/ambientes desbalanceados, caractere especial sem escape, imagem
    inexistente, \\ref sem \\label, marcadores [[FIG]] que sobraram...) e os
    erros do log da última compilação, com a linha no .tex.
-2. `review_scope`: trechos que entram na revisão de LÍNGUA - só as seções
-   redigidas por IA (Objetivo, Introdução, 6.1-6.3, Conclusão) e as linhas
-   que o usuário editou em relação à versão montada (`baseline`). Texto fixo
-   (preâmbulo, Metodologia, Quadro de busca, Referências, assinaturas) fica
-   de fora.
+2. Escopo da revisão de LÍNGUA:
+   - `review_scope` (LanguageTool): o corpo INTEIRO do documento, por
+     seção - o .tex todo é editável. Só o Quadro de busca fica de fora (as
+     queries são sintaxe de busca, não texto; "corrigir" alteraria a
+     estratégia relatada).
+   - `ai_review_scope` (IA, mais cara): só as seções redigidas por IA
+     (Objetivo, Introdução, 6.1-6.3, Conclusão) e as linhas que o usuário
+     editou em relação à versão montada (`baseline`).
 3. `to_annotated_text`: converte um trecho de LaTeX no formato "annotated
    text" da API do LanguageTool - comandos/argumentos técnicos viram markup
    (não são analisados) e as posições devolvidas batem com o .tex original.
 4. `filter_languagetool_matches`: descarta falsos positivos do nosso texto
    (códigos CPC, siglas/nomes em maiúsculas, citações, termos em itálico).
-5. `validate_ai_suggestion`: só aceita correção da IA que não mexe em nada
-   além de palavras (comandos, números, citações, siglas intactos).
+5. `validate_ai_suggestion`: só aceita correção da IA que é flexão
+   (concordância) ou acentuação - comandos, números, citações e siglas
+   intactos, plural após numeral preservado, nada de estilo/pontuação/tempo
+   verbal.
 """
 
 from __future__ import annotations
 
 import difflib
 import re
+import unicodedata
 from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
@@ -66,7 +72,7 @@ class ScopeRange:
     start: int
     end: int
     section: str
-    reason: str  # "ia" | "editado"
+    reason: str  # "languagetool" (documento inteiro) | "ia" | "editado" (escopo da IA)
 
 
 @dataclass
@@ -420,7 +426,47 @@ def _subtract(ranges: list[tuple[int, int]], holes: list[tuple[int, int]]) -> li
     return result
 
 
-def review_scope(text: str, baseline: Optional[str] = None) -> list[ScopeRange]:
+# Quadro de busca (queries): a minipage do Quadro "Estratégias de busca" -
+# sintaxe de busca em inglês, nunca texto corrido.
+_SEARCH_BOX_RE = re.compile(
+    r"\\noindent\\begin\{minipage\}(?:(?!\\end\{minipage\}).)*?quadro:busca.*?\\end\{minipage\}",
+    re.DOTALL,
+)
+
+
+def _body_end(text: str) -> int:
+    idx = text.find(r"\end{document}")
+    return idx if idx != -1 else len(text)
+
+
+def review_scope(text: str) -> list[ScopeRange]:
+    """Escopo do LanguageTool: o corpo inteiro (capa, sumário, todas as
+    seções, legendas, referências e assinaturas), fatiado por seção - só o
+    Quadro de busca fica de fora. Comandos LaTeX não são "retirados" aqui:
+    `to_annotated_text` os manda como markup."""
+    body, end = _body_start(text), _body_end(text)
+    holes = [(m.start(), m.end()) for m in _SEARCH_BOX_RE.finditer(text)]
+    cuts = [body] + [start for start, _, _, _ in _sections(text) if body < start < end] + [end]
+    # Cada fatia começa no fim do cabeçalho \section{...}; o próprio título
+    # entra na fatia anterior (é texto revisável também).
+    ranges: list[ScopeRange] = []
+    sections = _sections(text)
+
+    def section_of(offset: int) -> str:
+        for start, stop, title, parent in sections:
+            if start <= offset < stop:
+                return f"{parent} › {title}" if parent else title
+        return "Capa e Sumário"
+
+    for a, b in zip(cuts, cuts[1:]):
+        for start, stop in _subtract([(a, b)], holes):
+            ranges.append(ScopeRange(start, stop, section_of(start), "languagetool"))
+    return [r for r in ranges if re.search(r"[^\W\d_]{2,}", _mask_commands(text[r.start:r.end]))]
+
+
+def ai_review_scope(text: str, baseline: Optional[str] = None) -> list[ScopeRange]:
+    """Escopo da revisão por IA (uma chamada de LLM por parágrafo): seções
+    redigidas por IA + linhas editadas pelo usuário."""
     body = _body_start(text)
     sections = _sections(text)
     never = [(m.start(), m.end()) for m in _NEVER_REVIEW_RE.finditer(text)]
@@ -469,8 +515,20 @@ _ESCAPES = {r"\%": "%", r"\&": "&", r"\_": "_", r"\#": "#", r"\$": "$", "--": "�
 # Ordem importa: alternativas mais específicas primeiro.
 _TOKEN_RE = re.compile(
     r"(?P<comment>(?<!\\)%[^\n]*)"
-    r"|(?P<techcmd>\\(?:label|ref|pageref\*?|cite|url|includegraphics(?:\[[^\]]*\])?)\{[^{}]*\})"
+    # Argumento de ambiente + especificação de colunas de tabela
+    # ("\begin{tabularx}{\textwidth}{|>{\raggedright}X|}") e opções de lista.
+    r"|(?P<env>\\(?:begin|end)\{[^{}]*\}(?:\{(?:[^{}]|\{[^{}]*\})*\}){0,2}(?:\[[^\]]*\])?)"
+    r"|(?P<silent>\\(?:label|setcounter|addtocounter|setlength|thispagestyle|pagestyle|captionsetup)"
+    r"(?:\{[^{}]*\})+)"
+    # \texttt: nomes de modelo na 5.4 ("gemma3:4b") - não são palavras.
+    r"|(?P<techcmd>\\(?:ref|pageref\*?|cite|url|texttt|includegraphics(?:\[[^\]]*\])?)\{[^{}]*\})"
+    # Nome de arquivo (último argumento de \figura/\quadroimg) e dimensões
+    # soltas ("{0.4pt}", "{8cm}").
+    r"|(?P<file>\{[\w\-.]+\.(?:png|jpe?g|pdf|eps)\})"
+    r"|(?P<dimen>\{-?\d+(?:\.\d+)?(?:pt|cm|mm|em|ex|in)\})"
     r"|(?P<marker>\[\[(?:FIG|REF):[^\]]*\]\])"
+    r"|(?P<linebreak>\\\\(?:\[[^\]]*\])?)"
+    r"|(?P<space>\\[,;:! ])"
     r"|(?P<escape>\\[%&_#$]|--|~)"
     r"|(?P<cmd>\\[A-Za-z]+\*?(?:\[[^\]]*\])?)"
     r"|(?P<brace>[{}])"
@@ -496,6 +554,10 @@ def to_annotated_text(fragment: str) -> list[AnnotatedSegment]:
             segments.append(AnnotatedSegment(markup=token, interpret_as="Figura 1"))
         elif kind == "techcmd":
             segments.append(AnnotatedSegment(markup=token, interpret_as="1"))
+        elif kind == "linebreak":
+            segments.append(AnnotatedSegment(markup=token, interpret_as="\n"))
+        elif kind == "space":
+            segments.append(AnnotatedSegment(markup=token, interpret_as=" "))
         else:
             segments.append(AnnotatedSegment(markup=token))
         pos = match.end()
@@ -527,8 +589,25 @@ _TEXTIT_RE = re.compile(r"\\textit\{[^{}]*\}")
 KNOWN_TERMS = {
     "cpc", "ipc", "ops", "epo", "scopus", "espacenet", "agitec", "reptec", "eb", "om", "ict", "ebt", "p&d",
     "llm", "pln", "ia", "gp", "mp", "sp", "cvt", "bm25f", "keybert", "rag", "probe", "et", "al", "loglet",
-    "sigmaplot", "imbel", "diex", "dct",
+    "sigmaplot", "imbel", "diex", "dct", "patentária", "patentárias", "patentário", "patentários", "interciência",
 }
+
+# Palavras funcionais do inglês: 2+ delas (em minúsculas) perto da palavra
+# marcam um título/trecho em inglês (típico das Referências) - o dicionário
+# pt-BR só geraria ruído ali. Janela na mesma linha, e maiúsculas não
+# contam: um parágrafo em português que cita um título CPC ("TRANSMISSION
+# OF DIGITAL INFORMATION") continua revisado.
+_ENGLISH_FUNCTION_WORDS = {"the", "of", "and", "for", "in", "on", "with", "using", "an", "to", "from", "by", "its"}
+_ENGLISH_WINDOW = 80
+
+
+def _in_english_context(fragment: str, offset: int) -> bool:
+    line_start = fragment.rfind("\n", 0, offset) + 1
+    line_end = fragment.find("\n", offset)
+    line_end = line_end if line_end != -1 else len(fragment)
+    window = fragment[max(line_start, offset - _ENGLISH_WINDOW): min(line_end, offset + _ENGLISH_WINDOW)]
+    words = re.findall(r"[A-Za-z]+", window)
+    return sum(word in _ENGLISH_FUNCTION_WORDS for word in words) >= 2
 
 
 def _protected_spans(fragment: str) -> list[tuple[int, int]]:
@@ -558,6 +637,8 @@ def filter_languagetool_matches(fragment: str, matches: list[dict[str, Any]]) ->
             continue
         if _CPC_RE.match(word) or word.lower() in KNOWN_TERMS:
             continue
+        if word.isascii() and _in_english_context(fragment, start):
+            continue
         category = match.get("rule", {}).get("category", {}).get("id", "")
         # Sigla/nome próprio em maiúsculas ("PEI", "HUANENG") só é descartado
         # nas regras de ortografia - erro de concordância continua valendo.
@@ -570,18 +651,40 @@ def filter_languagetool_matches(fragment: str, matches: list[dict[str, Any]]) ->
     return kept
 
 
+def clean_replacements(original: str, replacements: list[str]) -> list[str]:
+    """O corretor do LanguageTool (Morfologik) propõe DIVIDIR uma palavra
+    com sufixo duplicado: "comumentemente" -> "comumente mente" (aplicar
+    criaria um erro novo). Quando a primeira parte já termina com a segunda,
+    a correção real é só a primeira ("comumente"). Divisões legítimas
+    ("derepente" -> "de repente") ficam como estão."""
+    cleaned: list[str] = []
+    for value in replacements:
+        parts = value.split()
+        if (
+            len(parts) == 2
+            and " " not in original.strip()
+            and parts[0].lower().endswith(parts[1].lower())
+            and (parts[0] + parts[1]).lower() == original.lower()
+        ):
+            value = parts[0]
+        if value and value != original and value not in cleaned:
+            cleaned.append(value)
+    return cleaned
+
+
 def languagetool_suggestions(fragment: str, base_offset: int, section: str,
                              matches: list[dict[str, Any]]) -> list[Suggestion]:
     suggestions = []
     for match in filter_languagetool_matches(fragment, matches):
         start, length = match["offset"], match["length"]
         rule = match.get("rule", {})
+        original = fragment[start: start + length]
         suggestions.append(
             Suggestion(
                 offset=base_offset + start,
                 length=length,
-                original=fragment[start: start + length],
-                replacements=[r["value"] for r in match.get("replacements", [])[:5]],
+                original=original,
+                replacements=clean_replacements(original, [r["value"] for r in match.get("replacements", [])])[:5],
                 message=match.get("message", ""),
                 category=_category_label(rule.get("category", {}).get("id", ""), rule.get("id", "")),
                 source="languagetool",
@@ -620,18 +723,137 @@ def _protected_tokens(text: str) -> list[str]:
     return _PROTECTED_TOKEN_RE.findall(text)
 
 
+_WORD_TOKEN_RE = re.compile(r"\w+|[^\w\s]")
+
+# Flexões irregulares de concordância verbal que as regras de sufixo abaixo
+# não cobrem (minúsculas, COM acento - "e" conjunção não vira "são").
+_IRREGULAR_AGREEMENT = {frozenset(pair) for pair in (("foi", "foram"), ("é", "são"), ("há", "hão"))}
+
+
+def _fold(word: str) -> str:
+    """Minúsculas e sem acentos - "Publicações" -> "publicacoes"."""
+    decomposed = unicodedata.normalize("NFD", word.lower())
+    return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+
+
+def _inflection_kind(a: str, b: str) -> Optional[str]:
+    """Que tipo de mudança é `a` -> `b`: "accent" (só acento), "verb"
+    (pessoa/número do verbo), "number" (número nominal), "gender" - ou None
+    se não for flexão (troca de palavra, de tempo verbal como "observa" ->
+    "observou", grafia de Portugal como "respectivamente" -> "respetivamente").
+    Só flexão e acento a revisão por IA pode propor."""
+    fa, fb = _fold(a), _fold(b)
+    if fa == fb:
+        return "accent" if a.lower() != b.lower() else None  # caixa sozinha não conta
+    if frozenset((a.lower(), b.lower())) in _IRREGULAR_AGREEMENT:
+        return "verb"
+    for x, y in ((fa, fb), (fb, fa)):
+        if y == x + "m":  # mostra/mostram
+            return "verb"
+        if x.endswith("a") and y == x[:-1] + "ao":  # está/estão, será/serão
+            return "verb"
+        if x.endswith("ou") and y == x[:-2] + "aram":  # observou/observaram
+            return "verb"
+        if x.endswith(("eu", "iu")) and y == x[:-1] + "ram":  # cresceu/cresceram, contribuiu/contribuíram
+            return "verb"
+        if y in (x + "s", x + "es"):  # registro/registros
+            return "number"
+        if x.endswith("ao") and y in (x[:-2] + "oes", x[:-2] + "aes"):  # publicação/publicações
+            return "number"
+        if x.endswith("l") and y == x[:-1] + "is":  # ambiental/ambientais
+            return "number"
+    # Gênero, com ou sem plural: relacionado/relacionada(s).
+    sa, sb = fa.rstrip("s"), fb.rstrip("s")
+    if len(sa) == len(sb) > 2 and sa[:-1] == sb[:-1] and {sa[-1], sb[-1]} == {"a", "o"}:
+        return "gender"
+    return None
+
+
+_PLURAL_DETERMINERS = {
+    "os", "as", "dos", "das", "nos", "nas", "aos", "pelos", "pelas", "esses", "essas", "estes", "estas",
+    "aqueles", "aquelas", "seus", "suas", "muitos", "muitas", "varios", "varias", "alguns", "algumas",
+    "outros", "outras", "diversos", "diversas", "todos", "todas", "tais",
+}
+_SINGULAR_DETERMINERS = {
+    "o", "a", "do", "da", "no", "na", "ao", "pelo", "pela", "esse", "essa", "este", "esta", "aquele",
+    "aquela", "seu", "sua", "um", "uma", "cada", "outro", "outra",
+}
+
+
+def _word_number(word: str) -> Optional[bool]:
+    """True = plural, False = singular, None = não dá pra dizer (preposição, verbo...)."""
+    folded = _fold(word)
+    if folded in _PLURAL_DETERMINERS:
+        return True
+    if folded in _SINGULAR_DETERMINERS:
+        return False
+    return None
+
+
+def _has_number_evidence(tokens: list[str], index: int, corrected: str) -> bool:
+    """Troca de número nominal só vale com um vizinho que concorde com a
+    forma corrigida: determinante antes ("as empresa" -> "as empresas") ou
+    palavra seguinte flexionada no mesmo número ("empresa relacionadas").
+    Sem isso ("número de patentes" -> "número de patente") é palpite da IA."""
+    want_plural = _is_plural(corrected)
+    if index > 0 and _word_number(tokens[index - 1]) == want_plural:
+        return True
+    if index + 1 < len(tokens) and tokens[index + 1][:1].isalpha() and len(tokens[index + 1]) > 3:
+        neighbor = tokens[index + 1]
+        return _word_number(neighbor) == want_plural or (want_plural and _fold(neighbor).endswith("s"))
+    return False
+
+
+def _is_plural(word: str) -> bool:
+    return _fold(word).endswith("s")
+
+
+def _numeral_before(tokens: list[str], index: int) -> Optional[float]:
+    """Valor do numeral imediatamente antes de tokens[index] ("com 2 publicações",
+    "(4 registros)"); None se não houver. "17,3" conta como decimal (plural)."""
+    if index == 0 or not tokens[index - 1].isdigit():
+        return None
+    value = float(tokens[index - 1])
+    if index >= 3 and tokens[index - 2] in ",." and tokens[index - 3].isdigit():
+        return value + 0.5  # parte decimal: nunca é exatamente 1
+    return value
+
+
 def validate_ai_suggestion(fragment: str, original: str, corrected: str) -> Optional[int]:
     """Posição de `original` em `fragment` se a correção for aceitável; None
-    se não for: o trecho precisa existir literalmente (uma única vez), a
+    se não for. O trecho precisa existir literalmente (uma única vez); a
     correção não pode alterar comandos LaTeX, números, citações, siglas nem
-    códigos, e tem de ser uma mudança pequena (não uma reescrita)."""
+    códigos, nem ser uma reescrita; e cada palavra trocada precisa ser só
+    acentuação ou flexão de concordância. Mudança só de caixa, pontuação ou
+    espaços é estilo (recusada), palavras não podem entrar/sair, e depois
+    de um numeral o substantivo segue o número (plural se != 1)."""
     if not original or original == corrected or fragment.count(original) != 1:
         return None
     if _protected_tokens(original) != _protected_tokens(corrected):
         return None
     if difflib.SequenceMatcher(a=original, b=corrected).ratio() < 0.6:
         return None
-    return fragment.index(original)
+
+    tokens_a = _WORD_TOKEN_RE.findall(original)
+    tokens_b = _WORD_TOKEN_RE.findall(corrected)
+    changed = False
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(a=tokens_a, b=tokens_b, autojunk=False).get_opcodes():
+        if tag == "equal":
+            continue
+        if tag != "replace" or i2 - i1 != j2 - j1:
+            return None  # palavra/pontuação inserida ou removida
+        for offset in range(i2 - i1):
+            a, b = tokens_a[i1 + offset], tokens_b[j1 + offset]
+            kind = _inflection_kind(a, b) if a[:1].isalnum() and b[:1].isalnum() else None
+            if kind is None:
+                return None
+            number = _numeral_before(tokens_a, i1 + offset)
+            if number is not None and _is_plural(b) != (number != 1):
+                return None
+            if kind == "number" and number is None and not _has_number_evidence(tokens_b, j1 + offset, b):
+                return None
+            changed = True
+    return fragment.index(original) if changed else None
 
 
 def overlaps(a: Suggestion, b: Suggestion) -> bool:

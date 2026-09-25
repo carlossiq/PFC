@@ -21,6 +21,7 @@ from __future__ import annotations
 import base64
 import io
 import re
+import time
 import unicodedata
 import zipfile
 from datetime import date
@@ -49,6 +50,7 @@ from app.core.services.report_form_validation import (
     admin_reference_error,
     bibliography_error,
     collect_errors,
+    destinatario_error,
     signer_error,
     text_field_error,
 )
@@ -59,6 +61,9 @@ from config.prompts.report_static_sections import (
     DEFAULT_SIGNATURES,
     legacy_metodologia_to_paragraph,
     merge_bibliography,
+    REPORT_WRITING_STEP_PREFIX,
+    models_by_stage,
+    render_apoio_computacional,
     render_finalidade,
     render_local_data,
     render_metodologia,
@@ -71,6 +76,7 @@ from db.research_session_models import (
     ProbeQueryArticle,
     ProbeQueryPatent,
     ResearchSession,
+    SessionAiCall,
     SessionChart,
     SessionInput,
     SessionProbeQuery,
@@ -291,13 +297,14 @@ async def _report_charts(session: AsyncSession, session_id: int) -> list[Session
     return sorted(charts, key=lambda c: (order.get(c.chart_type, len(order)), c.document_type))
 
 
-def _figure_facts(chart: SessionChart) -> dict[str, str]:
+def _figure_facts(chart: SessionChart) -> dict[str, Any]:
     spec = FIGURE_SPECS[(chart.document_type, chart.chart_type)]
     return {
         "id": figure_id(chart.document_type, chart.chart_type),
         "kind": "Quadro" if spec.kind == "quadro" else "Figura",
         "caption": spec.caption,
-        "summary": summary_text(chart.chart_type, chart.summary or {}),
+        "document_type": chart.document_type,
+        "summary": summary_text(chart.chart_type, chart.summary or {}, chart.document_type),
     }
 
 
@@ -354,7 +361,69 @@ def _build_section_data(
             facts = _figure_facts(chart)
             lines.append(f"- {facts['caption']} {facts['summary']}")
         data["results_digest"] = "\n".join(lines)
+
+    data["fact_check"] = _fact_check(section_key, charts, data, payload)
     return data
+
+
+# Seção -> de que tipo de documento ela trata (vocabulário conferido).
+_SECTION_DOCUMENT_TYPE = {"informacoes_tecnologicas": "patent", "informacoes_cientificas": "article"}
+_RANKING_CHARTS = ("top_depositants", "top_institutions", "top10_heatmap")
+
+
+def _summary_counts(chart_type: str, summary: dict[str, Any]) -> set[int]:
+    """Toda quantidade que o resumo de um gráfico dá ao LLM."""
+    counts: set[int] = set()
+    if chart_type == "yearly_volume":
+        counts |= {summary.get("total"), summary.get("peak_value"), summary.get("last_value")}
+    elif chart_type in _RANKING_CHARTS:
+        counts |= {count for _, count in summary.get("top") or []} | {summary.get("entities")}
+    elif chart_type == "s_curve":
+        counts.add(summary.get("cumulative"))
+        level = str(summary.get("saturation_level") or "").replace(".", "")
+        if level.isdigit():
+            counts.add(int(level))
+    return {int(c) for c in counts if isinstance(c, (int, float))}
+
+
+def _fact_check(
+    section_key: str, charts: list[SessionChart], data: dict[str, Any], payload: Optional[SectionGenerateRequest]
+) -> dict[str, Any]:
+    """Fatos contra os quais o texto gerado é conferido (ver
+    report_text_quality.find_fact_issues): quantidades e líderes dos
+    gráficos que a seção comenta (a Conclusão resume todos), estágios do
+    ciclo de vida (6.3 e Conclusão) e o tipo de documento da subseção."""
+    if section_key == "conclusao":
+        relevant = charts
+    else:
+        relevant = [c for c in charts if FIGURE_SPECS[(c.document_type, c.chart_type)].section == section_key]
+
+    counts: set[int] = set()
+    leaders: list[str] = []
+    for chart in relevant:
+        summary = chart.summary or {}
+        counts |= _summary_counts(chart.chart_type, summary)
+        if chart.chart_type in _RANKING_CHARTS and summary.get("top"):
+            leaders.append(str(summary["top"][0][0]))
+    if relevant:
+        for value in (payload.article_count, payload.patent_count) if payload is not None else ():
+            if value is not None:
+                counts.add(int(value))
+        counts |= {int(v) for v in (data.get("brazil") or {}).values()}
+
+    stages: dict[str, str] = {}
+    if section_key in ("tendencias_ciclo_vida", "conclusao"):
+        lifecycle = data.get("lifecycle") or {}
+        stages = {key: lifecycle[key]["stage"] for key in ("article", "patent") if lifecycle.get(key)}
+        if lifecycle.get("overall_stage"):
+            stages["overall"] = lifecycle["overall_stage"]
+
+    return {
+        "counts": sorted(counts),
+        "leaders": leaders,
+        "stages": stages,
+        "document_type": _SECTION_DOCUMENT_TYPE.get(section_key),
+    }
 
 
 _SIGNATURE_ROLE_LABELS = {
@@ -537,23 +606,56 @@ async def generate_section_text(
     data = _build_section_data(section_key, theme_input, charts, patents, articles, payload)
 
     writer = _writer(request)
+    started = time.perf_counter()
     try:
-        generated_text = await writer.generate_section_text(
-            section_key, theme, row.rag_context, data, row.sources or []
-        )
+        section_result = await writer.generate_section(section_key, theme, row.rag_context, data, row.sources or [])
     except SectionQualityError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("report_section_generate_failed session_id=%d section=%s error=%s", session_id, section_key, exc)
         raise HTTPException(status_code=502, detail=f"Falha ao gerar texto via LLM: {exc}") from exc
 
-    row.generated_text = generated_text
+    row.generated_text = section_result.text
     row.status = "generated"
+    await _log_writing_call(session, writer, session_id, section_key, started, section_result.attempts)
     await session.commit()
 
     logger.info("report_section_generated session_id=%d section=%s", session_id, section_key)
     return SuccessResponse(
-        data=SectionGenerateResponse(section_key=section_key, generated_text=generated_text, status=row.status)
+        data=SectionGenerateResponse(
+            section_key=section_key,
+            generated_text=section_result.text,
+            status=row.status,
+            warnings=section_result.warnings,
+        )
+    )
+
+
+# Prefixo do `step` das chamadas de redação em session_ai_call - uma linha
+# por geração de seção ("report_writing:introducao"); a Metodologia usa a
+# mais recente de cada seção (o modelo que escreveu o texto que está no .tex).
+REPORT_WRITING_STEP = REPORT_WRITING_STEP_PREFIX.rstrip(":")
+
+
+async def _log_writing_call(
+    session: AsyncSession, writer: Any, session_id: int, section_key: str, started: float, attempts: int
+) -> None:
+    """Registra em session_ai_call qual modelo redigiu a seção - nunca
+    derruba a geração se não conseguir (é só registro)."""
+    try:
+        provider, model = await writer.writing_model()
+    except Exception as exc:
+        logger.warning("report_writing_model_unknown session_id=%d section=%s error=%s", session_id, section_key, exc)
+        return
+    session.add(
+        SessionAiCall(
+            session_id=session_id,
+            step=f"{REPORT_WRITING_STEP}:{section_key}",
+            provider=provider,
+            model=model,
+            duration_ms=(time.perf_counter() - started) * 1000,
+            attempts=attempts,
+        )
     )
 
 
@@ -576,7 +678,7 @@ async def build_static_sections(
             [
                 *(admin_reference_error(ref) for ref in payload.referencias_administrativas),
                 *(bibliography_error(ref) for ref in payload.referencias_bibliograficas_adicionais),
-                text_field_error("Destinatário", payload.destinatario) if payload.destinatario else None,
+                destinatario_error(payload.destinatario) if payload.destinatario else None,
                 text_field_error("Objetivo", payload.objetivo, min_words=5) if payload.objetivo else None,
             ]
         )
@@ -640,6 +742,22 @@ async def build_static_sections(
             databases_detected=detected_databases,
         )
     )
+
+
+async def _model_stages(session: AsyncSession, session_id: int) -> list[tuple[str, list[str]]]:
+    """Modelos usados em cada etapa desta sessão (session_ai_call, em ordem
+    cronológica), com os nomes já escapados pra LaTeX - vão pra 5.4 Apoio
+    Computacional à Prospecção. O modelo de embeddings configurado completa
+    a etapa de representação vetorial se a extração de termos não tiver
+    sido registrada (sessões antigas)."""
+    result = await session.execute(
+        select(SessionAiCall.step, SessionAiCall.model)
+        .where(SessionAiCall.session_id == session_id)
+        .order_by(SessionAiCall.created_at, SessionAiCall.id)
+    )
+    calls = [(step, model) for step, model in result.all()]
+    stages = models_by_stage(calls, embedding_model=getattr(settings, "llm_keybert_model", "") or "")
+    return [(label, [escape_latex(model) for model in models]) for label, models in stages]
 
 
 async def _assemble_document(
@@ -766,6 +884,7 @@ async def _assemble_document(
         "introducao": _text("introducao"),
         "referencias_administrativas": [escape_latex(ref) for ref in payload.referencias_administrativas],
         "metodologia": legacy_metodologia_to_paragraph(_text("metodologia")),
+        "apoio_computacional": render_apoio_computacional(await _model_stages(session, session_id)),
         "quadro_busca": quadro_busca,
         "informacoes_cientificas": _results_text("informacoes_cientificas"),
         "informacoes_tecnologicas": _results_text("informacoes_tecnologicas"),
@@ -1162,11 +1281,11 @@ async def review_report_tex(
     request: Request,
     session: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[ReviewResponse]:
-    """Revisão do .tex do editor: problemas de LaTeX (documento todo) e
-    sugestões de ortografia/acentuação/concordância (LanguageTool e, se
-    `include_ai`, IA) só nas seções geradas por IA e nas linhas editadas -
-    ver report_review.py. Nunca altera o .tex: o front aplica o que o
-    usuário aprovar."""
+    """Revisão do .tex do editor: problemas de LaTeX e sugestões de
+    ortografia/acentuação/concordância do LanguageTool no documento todo
+    (menos o Quadro de busca) e, se `include_ai`, da IA só nas seções
+    geradas por IA e nas linhas editadas - ver report_review.py. Nunca
+    altera o .tex: o front aplica o que o usuário aprovar."""
     await _get_session_or_404(session, session_id)
     storage = _storage(request)
 

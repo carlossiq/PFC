@@ -555,7 +555,7 @@ export function ReportDocumentEditor({
             {isLoadingPdf ? 'Abrindo...' : 'Visualizar PDF'}
           </Button>
           <Tooltip
-            label="Verifica problemas de LaTeX no documento e sugere correções de ortografia, acentuação e concordância nas seções geradas por IA e nos trechos que você editou. Nada é alterado sem sua aprovação."
+            label="Verifica problemas de LaTeX e sugere correções de ortografia, acentuação e concordância em todo o documento (exceto o quadro de busca). Nada é alterado sem sua aprovação."
             position="bottom"
           >
             <span>

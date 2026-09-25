@@ -78,6 +78,34 @@ def _documents_block(context: str) -> str:
     return f"DOCUMENTOS DE APOIO (use só o que for pertinente ao tema):\n{context}\n\n"
 
 
+# Como chamar os documentos de cada figura - o exemplo do prompt dizia
+# sempre "publicações científicas", e o modelo repetia isso nas figuras de
+# PATENTES.
+_DOCUMENT_NOUNS = {"patent": "dos depósitos de patentes", "article": "das publicações científicas"}
+
+
+def _structure_example(document_type: str) -> str:
+    """Exemplo de estrutura figura-texto no vocabulário do tipo de documento
+    da seção (patentes: depósitos; artigos: publicações científicas)."""
+    if document_type == "patent":
+        return (
+            '"No total, foram identificados 321 depósitos de patentes entre 1992 e 2022. A Figura '
+            "[[REF:patent_yearly_volume]] mostra a distribuição desses depósitos ao longo do tempo.\n\n"
+            "[[FIG:patent_yearly_volume]]\n\n"
+            "Entre 1993 e 2013, observa-se crescimento gradual, com o pico de 25 depósitos em 2013; a partir de "
+            "então, nota-se queda sustentada, chegando a 2 depósitos em 2022, o que sugere redução do interesse "
+            'comercial pela tecnologia."'
+        )
+    return (
+        '"No total, foram identificadas 321 publicações científicas entre 1992 e 2022. A Figura '
+        "[[REF:article_yearly_volume]] mostra a distribuição dessas publicações ao longo do tempo.\n\n"
+        "[[FIG:article_yearly_volume]]\n\n"
+        "Entre 1993 e 2013, observa-se crescimento gradual, com o pico de 25 publicações em 2013; a partir de "
+        "então, nota-se queda sustentada, chegando a 2 publicações em 2022, o que sugere redução do interesse "
+        'acadêmico pela tecnologia."'
+    )
+
+
 def _figures_block(data: dict) -> str:
     figures = data.get("figures") or []
     if not figures:
@@ -86,19 +114,19 @@ def _figures_block(data: dict) -> str:
     for fig in figures:
         lines.append(f"- id: {fig['id']} | {fig['kind']}: {fig['caption']}\n  Dados: {fig['summary']}")
     catalog = "\n".join(lines)
+    first = figures[0]
+    noun = _DOCUMENT_NOUNS.get(first.get("document_type", ""), "dos documentos")
     return f"""FIGURAS E QUADROS DESTA SEÇÃO (os números abaixo são os mesmos desenhados em cada imagem):
 {catalog}
 
+LEITURA DOS DADOS: cada número vem com a sua unidade - respeite-a. Anos são anos (nunca "2007 publicações"); valores ACUMULADOS não são valores anuais; figuras de patentes falam de patentes/depósitos (nunca "publicações científicas" ou "artigos"); figuras de artigos falam de publicações científicas. Em rankings, o 1º colocado é o que lidera - mantenha a ordem.
+
 COMO APRESENTAR CADA FIGURA/QUADRO (padrão do REPTEC - obrigatório para TODOS os itens da lista acima):
-1. Um parágrafo que APRESENTA a figura e cita pelo marcador [[REF:id]], precedido da palavra Figura ou Quadro. Ex.: "A Figura [[REF:{figures[0]['id']}]] mostra a distribuição das publicações científicas ao longo do tempo."
+1. Um parágrafo que APRESENTA a figura e cita pelo marcador [[REF:id]], precedido da palavra Figura ou Quadro. Ex.: "A {first['kind']} [[REF:{first['id']}]] mostra a distribuição {noun} ao longo do tempo."
 2. Na linha seguinte, sozinho, o marcador [[FIG:id]] - é onde a imagem entra.
 3. Logo depois, um parágrafo que INTERPRETA os dados da figura: cite os números dela (totais, pico e ano do pico, primeiros colocados e suas quantidades), descreva a tendência (crescimento, estabilização, queda) e o que isso indica sobre o tema.
-Exemplo de estrutura:
-"No total, foram identificadas 321 publicações científicas entre 1992 e 2022. A Figura [[REF:article_yearly_volume]] mostra a distribuição dessas publicações ao longo do tempo.
-
-[[FIG:article_yearly_volume]]
-
-Entre 1993 e 2013, observa-se crescimento gradual, com o pico de 25 publicações em 2013; a partir de então, nota-se queda sustentada, chegando a 2 publicações em 2022, o que sugere redução do interesse acadêmico pela tecnologia."
+Exemplo de estrutura (números fictícios - use os dos "Dados"):
+{_structure_example(first.get("document_type", ""))}
 Regras: use cada figura exatamente uma vez; nunca coloque duas figuras seguidas sem texto entre elas; nunca termine a seção com figuras; não invente ids; todo número sobre uma figura deve vir dos "Dados" dela.
 
 """
@@ -156,7 +184,7 @@ def _informacoes_cientificas_prompt(theme: str, context: str, data: dict) -> str
 Fatos:
 {facts_text}
 
-No estilo do REPTEC, em 3 a 5 parágrafos: comece pelo total de publicações e o período coberto; comente a evolução ao longo do tempo (crescimento, pico, queda) com base nos dados das figuras; depois as instituições que mais publicaram e as áreas de estudo predominantes. Cite (SOBRENOME et al., ano) apenas documentos de apoio pertinentes ao tema."""
+No estilo do REPTEC, em 3 a 5 parágrafos: comece pelo total de publicações e o período coberto; comente a evolução ao longo do tempo (crescimento, pico, queda) com base nos dados das figuras; depois as instituições que mais publicaram e as áreas de estudo predominantes. Cite (SOBRENOME et al., ano) apenas documentos de apoio pertinentes ao tema. Esta subseção trata SOMENTE de PUBLICAÇÕES CIENTÍFICAS (artigos) - não fale de patentes aqui."""
 
 
 def _informacoes_tecnologicas_prompt(theme: str, context: str, data: dict) -> str:
@@ -177,7 +205,7 @@ def _informacoes_tecnologicas_prompt(theme: str, context: str, data: dict) -> st
 Fatos:
 {facts_text}
 
-No estilo do REPTEC, em 3 a 5 parágrafos: comece pela distribuição temporal dos depósitos (crescimento, pico) com base nos dados das figuras; depois os principais depositantes, citando nomes e quantidades; depois as classificações CPC mais encontradas, explicando cada uma SÓ pelo significado oficial acima. Sempre escreva "CPC" (nunca "IPC")."""
+No estilo do REPTEC, em 3 a 5 parágrafos: comece pela distribuição temporal dos depósitos (crescimento, pico) com base nos dados das figuras; depois os principais depositantes, citando nomes e quantidades; depois as classificações CPC mais encontradas, explicando cada uma SÓ pelo significado oficial acima. Sempre escreva "CPC" (nunca "IPC"). Esta subseção trata SOMENTE de PATENTES: chame os documentos de patentes, depósitos ou registros de patente - nunca de "publicações científicas" ou "artigos"."""
 
 
 def _tendencias_ciclo_vida_prompt(theme: str, context: str, data: dict) -> str:
@@ -190,7 +218,7 @@ GP = ponto de crescimento (10% da saturação), MP = ponto médio (50%), SP = po
 """ if lines else ""
     return f"""{_documents_block(context)}{_figures_block(data)}{facts}Escreva a subseção 6.3 TENDÊNCIAS E CICLO DE VIDA DA TECNOLOGIA do relatório de prospecção sobre: {theme}
 
-No estilo do REPTEC, em 3 a 5 parágrafos: descreva a evolução das publicações e dos depósitos ao longo do tempo; discuta SEPARADAMENTE a curva S dos artigos e a curva S das patentes, informando o estágio de cada uma e os anos GP/MP/SP acima (ex.: "MP = 2011"); interprete o que isso indica sobre o interesse acadêmico e comercial pela tecnologia."""
+No estilo do REPTEC, em 3 a 5 parágrafos: descreva a evolução das publicações e dos depósitos ao longo do tempo; discuta SEPARADAMENTE a curva S dos artigos e a curva S das patentes, informando o estágio de cada uma e os anos GP/MP/SP acima (ex.: "MP = 2011"); interprete o que isso indica sobre o interesse acadêmico e comercial pela tecnologia. Os totais das curvas S são ACUMULADOS (não fale em "pico" de um valor acumulado) e GP/MP/SP são ANOS; use exatamente o estágio informado para cada curva."""
 
 
 def _conclusao_prompt(theme: str, data: dict) -> str:
@@ -217,4 +245,5 @@ Estrutura obrigatória (como no REPTEC), em 3 a 4 parágrafos impessoais:
 2. Sintetize o que os Resultados mostraram (volume, evolução, principais atores);
 3. Contextualize a situação no Brasil com base nos fatos acima;
 4. Faça a previsão com base nos anos de saturação (SP) informados;
-5. Encerre recomendando o monitoramento tecnológico contínuo ("recomenda-se ...")."""
+5. Encerre recomendando o monitoramento tecnológico contínuo ("recomenda-se ...").
+Coerência obrigatória: o estágio da tecnologia é um só ({overall.upper() if overall else 'o informado'}) - não o contradiga em outro parágrafo; os totais de documentos são os dos fatos acima (não arredonde nem recalcule)."""

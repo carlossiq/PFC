@@ -30,10 +30,11 @@ const SOURCE_LABELS: Record<ReviewSuggestion['source'], string> = {
   ia: 'IA',
 }
 
-// Painel lateral (à direita do .tex) da revisão: problemas de LaTeX
-// (documento todo) e sugestões de ortografia/acentuação/concordância (só
-// seções geradas por IA e trechos editados - ver report_review.py). Nada é
-// aplicado sem o usuário marcar e clicar em "Aplicar".
+// Painel lateral (à direita do .tex) da revisão: problemas de LaTeX e
+// sugestões de ortografia/acentuação/concordância - LanguageTool no
+// documento todo, IA (opcional) só nas seções geradas por IA e trechos
+// editados (ver report_review.py). Nada é aplicado sem o usuário marcar e
+// clicar em "Aplicar".
 export function ReviewPanel({
   issues,
   suggestions,
@@ -109,9 +110,12 @@ export function ReviewPanel({
           </p>
         ))}
 
-        {scopeSections.length > 0 && (
+        <p className="text-gray-500">
+          LanguageTool: <span className="text-gray-700">documento inteiro (exceto o quadro de busca)</span>
+        </p>
+        {hasAiResults && scopeSections.length > 0 && (
           <p className="text-gray-500">
-            Texto revisado: <span className="text-gray-700">{scopeSections.join('; ')}</span>
+            IA: <span className="text-gray-700">{scopeSections.join('; ')}</span>
           </p>
         )}
 

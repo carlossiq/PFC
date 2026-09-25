@@ -22,6 +22,7 @@ import {
 import {
   adminReferenceError,
   bibliographyError,
+  destinatarioError as destinatarioFormatError,
   signerFuncaoError,
   signerNameError,
   signerPostoError,
@@ -34,6 +35,7 @@ interface AiSectionState {
   status: SectionRunStatus
   text: string | null
   error: string | null
+  warnings?: string[]
 }
 
 interface StaticSectionState {
@@ -254,7 +256,7 @@ function SectionRow({
   disabled,
 }: {
   label: string
-  state: { status: SectionRunStatus; error: string | null; text: string | null }
+  state: { status: SectionRunStatus; error: string | null; text: string | null; warnings?: string[] }
   onRegenerate: () => void
   disabled: boolean
 }) {
@@ -281,6 +283,16 @@ function SectionRow({
         </div>
       </div>
       {state.error && <p className="text-xs text-red-600 mb-2">{state.error}</p>}
+      {state.warnings && state.warnings.length > 0 && (
+        <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+          <p className="font-semibold">Confira antes de montar - o texto pode não bater com os dados:</p>
+          <ul className="list-disc pl-4">
+            {state.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {state.text && (
         <p className="text-sm text-gray-700 whitespace-pre-wrap max-h-40 overflow-y-auto">{state.text}</p>
       )}
@@ -347,7 +359,10 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
   const anoError = !ano.trim()
   const referenciasAdministrativasError = referenciasAdministrativas.length === 0
   const elaboradoPorError = !signatures.elaboradoPor.some((s) => s.nome.trim() && s.posto.trim() && s.funcao.trim())
-  const destinatarioError = !destinatario.trim() || !!textFieldError(destinatario)
+  // Erro de formato (frase inteira colada no campo, texto inválido) aparece
+  // já durante a digitação; campo vazio só depois de tentar gerar/montar.
+  const destinatarioFormatMessage = destinatarioFormatError(destinatario)
+  const destinatarioError = !destinatario.trim() || !!destinatarioFormatMessage
   const objetivoError = !!textFieldError(objetivo, 5)
   const localError = !local.trim()
   const signatureFieldErrors = [...signatures.elaboradoPor, ...signatures.revisadoPor, ...signatures.aprovadoPor].some(
@@ -445,8 +460,8 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
     }
     setAiSections((s) => ({ ...s, [key]: { ...s[key], status: 'generating' } }))
     try {
-      const text = await generateSectionText(sessionId, key, buildSectionOverrides())
-      setAiSections((s) => ({ ...s, [key]: { status: 'done', text, error: null } }))
+      const { text, warnings } = await generateSectionText(sessionId, key, buildSectionOverrides())
+      setAiSections((s) => ({ ...s, [key]: { status: 'done', text, error: null, warnings } }))
       return true
     } catch (err) {
       setAiSections((s) => ({ ...s, [key]: { status: 'error', text: null, error: errorMessage(err, 'Falha ao gerar o texto.') } }))
@@ -570,14 +585,19 @@ export function ReportGeneration({ sessionId, onBack, onAssembled }: ReportGener
             name="reptec-destinatario"
             value={destinatario}
             onChange={(e) => setDestinatario(e.target.value)}
-            placeholder="Ex.: Indústria de Material Bélico do Brasil (IMBEL)"
-            error={showDestinatarioError}
+            placeholder="Ex.: AGITEC"
+            error={showDestinatarioError || !!destinatarioFormatMessage}
           />
           <p className="text-xs text-gray-500 mt-1">
-            Finalidade: "Apresentar o relatório de Prospecção Tecnológica sobre o tema a fim de fornecer informações de
-            tendências e ciclo de vida da tecnologia para <strong>{destinatario.trim() || '[destinatário]'}</strong>."
+            Só o destinatário - a frase é fixa: "Apresentar o relatório de Prospecção Tecnológica sobre o tema a fim de
+            fornecer informações de tendências e ciclo de vida da tecnologia para{' '}
+            <strong>{destinatario.trim() || '[destinatário]'}</strong>."
           </p>
-          {showDestinatarioError && <p className="text-red-500 text-xs mt-1">Informe para quem é o relatório.</p>}
+          {destinatarioFormatMessage ? (
+            <p className="text-red-500 text-xs mt-1">{destinatarioFormatMessage}</p>
+          ) : (
+            showDestinatarioError && <p className="text-red-500 text-xs mt-1">Informe para quem é o relatório.</p>
+          )}
         </div>
 
         <div>

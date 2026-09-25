@@ -26,7 +26,7 @@ class _FakeGenerator:
     def __init__(self, response: str) -> None:
         self.response = response
 
-    async def generate(self, prompt: str, system=None) -> str:
+    async def generate(self, prompt: str, system=None, temperature=None) -> str:
         return self.response
 
 
@@ -40,15 +40,19 @@ class _FakeResolver:
 
 
 def _languagetool_transport(matches_for: dict[str, str]):
-    """LanguageTool fake: marca cada palavra de `matches_for` (palavra -> substituição)."""
+    """LanguageTool fake: marca cada palavra de `matches_for` (palavra -> substituição),
+    tanto no texto anotado (revisão) quanto no texto puro (conferência das correções da IA)."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         import json
         from urllib.parse import parse_qs
 
         form = parse_qs(request.content.decode("utf-8"))
-        segments = json.loads(form["data"][0])["annotation"]
-        original = "".join(s.get("text", s.get("markup", "")) for s in segments)
+        if "data" in form:
+            segments = json.loads(form["data"][0])["annotation"]
+            original = "".join(s.get("text", s.get("markup", "")) for s in segments)
+        else:
+            original = form["text"][0]
         matches = [
             {
                 "offset": original.index(word),
@@ -97,10 +101,29 @@ async def test_review_reports_languagetool_down_but_keeps_latex_issues():
 
 
 @pytest.mark.asyncio
-async def test_missing_baseline_warns_that_only_ai_sections_were_checked():
+async def test_missing_baseline_warns_that_ai_only_checked_ai_sections():
     svc = ReportReviewService("http://lt", "pt-BR", _FakeResolver("{}"))
     svc._client = httpx.AsyncClient(transport=_languagetool_transport({}))
 
-    result = await svc.review(DOC, None, set())
+    assert not any("Remontar .tex" in w for w in (await svc.review(DOC, None, set())).warnings)
+    result = await svc.review(DOC, None, set(), include_ai=True)
 
     assert any("Remontar .tex" in w for w in result.warnings)
+
+
+@pytest.mark.asyncio
+async def test_ai_fix_that_introduces_unknown_word_is_dropped():
+    # "resultados mostra" -> "resultados mostram" é flexão válida, mas o
+    # dicionário (fake) não conhece "mostram" -> descartada.
+    ai_json = '{"correcoes": [{"original": "resultados mostra", "corrigido": "resultados mostram", "motivo": "x"}]}'
+    svc = ReportReviewService("http://lt", "pt-BR", _FakeResolver(ai_json))
+    svc._client = httpx.AsyncClient(transport=_languagetool_transport({"mostram": "?"}))
+
+    result = await svc.review(DOC, DOC, set(), include_ai=True)
+
+    assert not any(s.source == "ia" for s in result.suggestions)
+
+
+def test_parse_corrections_keeps_latex_commands_intact():
+    raw = '{"correcoes": [{"original": "no Quadro \\ref{quadro:x} mostra", "corrigido": "no Quadro \\ref{quadro:x} mostram"}]}'
+    assert _parse_corrections(raw)[0]["original"] == "no Quadro \\ref{quadro:x} mostra"

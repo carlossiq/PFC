@@ -14,4 +14,6 @@ class TextGenerationPort(Protocol):
     não um schema.
     """
 
-    async def generate(self, prompt: str, system: Optional[str] = None) -> str: ...
+    # `temperature`: None = padrão do provedor; a revisão usa 0 (saída
+    # determinística, sem "criatividade" nas correções).
+    async def generate(self, prompt: str, system: Optional[str] = None, temperature: Optional[float] = None) -> str: ...

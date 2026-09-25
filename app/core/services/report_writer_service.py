@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from app.core.services.report_citations import build_citation, build_reference, disambiguate, filter_citations
-from app.core.services.report_text_quality import fix_number_formatting, find_text_issues
+from app.core.services.report_text_quality import find_fact_issues, find_text_issues, fix_number_formatting
 from config.prompts.report_prompts import REPORT_SYSTEM_PROMPT, get_section_prompt, retry_instruction
 from core.config import Settings
 from core.logging import get_logger
@@ -155,6 +156,13 @@ def _convert_markdown_bold(escaped_text: str) -> str:
     devidamente escapado como texto normal - inserir `\\textbf{}` ao redor
     dele agora é seguro."""
     return _MARKDOWN_BOLD_RE.sub(r"\\textbf{\1}", escaped_text)
+
+
+@dataclass
+class SectionResult:
+    text: str
+    warnings: list[str] = field(default_factory=list)
+    attempts: int = 1
 
 
 class RAGUnavailableError(RuntimeError):
@@ -331,11 +339,25 @@ class ReportWriterService:
         data: dict[str, Any],
         sources: Optional[list[dict[str, str]]] = None,
     ) -> str:
+        return (await self.generate_section(section_key, theme, rag_context, data, sources)).text
+
+    async def generate_section(
+        self,
+        section_key: str,
+        theme: str,
+        rag_context: str,
+        data: dict[str, Any],
+        sources: Optional[list[dict[str, str]]] = None,
+    ) -> "SectionResult":
         """Gera o texto da seção e o valida: números no formato pt-BR são
         corrigidos automaticamente; termos internos do pipeline ("[Informação
-        não disponível]", "Relevância", "contexto fornecido"...) forçam UMA
-        regeneração - se persistirem, levanta SectionQualityError. Citações
-        que não correspondem a nenhuma fonte recuperada são removidas."""
+        não disponível]", "Relevância", "contexto fornecido"...) e
+        incoerências com os fatos calculados (`data["fact_check"]`, ver
+        report_text_quality.find_fact_issues) forçam UMA regeneração. Termos
+        internos que persistem levantam SectionQualityError; incoerências
+        que persistem voltam como avisos (`SectionResult.warnings`) - o texto
+        é aceito e o analista revisa. Citações que não correspondem a
+        nenhuma fonte recuperada são removidas."""
         if section_key not in AI_SECTIONS:
             raise ValueError(f"'{section_key}' não é uma seção de IA válida.")
 
@@ -349,9 +371,13 @@ class ReportWriterService:
         )
         text_generation = await self._llm_resolver.resolve_text_generation("report_writing")
 
+        facts = data.get("fact_check")
         issues: list[str] = []
+        fact_issues: list[str] = []
+        attempts = 0
         for attempt in (1, 2):
-            attempt_prompt = prompt if attempt == 1 else prompt + retry_instruction(issues)
+            attempts = attempt
+            attempt_prompt = prompt if attempt == 1 else prompt + retry_instruction(issues + fact_issues)
             raw_text = await text_generation.generate(attempt_prompt, system=REPORT_SYSTEM_PROMPT)
             text = _strip_markdown_headings(raw_text)
             text, removed = filter_citations(text, sources or [])
@@ -359,17 +385,26 @@ class ReportWriterService:
                 logger.warning("report_citations_removed section=%s removed=%s", section_key, removed)
             text = fix_number_formatting(text)
             issues = find_text_issues(text)
-            if not issues:
+            fact_issues = find_fact_issues(text, facts)
+            if not issues and not fact_issues:
                 break
-            logger.warning("report_section_quality_issues section=%s attempt=%d issues=%s", section_key, attempt, issues)
-        else:
+            logger.warning(
+                "report_section_quality_issues section=%s attempt=%d issues=%s fact_issues=%s",
+                section_key, attempt, issues, fact_issues,
+            )
+        if issues:
             raise SectionQualityError(
                 f"O texto gerado para '{section_name}' continuou com problemas após regenerar: "
                 + "; ".join(issues)
             )
 
         escaped_text = escape_latex(text)
-        return _convert_markdown_bold(escaped_text)
+        return SectionResult(text=_convert_markdown_bold(escaped_text), warnings=fact_issues, attempts=attempts)
+
+    async def writing_model(self) -> tuple[str, str]:
+        """(provider, modelo) do ponto de uso "report_writing" - o mesmo que
+        generate_section acabou de usar (registrado em session_ai_call)."""
+        return await self._llm_resolver.text_generation_model("report_writing")
 
 
 def _title_abstract_text(document: dict[str, Any]) -> Optional[str]:

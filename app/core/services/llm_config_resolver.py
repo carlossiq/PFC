@@ -49,6 +49,9 @@ class LLMConfigResolver:
         self._session_factory = session_factory
         self._cache: dict[str, LLMPort] = {}
         self._text_generation_cache: dict[str, TextGenerationPort] = {}
+        # (provider_code, model) do port de texto em cache - registrado em
+        # session_ai_call e citado na Metodologia do relatório.
+        self._text_generation_meta: dict[str, tuple[str, str]] = {}
 
     async def _resolve_config(self, call_site: str):
         from app.adapters.driven.persistence.config_repository_adapter import LLMConfigRepositoryAdapter
@@ -85,6 +88,7 @@ class LLMConfigResolver:
         config = await self._resolve_config(call_site)
         port = build_text_generation_port(config.provider_code, config.model, config.api_key, config.base_url)
         self._text_generation_cache[call_site] = port
+        self._text_generation_meta[call_site] = (config.provider_code, config.model)
         logger.info(
             "llm_resolver_text_generation_built",
             call_site=call_site,
@@ -93,10 +97,19 @@ class LLMConfigResolver:
         )
         return port
 
+    async def text_generation_model(self, call_site: str) -> tuple[str, str]:
+        """(provider_code, model) do port de texto desse call site - o mesmo
+        que resolve_text_generation devolve (resolve se ainda não houver)."""
+        if call_site not in self._text_generation_meta:
+            await self.resolve_text_generation(call_site)
+        return self._text_generation_meta[call_site]
+
     def invalidate(self, call_site: str) -> None:
         self._cache.pop(call_site, None)
         self._text_generation_cache.pop(call_site, None)
+        self._text_generation_meta.pop(call_site, None)
 
     def invalidate_all(self) -> None:
         self._cache.clear()
         self._text_generation_cache.clear()
+        self._text_generation_meta.clear()

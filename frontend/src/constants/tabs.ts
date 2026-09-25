@@ -20,6 +20,12 @@ export const TABS = {
   // Botões da barra lateral
   HELP: 10,
   USER: 11,
+
+  // Páginas adicionais do menu Documentação (navbar)
+  DOC_PIPELINE: 12,
+  DOC_TERMS: 13,
+  DOC_LATEX: 14,
+  DOC_ERRORS: 15,
 } as const
 
 export type TabType = typeof TABS[keyof typeof TABS]

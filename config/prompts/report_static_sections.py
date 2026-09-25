@@ -63,6 +63,51 @@ DEFAULT_BIBLIOGRAPHY: list[str] = [
     "n. 6-7, p. 439-457, 1998.",
     "PORTER, A. L. QTIP: Quick technology intelligence processes. Technological Forecasting "
     "and Social Change, v. 72, n. 9, p. 1070-1081, 2005.",
+    # Obras citadas em 5.4 Apoio Computacional à Prospecção (ver
+    # render_apoio_computacional) - os mesmos dados da bibliografia do PFC
+    # (PFC/main.tex).
+    "BROWN, T. B. et al. Language models are few-shot learners. Advances in Neural Information "
+    "Processing Systems, v. 33, p. 1877-1901, 2020. Disponível em: https://arxiv.org/abs/2005.14165.",
+    "CHAO, A. Nonparametric estimation of the number of classes in a population. Scandinavian "
+    "Journal of Statistics, v. 11, n. 4, p. 265-270, 1984.",
+    "CORMACK, G. V.; CLARKE, C. L. A.; BUETTCHER, S. Reciprocal rank fusion outperforms Condorcet "
+    "and individual rank learning methods. In: INTERNATIONAL ACM SIGIR CONFERENCE ON RESEARCH AND "
+    "DEVELOPMENT IN INFORMATION RETRIEVAL, 32., 2009, Boston. Proceedings. New York: ACM, 2009. "
+    "p. 758-759.",
+    "EFRON, B. Bootstrap methods: another look at the jackknife. The Annals of Statistics, v. 7, "
+    "n. 1, p. 1-26, 1979.",
+    "FISHER, J. C.; PRY, R. H. A simple substitution model of technological change. Technological "
+    "Forecasting and Social Change, v. 3, p. 75-88, 1971.",
+    "FRANTZI, K.; ANANIADOU, S.; MIMA, H. Automatic recognition of multi-word terms: the "
+    "C-value/NC-value method. International Journal on Digital Libraries, v. 3, n. 2, p. 115-130, 2000.",
+    "GAO, Y. et al. Retrieval-augmented generation for large language models: a survey. arXiv, "
+    "arXiv:2312.10997, 2024. Disponível em: https://arxiv.org/abs/2312.10997.",
+    "GROOTENDORST, M. KeyBERT: minimal keyword extraction with BERT. Zenodo, 2020. "
+    "DOI: 10.5281/zenodo.4461265.",
+    "JI, Z. et al. Survey of hallucination in natural language generation. ACM Computing Surveys, "
+    "v. 55, n. 12, art. 248, 2023.",
+    "LEWIS, P. et al. Retrieval-augmented generation for knowledge-intensive NLP tasks. Advances in "
+    "Neural Information Processing Systems, v. 33, p. 9459-9474, 2020. Disponível em: "
+    "https://arxiv.org/abs/2005.11401.",
+    "REIMERS, N.; GUREVYCH, I. Sentence-BERT: sentence embeddings using siamese BERT-networks. In: "
+    "CONFERENCE ON EMPIRICAL METHODS IN NATURAL LANGUAGE PROCESSING (EMNLP), 2019, Hong Kong. "
+    "Proceedings. Stroudsburg: Association for Computational Linguistics, 2019. p. 3982-3992.",
+    "ROBERTSON, S.; ZARAGOZA, H.; TAYLOR, M. Simple BM25 extension to multiple weighted fields. In: "
+    "ACM INTERNATIONAL CONFERENCE ON INFORMATION AND KNOWLEDGE MANAGEMENT (CIKM), 13., 2004, "
+    "Washington. Proceedings. New York: ACM, 2004. p. 42-49.",
+    "SCHOPF, T.; KLIMEK, S.; MATTHES, F. PatternRank: leveraging pretrained language models and part "
+    "of speech for unsupervised keyphrase extraction. In: INTERNATIONAL CONFERENCE ON KNOWLEDGE "
+    "DISCOVERY AND INFORMATION RETRIEVAL (KDIR), 14., 2022, Valletta. Proceedings. Setúbal: "
+    "SciTePress, 2022. p. 243-248.",
+    "VASWANI, A. et al. Attention is all you need. Advances in Neural Information Processing "
+    "Systems, v. 30, 2017. Disponível em: https://arxiv.org/abs/1706.03762.",
+    "WEI, J. et al. Chain-of-thought prompting elicits reasoning in large language models. Advances "
+    "in Neural Information Processing Systems, v. 35, p. 24824-24837, 2022. Disponível em: "
+    "https://arxiv.org/abs/2201.11903.",
+    "WHITE, J. et al. A prompt pattern catalog to enhance prompt engineering with ChatGPT. arXiv, "
+    "arXiv:2302.11382, 2023. Disponível em: https://arxiv.org/abs/2302.11382.",
+    "ZHAO, W. X. et al. A survey of large language models. arXiv, arXiv:2303.18223, 2023. "
+    "Disponível em: https://arxiv.org/abs/2303.18223.",
 ]
 
 # Cada papel é uma LISTA de assinantes (não mais um único bloco) - o front
@@ -163,3 +208,126 @@ def merge_bibliography(escaped_defaults: list[str], stored: list[str]) -> list[s
         if ref.strip() and ref not in merged:
             merged.append(ref)
     return sorted(merged, key=_bibliography_sort_key)
+
+
+# ---------------------------------------------------------------------------
+# 5.4 Apoio Computacional à Prospecção
+# ---------------------------------------------------------------------------
+# Etapa registrada em session_ai_call (`step`) -> como a etapa é nomeada na
+# Metodologia. A ordem aqui é a ordem das etapas no texto.
+MODEL_STAGE_LABELS: list[tuple[tuple[str, ...], str]] = [
+    (("refine_topic", "specify_topic"), "refinamento do tema"),
+    (("probe_query", "probe_queries_multi"), "estratégias de busca exploratória"),
+    (("final_query",), "estratégia de busca final"),
+    (("report_writing",), "redação das seções analíticas"),
+    (("extract_terms",), "representação vetorial de textos (KeyBERT e recuperação semântica)"),
+]
+REPORT_WRITING_STEP_PREFIX = "report_writing:"
+
+
+def models_by_stage(calls: list[tuple[str, str]], embedding_model: str = "") -> list[tuple[str, list[str]]]:
+    """(etapa, modelos) a partir das chamadas registradas em session_ai_call,
+    em ordem cronológica: `calls` = [(step, model), ...].
+
+    Redação ("report_writing:<seção>"): vale só a chamada MAIS RECENTE de
+    cada seção - o modelo que escreveu o texto que está no documento, não os
+    de gerações descartadas. Nas demais etapas entram todos os modelos usados
+    (se o analista trocou de modelo no meio, os dois aparecem).
+    `embedding_model` completa a etapa de representação vetorial quando a
+    extração de termos não foi registrada (o mesmo modelo serve o RAG)."""
+    latest_writer: dict[str, str] = {}
+    used: dict[str, list[str]] = {}
+    for step, model in calls:
+        if not model:
+            continue
+        if step.startswith(REPORT_WRITING_STEP_PREFIX):
+            latest_writer[step] = model
+            continue
+        used.setdefault(step, [])
+        if model not in used[step]:
+            used[step].append(model)
+    used["report_writing"] = list(dict.fromkeys(latest_writer.values()))
+    if embedding_model and not used.get("extract_terms"):
+        used["extract_terms"] = [embedding_model]
+
+    stages: list[tuple[str, list[str]]] = []
+    for steps, label in MODEL_STAGE_LABELS:
+        models = list(dict.fromkeys(m for step in steps for m in used.get(step, [])))
+        if models:
+            stages.append((label, models))
+    return stages
+
+
+def _texttt(model: str) -> str:
+    return "\\texttt{" + model + "}"
+
+
+def render_apoio_computacional(stages: list[tuple[str, list[str]]]) -> str:
+    """Subseção 5.4 (LaTeX pronto): o que é um LLM, as técnicas de
+    engenharia de prompt, extração de termos, estatística, curva S e RAG -
+    cada técnica com a obra que a define (todas em DEFAULT_BIBLIOGRAPHY) -
+    e, por fim, os modelos usados em cada etapa desta prospecção.
+    `stages` vem de models_by_stage, com os nomes de modelo JÁ escapados
+    pra LaTeX pelo chamador. Descreve só o que o sistema faz de fato."""
+    paragraphs = [
+        "As etapas descritas nesta seção foram conduzidas com o apoio de ferramentas computacionais que "
+        "integram técnicas de Inteligência Artificial (IA) e de Processamento de Linguagem Natural (PLN) à "
+        "análise bibliométrica, sempre com a revisão e a validação do analista de prospecção em cada etapa.",
+
+        "Modelos de linguagem de grande porte (\\textit{Large Language Models} -- LLM) são redes neurais "
+        "baseadas na arquitetura \\textit{Transformer} (VASWANI et al., 2017), treinadas sobre grandes volumes "
+        "de texto para prever a continuação de uma sequência. Em escala suficiente, esses modelos passam a "
+        "executar tarefas descritas em linguagem natural a partir de instruções e de poucos exemplos, sem "
+        "treinamento específico (BROWN et al., 2020; ZHAO et al., 2023). Como também podem produzir "
+        "afirmações plausíveis, porém sem fundamento -- as chamadas alucinações (JI et al., 2023) --, seu uso "
+        "neste estudo restringiu-se a tarefas verificáveis, com as salvaguardas descritas a seguir.",
+
+        "A qualidade das respostas de um LLM depende da forma como a tarefa é formulada na instrução "
+        "(\\textit{prompt}); a engenharia de \\textit{prompt} reúne padrões para essa formulação (WHITE et al., "
+        "2023). Foram empregadas as seguintes técnicas:\n"
+        "\\begin{itemize}\n"
+        "    \\item \\textbf{persona}: cada instrução atribui ao modelo o papel de especialista em prospecção "
+        "tecnológica e na construção de estratégias de busca (WHITE et al., 2023);\n"
+        "    \\item \\textbf{exemplos na instrução (\\textit{few-shot})}: exemplos contrastantes de respostas "
+        "adequadas e inadequadas orientam o nível de especificidade esperado (BROWN et al., 2020);\n"
+        "    \\item \\textbf{raciocínio passo a passo (\\textit{chain-of-thought})}: a construção da estratégia "
+        "de busca é decomposta em etapas explícitas -- identificar os conceitos do tema, eleger os centrais e "
+        "agrupar sinônimos --, o que melhora o desempenho dos modelos em tarefas de raciocínio "
+        "(WEI et al., 2022);\n"
+        "    \\item \\textbf{saída estruturada}: as respostas são exigidas em formato JSON e validadas por "
+        "esquema antes do uso, aproveitando-se apenas os campos aceitos por cada base de dados;\n"
+        "    \\item \\textbf{autocorreção orientada por métrica}: cada estratégia gerada recebe um índice de "
+        "complexidade calculado de forma determinística; quando o índice excede o limite, a medida obtida é "
+        "devolvida ao modelo com a instrução de simplificar a consulta, em até três tentativas.\n"
+        "\\end{itemize}",
+
+        "Inicialmente, os LLM propõem estratégias de busca a partir do tema e das palavras-chave informados, "
+        "respeitando a sintaxe de cada base de dados. Essas estratégias são executadas em buscas exploratórias "
+        "(\\textit{probe}), cujos documentos fornecem o vocabulário efetivamente empregado na literatura e nas "
+        "patentes sobre o tema. Desse conjunto são extraídos termos candidatos por padrões gramaticais (SCHOPF; "
+        "KLIMEK; MATTHES, 2022), ranqueados por dois critérios complementares: um estatístico-lexical, pelo "
+        "algoritmo BM25F (ROBERTSON; ZARAGOZA; TAYLOR, 2004), e um semântico, pelo método KeyBERT "
+        "(GROOTENDORST, 2020), baseado em representações vetoriais de sentenças (REIMERS; GUREVYCH, 2019). Os "
+        "dois rankings são combinados por fusão de postos (\\textit{Reciprocal Rank Fusion}) (CORMACK; CLARKE; "
+        "BUETTCHER, 2009), e termos aninhados são tratados pela medida C-value (FRANTZI; ANANIADOU; MIMA, 2000). "
+        "Os termos mais representativos orientam a construção da estratégia de busca final, em três níveis de "
+        "abrangência (específica, balanceada ou ampla), selecionada pelo analista.",
+
+        "A busca final é realizada ano a ano, preservando a série histórica completa, e a amostra analisada é "
+        "ampliada até que o estimador de riqueza Chao1 (CHAO, 1984) indique sua saturação; a estabilidade dos "
+        "rankings de depositantes, instituições e classificações é verificada por reamostragem "
+        "\\textit{bootstrap} (EFRON, 1979). As curvas S são ajustadas automaticamente pelo modelo logístico de "
+        "substituição (FISHER; PRY, 1971), com a identificação dos pontos GP, MP e SP e do estágio "
+        "correspondente do ciclo de vida.",
+
+        "Por fim, a redação das seções analíticas deste relatório contou com o apoio de LLM por meio de geração "
+        "aumentada por recuperação (\\textit{Retrieval-Augmented Generation} -- RAG) (LEWIS et al., 2020; GAO et "
+        "al., 2024): para cada seção, recuperam-se os trechos mais relevantes dos documentos obtidos nas buscas, "
+        "e somente esse conteúdo, com os indicadores calculados, é fornecido ao modelo. Citações que não "
+        "correspondem a um documento recuperado são descartadas automaticamente, e o texto foi submetido à "
+        "revisão final do analista.",
+    ]
+    if stages:
+        items = "; ".join(f"{label}: {', '.join(_texttt(model) for model in models)}" for label, models in stages)
+        paragraphs.append(f"Os modelos utilizados em cada etapa desta prospecção foram: {items}.")
+    return "\n\n".join(paragraphs)

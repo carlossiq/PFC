@@ -329,17 +329,26 @@ export interface SectionGenerateOverrides {
   patentCount?: number
 }
 
+// `warnings`: incoerências com os dados (número sem lastro, "lidera"
+// atribuído à entidade errada, estágio contraditório...) que persistiram
+// depois de o backend regenerar a seção uma vez - o texto é aceito, mas o
+// analista deve conferir (ver report_text_quality.find_fact_issues).
+export interface GeneratedSection {
+  text: string
+  warnings: string[]
+}
+
 export async function generateSectionText(
   sessionId: number,
   sectionKey: AiSectionKey,
   overrides?: SectionGenerateOverrides
-): Promise<string> {
+): Promise<GeneratedSection> {
   const { data } = await apiClient.post(`/report/${sessionId}/sections/${sectionKey}/generate`, {
     article_count: overrides?.articleCount ?? null,
     patent_count: overrides?.patentCount ?? null,
   })
   if (!data.success) throw new Error(data.message || `Falha ao gerar o texto da seção (${sectionKey}).`)
-  return data.data.generated_text
+  return { text: data.data.generated_text, warnings: data.data.warnings ?? [] }
 }
 
 export interface SignatureBlockInput {
@@ -739,7 +748,15 @@ export async function reviewReportTex(
         section: s.section,
       })
     ),
-    scopeSections: [...new Set<string>((raw.scope ?? []).map((r: { section: string }) => r.section))],
+    // O LanguageTool sempre cobre o documento inteiro (reason
+    // "languagetool"); aqui só as seções que a IA revisou (ia/editado).
+    scopeSections: [
+      ...new Set<string>(
+        (raw.scope ?? [])
+          .filter((r: { reason: string }) => r.reason !== 'languagetool')
+          .map((r: { section: string }) => r.section)
+      ),
+    ],
     warnings: raw.warnings ?? [],
   }
 }

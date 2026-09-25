@@ -226,11 +226,7 @@ Como apresentado brevemente, o ciclo de vida da tecnologia pode ser monitorado, 
 \VAR{metodologia}
 
 \subsection{Apoio Computacional à Prospecção}
-As etapas descritas nesta seção foram conduzidas com o apoio de ferramentas computacionais que integram técnicas de Inteligência Artificial (IA) e de Processamento de Linguagem Natural (PLN) à análise bibliométrica, sempre com a revisão e a validação do analista de prospecção em cada etapa.
-
-Inicialmente, modelos de linguagem de grande porte (\textit{Large Language Models} -- LLM) propõem estratégias de busca a partir do tema e das palavras-chave informados, respeitando a sintaxe de cada base de dados e um índice de complexidade que evita consultas excessivamente restritivas. Essas estratégias são executadas em buscas exploratórias (\textit{probe}), cujos documentos fornecem o vocabulário efetivamente empregado na literatura e nas patentes sobre o tema. Desse conjunto são extraídos termos candidatos por padrões gramaticais, posteriormente ranqueados por dois critérios complementares: um estatístico-lexical, pelo algoritmo BM25F, e um semântico, pelo método KeyBERT, cujos resultados são combinados por fusão de rankings (\textit{Reciprocal Rank Fusion}). Os termos mais representativos orientam a construção da estratégia de busca final, em três níveis de abrangência (específica, balanceada ou ampla), selecionada pelo analista.
-
-A busca final é realizada ano a ano, preservando a série histórica completa, e a amostra analisada é ampliada até que um critério estatístico indique sua saturação, conferindo robustez aos rankings de depositantes, instituições e classificações. As curvas S são ajustadas automaticamente pelo modelo logístico, com a identificação dos pontos GP, MP e SP e do estágio correspondente do ciclo de vida. Por fim, a redação das seções analíticas deste relatório contou com o apoio de LLM, fundamentada exclusivamente nos documentos recuperados nas buscas e nos indicadores calculados, com a citação das respectivas fontes e submetida à revisão final do analista.
+\VAR{apoio_computacional}
 
 \section{RESULTADOS}
 

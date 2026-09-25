@@ -16,9 +16,42 @@ function isGibberishWord(word: string): boolean {
   return distinct.size <= 2 || ![...distinct].some((c) => VOWELS.has(c))
 }
 
+// Expressões de "campo não preenchido" digitadas por extenso (mesma lista do backend).
+const PLACEHOLDER_PHRASES = new Set([
+  'nao especificado', 'nao especificada', 'nao informado', 'nao informada', 'sem posto', 'sem funcao',
+  'sem nome', 'a definir', 'n/a', 'na', 'teste', 'xxx', 'fulano de tal', 'nome sobrenome', '-',
+])
+
+function normalize(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Mn}/gu, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s.]+|[\s.]+$/g, '')
+}
+
 export function looksLikePlaceholder(text: string): boolean {
   const words = text.trim().split(/\s+/).filter(Boolean)
-  return words.length === 0 || words.some(isGibberishWord)
+  return words.length === 0 || PLACEHOLDER_PHRASES.has(normalize(text)) || words.some(isGibberishWord)
+}
+
+// O Destinatário entra no FIM da frase fixa da Finalidade - digitar a frase
+// inteira no campo a duplicava no PDF (mesma regra do backend).
+const FINALIDADE_FRAGMENTS = ['apresentar', 'relatorio de prospeccao', 'a fim de fornecer', 'ciclo de vida da tecnologia']
+const DESTINATARIO_MAX_WORDS = 12
+
+export function destinatarioError(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const normalized = normalize(trimmed)
+  if (
+    FINALIDADE_FRAGMENTS.some((fragment) => normalized.includes(fragment)) ||
+    trimmed.split(/\s+/).length > DESTINATARIO_MAX_WORDS
+  ) {
+    return 'Informe só o destinatário (ex.: AGITEC, DCT) - o restante da frase já é fixo.'
+  }
+  return looksLikePlaceholder(trimmed) ? 'Texto inválido.' : null
 }
 
 export function adminReferenceError(ref: string): string | null {

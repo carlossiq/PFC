@@ -27,16 +27,16 @@ const faqItems: FaqItem[] = [
       'Não. O que foi gerado continua salvo enquanto a sessão estiver aberta. Voltar e Avançar restauram exatamente onde você estava, sem chamar a IA de novo — a menos que algo em uma etapa anterior tenha mudado nesse meio tempo (ver pergunta acima).',
   },
   {
-    id: 'salvar-vs-finalizar',
-    question: '"Salvar Progresso" e "Finalizar Sessão" fazem a mesma coisa?',
+    id: 'sessao-concluida',
+    question: 'Quando uma sessão passa a contar como concluída?',
     answer:
-      'Não. "Salvar Progresso" grava o que você já preencheu até agora e mantém a sessão como pendente, pra você continuar depois pela tela de Busca. "Finalizar Sessão" (disponível na etapa "Resultados Iniciais") marca a sessão como concluída. Hoje esse é o ponto em que a sessão passa a contar como finalizada no sistema, mesmo havendo mais etapas depois dele na barra de progresso.',
+      'Ao clicar em "Montar .tex" na Geração do Relatório. Até lá, "Salvar Progresso" grava o que você já preencheu e mantém a sessão pendente, para continuar depois pela tela de Busca. Depois de montar o .tex, a pesquisa (queries, termos, buscas) não pode mais ser editada, só o texto do relatório.',
   },
   {
     id: 'continuar-pesquisa',
-    question: 'Por que continuar uma pesquisa salva volta pro início em vez de exatamente onde eu parei?',
+    question: 'Continuar uma pesquisa salva reabre onde eu parei?',
     answer:
-      'Continuar uma sessão salva (pela tela de Busca) recarrega os dados que você já preencheu, mas hoje sempre reabre na primeira etapa. Além disso, os resultados de busca da Exploração Inicial não ficam salvos — pode ser necessário confirmar a query de novo para trazê-los de volta.',
+      'Sim. "Continuar pesquisa", na tela de Busca, reabre a sessão na etapa em que ela foi salva, com os documentos e termos restaurados do banco, sem consultar as APIs de novo. Sessões concluídas mostram "Ver Relatório", que abre direto o editor do documento.',
   },
   {
     id: 'sessao-bloqueada',
@@ -45,15 +45,40 @@ const faqItems: FaqItem[] = [
       'Enquanto uma sessão está em andamento, o menu lateral fica bloqueado e o navegador avisa antes de fechar a aba. É uma proteção pra evitar perder progresso não salvo por engano.',
   },
   {
-    id: 'relatorio',
-    question: 'A etapa "Geração do Relatório" já gera um relatório?',
-    answer: 'Ainda não — essa etapa está em construção. Por enquanto ela só mostra os botões de navegação.',
-  },
-  {
     id: 'amostragem-sem-gerar',
     question: 'Por que a "Amostragem de Termos" não tem um botão para gerar outros termos?',
     answer:
-      'Os termos são extraídos automaticamente do texto dos resultados, sem IA generativa — por isso não existe um "gerar outros", só a opção de marcar/desmarcar quais termos entram na query final.',
+      'Os termos são extraídos automaticamente do texto dos resultados, sem IA generativa: os mesmos documentos sempre produzem os mesmos termos. Por isso não existe "gerar outros", só a opção de marcar ou desmarcar quais termos entram na query final. Para obter termos diferentes, mude a query exploratória. Veja Extração de Termos.',
+  },
+  {
+    id: 'keybert-modelo',
+    question: 'Posso trocar o modelo do KeyBERT?',
+    answer:
+      'Sim, em Configurações › Geral › "Modelo do KeyBERT". As opções recomendadas são distiluse-base-multilingual-cased-v2 (padrão, multilíngue), all-mpnet-base-v2 (patentes e textos técnicos) e allenai/specter (artigos acadêmicos). A troca só vale depois de reiniciar o backend, e o mesmo modelo é usado no RAG do relatório.',
+  },
+  {
+    id: 'usepackage',
+    question: 'Por que meu \\usepackage faz a compilação do PDF falhar?',
+    answer:
+      'O compilador roda sem internet e só tem os pacotes instalados na imagem latex-compiler. Pacotes como multirow, siunitx, wrapfig ou makecell não estão disponíveis. A lista do que já está carregado e do que pode ser adicionado está em Relatório e LaTeX › Pacotes LaTeX.',
+  },
+  {
+    id: 'citacoes',
+    question: 'Por que o texto da IA não cita um documento que eu esperava?',
+    answer:
+      'O LLM só vê os trechos mais relevantes de cada seção, recuperados por RAG, e o sistema remove toda citação que não corresponda a um documento desse contexto. Um documento pouco relevante para a seção pode ficar de fora. É possível ajustar "Corte relativo do RAG" e "Top-K do RAG por seção" em Configurações › Geral e gerar a seção de novo, ou citar o documento manualmente no editor.',
+  },
+  {
+    id: 'curva-s-confiavel',
+    question: 'O que significa o aviso de ajuste pouco confiável na curva S?',
+    answer:
+      'O ajuste logístico não passou em algum critério de qualidade: R² abaixo de 0,90, saturação alta com menos de 5 anos de dados ou taxa de crescimento implausível. A curva continua sendo exibida, sem a parte projetada, e deve ser lida com cautela. Buscas com mais anos e mais documentos costumam resolver. Veja Pipeline de Prospecção › Curva S.',
+  },
+  {
+    id: 'editar-tex',
+    question: 'Minhas edições no .tex são perdidas se eu gerar algo de novo?',
+    answer:
+      'Só com "Remontar .tex", que refaz o documento do zero e pede confirmação antes. Compilar, revisar, inserir imagens ou baixar o .zip nunca descartam edições.',
   },
 ]
 

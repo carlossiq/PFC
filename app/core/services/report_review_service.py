@@ -1,9 +1,10 @@
 """
 Orquestra a revisão do .tex no editor (POST /report/{session_id}/review):
 verificador de LaTeX + LanguageTool (ortografia, acentuação, concordância)
-nos trechos em escopo + segunda opinião opcional por IA (ponto de uso
-"report_review"), focada no que o LanguageTool deixa passar - concordância
-com sujeito distante ("a concentração de depositantes ... indicam").
+no documento inteiro + segunda opinião opcional por IA (ponto de uso
+"report_review") nas seções de IA e trechos editados, focada no que o
+LanguageTool deixa passar - concordância com sujeito distante ("a
+concentração de depositantes ... indicam").
 
 A lógica pura (o que revisar, como converter LaTeX, o que filtrar/aceitar)
 fica em report_review.py; aqui só I/O: HTTP pro LanguageTool e o LLM.
@@ -23,6 +24,7 @@ from app.core.services.report_review import (
     ReviewResult,
     ScopeRange,
     Suggestion,
+    ai_review_scope,
     languagetool_suggestions,
     lint_latex,
     overlaps,
@@ -39,12 +41,20 @@ _LANGUAGETOOL_CONCURRENCY = 4
 _AI_CONCURRENCY = 2
 # Parágrafo curto demais não vale uma chamada de IA.
 _AI_MIN_PARAGRAPH_CHARS = 60
+# Regra de ortografia (dicionário) do LanguageTool pt-BR - usada sozinha pra
+# conferir as palavras que a IA propõe.
+_SPELLING_RULE = "MORFOLOGIK_RULE_PT_BR"
 
-AI_REVIEW_SYSTEM_PROMPT = """Você é revisor de língua portuguesa (norma culta do Brasil) de relatórios técnicos.
-Corrija SOMENTE erros de: concordância verbal, concordância nominal (número e gênero), acentuação e ortografia.
-NÃO reescreva estilo, NÃO troque palavras corretas por sinônimos, NÃO altere números, siglas, nomes próprios, citações "(AUTOR, ano)" nem comandos LaTeX (\\textit{...}, \\ref{...}, \\%, \\&).
+AI_REVIEW_SYSTEM_PROMPT = """Você é revisor de língua portuguesa (norma culta do BRASIL) de relatórios técnicos.
+Corrija SOMENTE erros de: concordância verbal, concordância nominal (número e gênero) e acentuação.
+Regras obrigatórias:
+- Depois de um número maior que 1, o substantivo fica no PLURAL ("2 publicações", "4 registros") - isso está CORRETO, não altere.
+- NÃO altere o tempo verbal ("observa-se" continua "observa-se").
+- NÃO altere pontuação, vírgulas, maiúsculas/minúsculas nem espaços.
+- Use a grafia do Brasil ("respectivamente", "fato", "recepção"), nunca a de Portugal.
+- NÃO reescreva estilo, NÃO troque palavras corretas por sinônimos, NÃO altere números, siglas, nomes próprios, citações "(AUTOR, ano)" nem comandos LaTeX.
 Responda APENAS com JSON no formato:
-{"correcoes": [{"original": "<trecho EXATO copiado do texto, curto, contendo o erro>", "corrigido": "<o mesmo trecho corrigido>", "motivo": "concordância verbal|concordância nominal|acentuação|ortografia"}]}
+{"correcoes": [{"original": "<trecho EXATO copiado do texto, curto, contendo o erro>", "corrigido": "<o mesmo trecho corrigido>", "motivo": "concordância verbal|concordância nominal|acentuação"}]}
 Se não houver erros, responda {"correcoes": []}."""
 
 
@@ -68,22 +78,25 @@ class ReportReviewService:
     ) -> ReviewResult:
         result = ReviewResult()
         result.latex_issues = lint_latex(text, available_images, compile_log)
-        result.scope = review_scope(text, baseline)
-        if baseline is None:
-            result.warnings.append(
-                "Este relatório foi montado antes da revisão existir: só as seções geradas por IA foram "
-                "revisadas (edições manuais fora delas não são detectadas). Use \"Remontar .tex\" para habilitar."
-            )
-        if not result.scope:
+        lt_scope = review_scope(text)
+        result.scope = list(lt_scope)
+        if not lt_scope:
             return result
 
-        lt_suggestions, lt_warning = await self._languagetool(text, result.scope)
+        lt_suggestions, lt_warning = await self._languagetool(text, lt_scope)
         result.suggestions.extend(lt_suggestions)
         if lt_warning:
             result.warnings.append(lt_warning)
 
         if include_ai:
-            ai_suggestions, ai_warning = await self._ai_review(text, result.scope)
+            if baseline is None:
+                result.warnings.append(
+                    "Este relatório foi montado antes da revisão existir: a IA revisou só as seções geradas por IA "
+                    "(edições manuais fora delas não são detectadas). Use \"Remontar .tex\" para habilitar."
+                )
+            ai_scope = ai_review_scope(text, baseline)
+            result.scope.extend(ai_scope)
+            ai_suggestions, ai_warning = await self._ai_review(text, ai_scope)
             result.suggestions.extend(s for s in ai_suggestions if not any(overlaps(s, lt) for lt in lt_suggestions))
             if ai_warning:
                 result.warnings.append(ai_warning)
@@ -153,7 +166,9 @@ class ReportReviewService:
             nonlocal failures
             async with semaphore:
                 try:
-                    raw = await generator.generate(f"Texto a revisar:\n\n{paragraph}", system=AI_REVIEW_SYSTEM_PROMPT)
+                    raw = await generator.generate(
+                        f"Texto a revisar:\n\n{paragraph}", system=AI_REVIEW_SYSTEM_PROMPT, temperature=0.0
+                    )
                     corrections = _parse_corrections(raw)
                 except Exception as exc:
                     failures += 1
@@ -183,7 +198,43 @@ class ReportReviewService:
         warning = (
             f"A revisão por IA falhou em {failures} de {len(paragraphs)} parágrafos - tente de novo." if failures else None
         )
-        return [s for batch in batches for s in batch], warning
+        suggestions = await self._drop_misspelled_ai_fixes([s for batch in batches for s in batch])
+        return suggestions, warning
+
+    async def _drop_misspelled_ai_fixes(self, suggestions: list[Suggestion]) -> list[Suggestion]:
+        """Descarta correção da IA que introduz palavra que o dicionário pt-BR
+        do LanguageTool não conhece (ex.: forma inventada ou grafia de
+        Portugal). Uma única chamada: original e corrigido de cada sugestão,
+        um por linha. Se o LanguageTool não responder, mantém as sugestões
+        (as travas de validate_ai_suggestion já valeram)."""
+        if not suggestions:
+            return suggestions
+        lines = [line for s in suggestions for line in (s.original, s.replacements[0])]
+        joined = "\n".join(line.replace("\n", " ") for line in lines)
+        try:
+            response = await self._client.post(
+                f"{self._languagetool_url}/v2/check",
+                data={
+                    "language": self._language(),
+                    "text": joined,
+                    "enabledRules": _SPELLING_RULE,
+                    "enabledOnly": "true",
+                },
+            )
+            response.raise_for_status()
+            matches = response.json().get("matches", [])
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning("report_review_ai_spellcheck_failed", error=str(exc))
+            return suggestions
+
+        starts = [0]
+        for line in lines:
+            starts.append(starts[-1] + len(line) + 1)
+        flagged: list[set[str]] = [set() for _ in lines]
+        for match in matches:
+            index = max(i for i, start in enumerate(starts[:-1]) if start <= match["offset"])
+            flagged[index].add(joined[match["offset"]: match["offset"] + match["length"]].lower())
+        return [s for i, s in enumerate(suggestions) if not (flagged[2 * i + 1] - flagged[2 * i])]
 
     def _language(self) -> str:
         return getattr(self._settings, "languagetool_language", None) or self._default_language
@@ -197,10 +248,13 @@ def _parse_corrections(raw: str) -> list[dict[str, Any]]:
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     if not match:
         return []
-    # O modelo copia trechos LaTeX ("17,3\%") pra dentro das strings JSON sem
-    # dobrar a barra - escape inválido pro json.loads. Dobra toda barra que
-    # não inicia um escape JSON válido.
-    candidate = re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", match.group(0))
+    # O modelo copia trechos LaTeX ("17,3\%", "\ref{...}") pra dentro das
+    # strings JSON sem dobrar a barra. Comando LaTeX (barra + 2 ou mais
+    # letras) é dobrado primeiro - senão "\ref" vira retorno de carro + "ef"
+    # ("\r" é escape JSON válido) e a sugestão não casa mais com o texto;
+    # depois, toda barra que não inicia um escape JSON válido.
+    candidate = re.sub(r"(?<!\\)\\(?=[A-Za-z]{2,})", r"\\\\", match.group(0))
+    candidate = re.sub(r'(?<!\\)\\(?!["\\/bfnrtu])', r"\\\\", candidate)
     data = parse_llm_json(candidate)
     corrections = data.get("correcoes") if isinstance(data, dict) else None
     return [c for c in corrections or [] if isinstance(c, dict)]

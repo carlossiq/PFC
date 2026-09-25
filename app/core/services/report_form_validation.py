@@ -12,6 +12,7 @@ placeholders e precisam continuar remontáveis).
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Iterable, Optional
 
 _VOWELS = set("aeiouáéíóúâêôãõàü")
@@ -29,9 +30,41 @@ def _is_gibberish_word(word: str) -> bool:
     return len(set(letters)) <= 2 or not (set(letters) & _VOWELS)
 
 
+# Expressões de "campo não preenchido" digitadas por extenso - passavam como
+# texto válido e iam parar nas assinaturas ("Não especificado -- Sem posto").
+_PLACEHOLDER_PHRASES = {
+    "nao especificado", "nao especificada", "nao informado", "nao informada", "sem posto", "sem funcao",
+    "sem nome", "a definir", "n/a", "na", "teste", "xxx", "fulano de tal", "nome sobrenome", "-",
+}
+
+
+def _normalize(text: str) -> str:
+    decomposed = unicodedata.normalize("NFD", text.lower())
+    return re.sub(r"\s+", " ", "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")).strip(" .")
+
+
 def looks_like_placeholder(text: str) -> bool:
     words = text.split()
-    return not words or any(_is_gibberish_word(word) for word in words)
+    return not words or _normalize(text) in _PLACEHOLDER_PHRASES or any(_is_gibberish_word(word) for word in words)
+
+
+# O Destinatário entra no FIM de uma frase fixa ("Apresentar o relatório de
+# Prospecção Tecnológica sobre <tema> a fim de fornecer informações ... para
+# <destinatário>.") - digitar a frase inteira no campo a duplicava no PDF.
+_FINALIDADE_FRAGMENTS = ("apresentar", "relatorio de prospeccao", "a fim de fornecer", "ciclo de vida da tecnologia")
+DESTINATARIO_MAX_WORDS = 12
+
+
+def destinatario_error(value: str) -> Optional[str]:
+    normalized = _normalize(value)
+    if any(fragment in normalized for fragment in _FINALIDADE_FRAGMENTS) or len(value.split()) > DESTINATARIO_MAX_WORDS:
+        return (
+            "Destinatário: informe só o destinatário (ex.: AGITEC, DCT) - o restante da frase da "
+            "Finalidade já é fixo."
+        )
+    if looks_like_placeholder(value):
+        return "Destinatário: texto inválido."
+    return None
 
 
 def admin_reference_error(ref: str) -> Optional[str]:

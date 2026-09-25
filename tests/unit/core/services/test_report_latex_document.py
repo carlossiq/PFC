@@ -12,6 +12,7 @@ from config.prompts.report_static_sections import (
     DEFAULT_BIBLIOGRAPHY,
     legacy_metodologia_to_paragraph,
     merge_bibliography,
+    render_apoio_computacional,
     render_metodologia,
 )
 
@@ -100,17 +101,20 @@ def test_template_fixed_metodologia_figures():
     assert "Fonte: #1" in tex  # macro \figura: "Fonte" abaixo de toda figura
 
 
-def test_template_metodologia_describes_computational_support_without_naming_tools():
-    tex = _render(metodologia="PARAGRAFO-INTERPOLADO")
+def test_template_metodologia_describes_computational_support_and_models():
+    apoio = render_apoio_computacional([("redação das seções analíticas", ["gemma3:4b"])])
+    tex = _render(metodologia="PARAGRAFO-INTERPOLADO", apoio_computacional=apoio)
 
     assert r"\subsection{Apoio Computacional à Prospecção}" in tex
-    for technique in ("BM25F", "KeyBERT", r"\textit{probe}", r"\textit{Reciprocal Rank Fusion}", "LLM"):
+    for technique in ("BM25F", "KeyBERT", r"\textit{probe}", r"\textit{Reciprocal Rank Fusion}", "LLM",
+                      r"\textit{chain-of-thought}", r"\textit{few-shot}", "persona"):
         assert technique in tex
     # 5.4 vem depois do parágrafo interpolado da 5.3 e antes dos Resultados.
     assert tex.index("PARAGRAFO-INTERPOLADO") < tex.index("Apoio Computacional") < tex.index(r"\section{RESULTADOS}")
-    # Sem nome de plataforma nem de modelo.
+    # O modelo usado é citado (só o nome); a plataforma, não.
+    assert r"\texttt{gemma3:4b}" in tex
     assert "AGIA" not in tex.split(r"\begin{document}")[1].replace("AGITEC", "")
-    assert "gemma" not in tex.lower() and "ollama" not in tex.lower()
+    assert "ollama" not in tex.lower()
 
 
 def test_template_defines_figura_and_quadroimg_macros():

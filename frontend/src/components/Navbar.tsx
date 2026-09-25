@@ -7,6 +7,10 @@ import { TABS } from '../constants/tabs'
 const docTopics = [
   { id: 'intro', title: 'Introdução', tab: TABS.DOCUMENTATION },
   { id: 'guia', title: 'Guia do Usuário', tab: TABS.DOC_USER_GUIDE },
+  { id: 'pipeline', title: 'Pipeline de Prospecção', tab: TABS.DOC_PIPELINE },
+  { id: 'termos', title: 'Extração de Termos', tab: TABS.DOC_TERMS },
+  { id: 'latex', title: 'Relatório e LaTeX', tab: TABS.DOC_LATEX },
+  { id: 'erros', title: 'Erros e Soluções', tab: TABS.DOC_ERRORS },
   { id: 'api', title: 'Referência da API', tab: TABS.DOC_API },
   { id: 'faq', title: 'FAQ', tab: TABS.DOC_FAQ },
 ]
@@ -104,7 +108,7 @@ export function Navbar() {
             onClick={() => handleNavClick(TABS.ABOUT)}
             className={`transition-all ${tab === TABS.ABOUT ? 'font-bold' : ''} hover:text-[#27e27a]`}
           >
-            About
+            Sobre
           </button>
           <span className="text-gray-400">v 1.0</span>
         </div>

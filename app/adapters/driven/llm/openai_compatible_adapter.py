@@ -35,7 +35,7 @@ class OpenAICompatibleAdapter:
         self._api_key = api_key
         self._client = httpx.AsyncClient(timeout=timeout_seconds)
 
-    async def generate(self, prompt: str, system: Optional[str] = None) -> str:
+    async def generate(self, prompt: str, system: Optional[str] = None, temperature: Optional[float] = None) -> str:
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
@@ -45,11 +45,15 @@ class OpenAICompatibleAdapter:
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
 
+        body: dict = {"model": self._model, "messages": messages, "stream": False}
+        if temperature is not None:
+            body["temperature"] = temperature
+
         try:
             response = await self._client.post(
                 f"{self._base_url}/v1/chat/completions",
                 headers=headers,
-                json={"model": self._model, "messages": messages, "stream": False},
+                json=body,
             )
             response.raise_for_status()
             data = response.json()

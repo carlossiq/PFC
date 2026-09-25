@@ -28,9 +28,12 @@ class _GeminiTextGenerationAdapter:
         genai.configure(api_key=api_key)
         self._client = genai.GenerativeModel(model)
 
-    async def generate(self, prompt: str, system: Optional[str] = None) -> str:
+    async def generate(self, prompt: str, system: Optional[str] = None, temperature: Optional[float] = None) -> str:
+        import google.generativeai as genai
+
         full_prompt = f"{system}\n\n{prompt}" if system else prompt
-        response = await self._client.generate_content_async(full_prompt)
+        config = genai.types.GenerationConfig(temperature=temperature) if temperature is not None else None
+        response = await self._client.generate_content_async(full_prompt, generation_config=config)
         return (response.text or "").strip()
 
 
@@ -41,12 +44,14 @@ class _AnthropicTextGenerationAdapter:
         self._client = Anthropic(api_key=api_key)
         self._model = model
 
-    async def generate(self, prompt: str, system: Optional[str] = None) -> str:
+    async def generate(self, prompt: str, system: Optional[str] = None, temperature: Optional[float] = None) -> str:
+        extra = {"temperature": temperature} if temperature is not None else {}
         response = self._client.messages.create(
             model=self._model,
             max_tokens=4096,
             system=system or "",
             messages=[{"role": "user", "content": prompt}],
+            **extra,
         )
         return response.content[0].text
 
