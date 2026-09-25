@@ -19,6 +19,12 @@ function configLabel(config: LLMProviderConfig, providers: Record<string, LLMPro
   return `${providerName}: ${config.model}${suffix}`
 }
 
+// api_key é sempre editável: providers sem requires_api_key (ex: Ollama)
+// ainda podem apontar pra um endpoint compatível OpenAI que exige Bearer.
+function apiKeyPlaceholder(info: LLMProviderInfo | undefined): string {
+  return info?.requires_api_key ? 'api_key' : 'api_key (opcional)'
+}
+
 // Gerencia as "instâncias" de IA (llm_provider_configs - qualquer combinação
 // de provider/model/api_key/base_url) e qual delas cada uma das 4 chamadas
 // de IA do programa usa (llm_call_site_bindings). Adicionar um provider novo
@@ -113,6 +119,7 @@ export function LLMPanel() {
   if (!providers || !configs || !callSites) return <p className="text-sm text-gray-500">Carregando...</p>
 
   const selectedProviderInfo = providers[newProviderCode]
+  const missingRequiredApiKey = Boolean(selectedProviderInfo?.requires_api_key) && !newApiKey.trim()
 
   return (
     <div className="space-y-6">
@@ -168,15 +175,13 @@ export function LLMPanel() {
                     className="text-sm border border-gray-300 rounded-md px-2 py-1 text-gray-900"
                   />
                 )}
-                {providers[config.provider_code]?.requires_api_key && (
-                  <input
-                    type="password"
-                    defaultValue={config.api_key}
-                    placeholder="api_key"
-                    onBlur={(e) => handleFieldCommit(config, 'api_key', e.target.value)}
-                    className="text-sm border border-gray-300 rounded-md px-2 py-1 text-gray-900"
-                  />
-                )}
+                <input
+                  type="password"
+                  defaultValue={config.api_key}
+                  placeholder={apiKeyPlaceholder(providers[config.provider_code])}
+                  onBlur={(e) => handleFieldCommit(config, 'api_key', e.target.value)}
+                  className="text-sm border border-gray-300 rounded-md px-2 py-1 text-gray-900"
+                />
               </div>
             </div>
           ))}
@@ -193,30 +198,30 @@ export function LLMPanel() {
             options={Object.entries(providers).map(([code, info]) => ({ value: code, label: info.display_name }))}
             onChange={setNewProviderCode}
           />
-          <input
-            value={newModel}
-            onChange={(e) => setNewModel(e.target.value)}
-            placeholder="model (ex: gemini-2.5-flash)"
-            className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 text-gray-900"
-          />
-          {selectedProviderInfo?.requires_base_url && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <input
-              value={newBaseUrl}
-              onChange={(e) => setNewBaseUrl(e.target.value)}
-              placeholder="base_url (ex: http://localhost:11434)"
+              value={newModel}
+              onChange={(e) => setNewModel(e.target.value)}
+              placeholder="model (ex: gemini-2.5-flash)"
               className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 text-gray-900"
             />
-          )}
-          {selectedProviderInfo?.requires_api_key && (
+            {selectedProviderInfo?.requires_base_url && (
+              <input
+                value={newBaseUrl}
+                onChange={(e) => setNewBaseUrl(e.target.value)}
+                placeholder="base_url (ex: http://localhost:11434)"
+                className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 text-gray-900"
+              />
+            )}
             <input
               type="password"
               value={newApiKey}
               onChange={(e) => setNewApiKey(e.target.value)}
-              placeholder="api_key"
+              placeholder={apiKeyPlaceholder(selectedProviderInfo)}
               className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 text-gray-900"
             />
-          )}
-          <Button onClick={handleCreate} disabled={creating || !newModel.trim()}>
+          </div>
+          <Button onClick={handleCreate} disabled={creating || !newModel.trim() || missingRequiredApiKey}>
             Adicionar
           </Button>
         </div>

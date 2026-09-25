@@ -215,14 +215,24 @@ async def update_llm_config(
 ):
     if payload.provider_code not in LLM_PROVIDER_REGISTRY:
         raise HTTPException(status_code=400, detail=f"provider_code desconhecido: {payload.provider_code!r}")
+
+    repo = LLMConfigRepositoryAdapter(session)
+    existing = await repo.get_config(config_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"LLMProviderConfig {config_id} não existe.")
+    # O GET devolve a api_key mascarada ("...abcd") e o front reenvia o
+    # objeto inteiro ao editar model/base_url - se chegou exatamente a
+    # máscara, a chave não foi tocada e mantém a real.
+    api_key = existing.api_key if payload.api_key == existing.masked().api_key else payload.api_key
+
     try:
-        row = await LLMConfigRepositoryAdapter(session).update_config(
+        row = await repo.update_config(
             config_id,
             LLMProviderConfigData(
                 id=config_id,
                 provider_code=payload.provider_code,
                 model=payload.model,
-                api_key=payload.api_key,
+                api_key=api_key,
                 base_url=payload.base_url,
             ),
         )
