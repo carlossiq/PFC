@@ -854,6 +854,14 @@ $$R^2 = 1 - \frac{SS_{\text{res}}}{SS_{\text{tot}}} = 1 - \frac{\displaystyle\su
 
   onde $y_i$ são os valores observados, $\hat{y}_i$ são os valores preditos pelo modelo ajustado e $\bar{y}$ é a média da série temporal. O $R^2$ mensura a proporção da variância dos dados que é explicada pela curva logística, servindo como base estatística para diagnósticos de qualidade de ajuste.
 
+    \subsubsection{Método de ajuste da curva logística}
+
+  Os parâmetros $(K, r, t_0)$ são estimados por mínimos quadrados não lineares sobre a série \textbf{acumulada} anual, isto é, minimiza-se
+$$E(K, r, t_0) = \sum_i \left[ N_i - \frac{K}{1 + e^{-r(t_i - t_0)}} \right]^2$$
+em que $N_i$ é o total acumulado até o ano $t_i$. Como a função é não linear nos parâmetros, não há solução fechada, e emprega-se a rotina \texttt{curve\_fit} do SciPy \cite{virtanen2020}, que adota o algoritmo de Levenberg-Marquardt. A cada iteração, calcula-se o Jacobiano $J$ por diferenças finitas e resolve-se
+$$(J^\top J + \lambda I)\,\delta = J^\top \mathbf{r},$$
+em que $\mathbf{r}$ é o vetor de resíduos. O passo $\delta$ é aceito se reduzir $E$, diminuindo-se $\lambda$ (comportamento próximo ao de Gauss-Newton, rápido perto do mínimo); caso contrário, é rejeitado e $\lambda$ aumenta (comportamento próximo à descida de gradiente, mais seguro longe do mínimo). Por convergir a um mínimo local, o resultado depende do ponto de partida, fixado em $K_0 = 1{,}5 \cdot N_{\text{final}}$, $r_0 = 0{,}3$ e $t_{0,0}$ igual à mediana dos anos observados, limitando-se o processo a 5.000 avaliações da função.
+
     \subsubsection{Estimação de completude amostral e estabilidade de \textit{ranking}}
 
   Um limite inerente a qualquer indicador construído sobre amostras bibliográficas é que ele reflete
@@ -1526,7 +1534,7 @@ Muito Complexo & $\text{score} \ge 75$ \\
     \item \textbf{Ponderação Estrutural de Comprimento}: ajuste fino posicional atribuindo penalidades para unigramas ($-0{,}4$ — palavras isoladas são menos específicas) e bonificações para trigramas ($+0{,}25$ — expressões compostas agregam semântica) e superiores, favorecendo termos compostos de qualidade.
     \item \textbf{Segunda Fusão RRF (Escore Final)}: geração do ordenamento consolidado definitivo.
     \item \textbf{Filtragem de Termos Aninhados (C-value)}: cálculo do grau de independência formal de expressões compostas, eliminando termos contidos cujo C-value seja nulo ou que estejam contíguos no interior de uma expressão com maior pontuação relativa \cite{frantzi2000}.
-    \item \textbf{Corte por Limiar}: retenção de termos com escore final RRF $\ge 0{,}024$ (calibrado empiricamente), com garantia de mínimo 10 candidatos (mesmo que abaixo do limiar, para não descartar lotes pequenos) e máximo 60 (para controlar custo computacional e evitar ruído), resultando em uma lista balanceada para seleção pelo usuário.
+    \item \textbf{Corte por Limiar}: retenção de termos com escore final RRF $\ge 0{,}024$ (calibrado empiricamente na escala relativa do lote, faixa ~0,018–0,033), com garantia de mínimo 10 candidatos (mesmo que abaixo do limiar, para não descartar lotes pequenos) e máximo 60 (para controlar custo computacional e evitar ruído), resultando em uma lista balanceada para seleção pelo usuário.
   \end{enumerate}
 
   Os termos resultantes são exibidos na interface, onde o analista humano seleciona os itens a incorporar e estipula a abrangência da busca definitiva: \textbf{Específica} (corte $\ge 0{,}4$ — conceitos centrais apenas), \textbf{Balanceada} ($\ge 0{,}3$ — equilíbrio cobertura–precisão) ou \textbf{Ampla} ($\ge 0{,}2$ — máxima cobertura de variantes). Cada estratégia reflete um trade-off entre recuperar documentos relevantes e descartar ruído.
@@ -1546,9 +1554,27 @@ Muito Complexo & $\text{score} \ge 75$ \\
     \item \textbf{Consolidação Gráfica}: processamento das séries anuais de patentes e artigos, mapeamento dos 10 principais atores e classificações tecnológicas, ajuste das curvas~S via modelo logístico de Fisher-Pry, cálculo das coordenadas GP, MP e SP e gravação dos arquivos PNG no repositório MinIO.
     \item \textbf{Indexação e Recuperação Vetorial via RAG Local}: particionamento de resumos e títulos dos documentos em fragmentos de $1.000$ caracteres (sobreposição de $200$), conversão em representações densas SBERT e armazenamento na coleção dedicada do ChromaDB. Para cada seção analítica do relatório, os $k=5$ fragmentos de maior proximidade semântica são recuperados, aplicando-se o corte relativo de relevância de $75\%$.
     \item \textbf{Redação Analítica Condicionada}: os trechos documentais aprovados são concatenados em texto plano no prompt do modelo de linguagem alocado para redação. O modelo redige o texto técnico corrido com a estrita obrigação de limitar suas citações às fontes recuperadas no formato ``(SOBRENOME et al., ano)''. Seções estruturais formais e metodológicas (Finalidade, Metodologia, Quadros de Busca e Assinaturas) são incorporadas deterministicamente por código.
-    \item \textbf{Montagem e Validação Determinística}: compilação do arquivo LaTeX mestre, inspeção automática de numerais para pontuação decimal brasileira e exclusão de citações inválidas perante o banco relacional.
+    \item \textbf{Montagem e Validação Determinística}: compilação do arquivo LaTeX mestre, inspeção automática de numerais para pontuação decimal brasileira e exclusão de citações que não correspondem a nenhum documento recuperado para a seção.
     \item \textbf{Revisão Gramatical e Compilação}: submissão do texto ao analisador LanguageTool executado localmente para correção ortográfica, facultando ao analista a aplicação de uma revisão estilística por LLM. O artefato LaTeX final é compilado no serviço TeX Live e disponibilizado em pacote `.zip` e formato PDF.
   \end{enumerate}
+
+  \subsubsection{Detalhamento: Indexação e Metadados}
+
+  Cada documento é indexado a partir da concatenação de título e resumo. Apenas esse texto é convertido em representação vetorial. A autoria, o ano e a entrada bibliográfica correspondente são calculados em código a partir dos metadados da base de origem (OPS ou Scopus) e armazenados como metadados do fragmento, associados a ele no ChromaDB, mas sem participar do cálculo do \textit{embedding}. Assim, a recuperação é puramente semântica sobre o conteúdo, e a identificação da obra acompanha o fragmento recuperado sem depender do modelo de linguagem.
+
+  \subsubsection{Detalhamento: Consulta e Recuperação Vetorial}
+
+  A consulta de recuperação de cada seção é construída de forma determinística pela concatenação do tema da pesquisa com o nome e a descrição da seção, ambos fixados no código (por exemplo, para a Introdução: ``contexto histórico, mercado, \textit{players} e estado da arte da tecnologia''). Nenhum modelo de linguagem participa dessa etapa. A consulta e os fragmentos são representados no mesmo espaço vetorial, e a coleção utiliza distância de cosseno, sendo a relevância definida como $1 - d_{\cos}$. Recuperam-se os $k = 5$ fragmentos de maior relevância, restritos à sessão corrente, e descartam-se aqueles cuja relevância seja inferior a $75\%$ da relevância do melhor fragmento:
+  $$ \text{relevância}(f) \ge 0{,}75 \cdot \max_{f'} \text{relevância}(f') $$
+  O parâmetro $k$ limita o tamanho do \textit{prompt}; o corte relativo evita que documentos periféricos, recuperados apenas para completar $k$, sejam tratados pelo modelo como assunto central.
+
+  \subsubsection{Detalhamento: Citações e Referências Bibliográficas}
+
+  A citação no formato (SOBRENOME \textit{et al.}, ano) é calculada em código a partir do primeiro autor (ou inventor) e do ano de publicação; documentos sem autoria em alfabeto latino ou sem ano não geram citação e são sinalizados ao modelo como ``não citar''. Quando duas obras distintas produzem a mesma citação, acrescenta-se uma letra ao ano (2020a, 2020b), conforme a ABNT. Após a geração, citações que não correspondam a nenhum documento recuperado para a seção são removidas do texto. Por fim, a seção de Referências Bibliográficas é montada apenas com as entradas das citações que permaneceram no texto final, de modo que toda citação possui referência correspondente e nenhuma referência permanece sem citação.
+
+  \subsubsection{Detalhamento: Geração e Compilação do LaTeX}
+
+  O modelo de linguagem não produz comandos \LaTeX{}. Ele devolve texto corrido, acrescido apenas de marcadores próprios para figuras (\texttt{[[REF:id]]} e \texttt{[[FIG:id]]}). A conversão para \LaTeX{} é inteiramente determinística e ocorre em quatro etapas: (i) remoção de cabeçalhos e conversão de negrito em Markdown, eventualmente emitidos por modelos menores; (ii) escape dos caracteres especiais (\texttt{\& \% \$ \# \_ \{ \}}) e descarte de caracteres fora do alfabeto latino, comuns em nomes de inventores e que interromperiam a compilação; (iii) substituição dos marcadores por \verb|\ref| e pelo bloco \verb|\figura| ou \verb|\quadroimg|, validando os identificadores contra o catálogo de gráficos existentes (id desconhecido é removido; figura repetida mantém apenas a primeira ocorrência; figura citada sem marcador de posição é inserida após o parágrafo que a cita; figura nunca citada é posicionada ao final da seção); e (iv) inserção do texto resultante em um \textit{template} Jinja2. O \textit{template} fixa a estrutura do documento (capa, sumário, numeração, seções e subseções, quadro de busca, assinaturas, bibliografia), de modo que o modelo decide apenas o conteúdo dos parágrafos. Seções formais, como Finalidade e Metodologia, são produzidas por código. O arquivo \texttt{.tex} é compilado no serviço TeX Live, e uma verificação estática posterior detecta referências sem rótulo, figuras inexistentes e marcadores residuais.
 
 % ============================================================
 %  CAPÍTULO 5 — CONCLUSÃO
@@ -1681,6 +1707,18 @@ determinística das seções fixas, dos números dos gráficos e do estágio do
 ciclo de vida, não é completamente eliminado, o que reforça a necessidade de
 revisão humana dos relatórios gerados antes de sua utilização em decisões
 estratégicas.
+
+  \subsection{Limitações Específicas da Recuperação Aumentada por Geração (RAG)}
+
+  A citação utiliza apenas o primeiro autor, e a entrada bibliográfica é uma versão simplificada da ABNT (autor, título, periódico ou depositante, ano), sem volume, páginas ou DOI. A consulta de recuperação é única por seção, de modo que temas com múltiplas facetas são representados por um único vetor, limitando a capacidade de capturar nuances de subtópicos distintos. O corpus do RAG é composto apenas por título e resumo dos documentos, e, como resumos nem sempre são devolvidos pelas APIs, tende a ser majoritariamente de patentes, o que pode empobrecer a fundamentação das seções sobre produção científica.
+
+  \subsection{Limitações Específicas da Curva Logística de Fisher-Pry}
+
+  O $R^2$ é calculado sobre a série acumulada, monotônica e naturalmente suave, o que tende a produzir valores elevados mesmo para ajustes medianos, sendo, portanto, um critério mais permissivo do que seria sobre as contagens anuais. O modelo supõe um único ciclo com saturação e ajusta-se mal a tecnologias com segunda onda de crescimento ou séries muito ruidosas. A estimativa de $K$ é instável em séries curtas, o que justifica os critérios de confiabilidade da Seção~\ref{sec:fase4}. Por fim, a série depende da cobertura da busca: consultas restritas refletem o recorte escolhido, e não a tecnologia inteira.
+
+  \subsection{Limitações Específicas da Fusão de Rankings (RRF)}
+
+  O escore RRF é relativo ao lote de candidatos e não constitui escala absoluta: sua faixa de valores varia com o tamanho do lote e a composição dos candidatos, de modo que um limiar fixo pode excluir todos os termos de um lote. Para evitá-lo, o sistema completa a lista com os termos mais bem classificados abaixo do limiar até o mínimo de dez termos. Dois termos podem receber o mesmo escore, e a ordem entre eles segue a ordenação estável da linguagem. O valor $k = 60$ não foi ajustado ao corpus deste trabalho, sendo adotado por convenção em buscas híbridas.
 
   \subsection{Trabalhos Futuros}
 
