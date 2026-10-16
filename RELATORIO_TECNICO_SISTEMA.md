@@ -745,11 +745,7 @@ A estrutura do relatório foi extraída de um REPTEC real do AGITEC (`notes/REPT
 A Metodologia usa um texto-base quase idêntico em todo REPTEC:
 
 - 5.1–5.3 trazem as figuras fixas de Madeo e Kucharavy, que ficam persistidas no MinIO (`config/report_figures/*`) e são enviadas na inicialização por `report_static_figures.py`.
-- 5.4, "Apoio Computacional à Prospecção", descreve em termos gerais o apoio computacional, sem citar modelos nem a plataforma:
-  - uso de LLM para elaborar as queries;
-  - extração de termos com BM25F e KeyBERT;
-  - buscas exploratórias (probe);
-  - fusão por RRF.
+- 5.4, "Apoio Computacional e Processamento de Linguagem Natural na Redação", descreve em termos gerais o apoio computacional, sem citar modelos nem a plataforma, em um `enumerate` a–e: LLM, Engenharia de Instruções (prompt engineering), BM25F, KeyBERT e RRF, seguido de um parágrafo sobre a verificação paramétrica (Chao1/bootstrap) e a revisão humana.
 - O último parágrafo interpola as palavras-chave, o período e as bases desta pesquisa, omitindo o que faltar (`config/prompts/report_static_sections.py::render_metodologia`).
 
 Total: **6 seções de IA**, as chaves de `ReportWriterService.AI_SECTIONS`: `objetivo`, `introducao`, `informacoes_cientificas`, `informacoes_tecnologicas`, `tendencias_ciclo_vida` e `conclusao`. Das 10 esboçadas originalmente, `finalidade`, `metodologia`, `referencias` e `referencias_bibliograficas` saíram do fluxo de LLM. Na montagem, o objetivo informado pelo usuário tem precedência.

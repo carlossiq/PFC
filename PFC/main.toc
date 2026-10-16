@@ -10,63 +10,63 @@
 \contentsline {subsection}{\numberline {2.2}Curva~S de Maturidade Tecnológica}{11}{subsection.2.2}%
 \contentsline {subsubsection}{\numberline {2.2.1}Distinção entre fase de maturidade (curva~S) e \textit {Technology Readiness Level} (TRL)}{13}{subsubsection.2.2.1}%
 \contentsline {subsubsection}{\numberline {2.2.2}Formalização matemática e pontos de leitura (GP, MP, SP)}{13}{subsubsection.2.2.2}%
-\contentsline {subsubsection}{\numberline {2.2.3}Diagnóstico de confiabilidade do ajuste}{14}{subsubsection.2.2.3}%
+\contentsline {subsubsection}{\numberline {2.2.3}Avaliação de aderência do modelo logístico}{14}{subsubsection.2.2.3}%
 \contentsline {subsubsection}{\numberline {2.2.4}Estimação de completude amostral e estabilidade de \textit {ranking}}{15}{subsubsection.2.2.4}%
-\contentsline {subsection}{\numberline {2.3}\textit {Large Language Models} (LLMs)}{16}{subsection.2.3}%
-\contentsline {subsubsection}{\numberline {2.3.1}Capacidades e Limitações}{19}{subsubsection.2.3.1}%
-\contentsline {subsection}{\numberline {2.4}Engenharia de \textit {Prompt}}{19}{subsection.2.4}%
-\contentsline {subsubsection}{\numberline {2.4.1}Validação e correção de saída estruturada}{20}{subsubsection.2.4.1}%
-\contentsline {subsection}{\numberline {2.5}\textit {Retrieval-Augmented Generation} (RAG)}{21}{subsection.2.5}%
-\contentsline {subsection}{\numberline {2.6}\textit {Embeddings} e Bancos de Dados Vetoriais}{23}{subsection.2.6}%
-\contentsline {subsection}{\numberline {2.7}Filtragem de Documentos por Idioma e por Relevância ao Tema}{24}{subsection.2.7}%
-\contentsline {subsection}{\numberline {2.8}APIs Utilizadas}{25}{subsection.2.8}%
-\contentsline {subsubsection}{\numberline {2.8.1}OPS --- \textit {Open Patent Services}}{25}{subsubsection.2.8.1}%
-\contentsline {subsubsection}{\numberline {2.8.2}Scopus --- Elsevier}{26}{subsubsection.2.8.2}%
-\contentsline {subsection}{\numberline {2.9}Ferramentas de Infraestrutura Local}{26}{subsection.2.9}%
-\contentsline {subsubsection}{\numberline {2.9.1}Ollama}{26}{subsubsection.2.9.1}%
-\contentsline {subsubsection}{\numberline {2.9.2}ChromaDB}{27}{subsubsection.2.9.2}%
-\contentsline {subsubsection}{\numberline {2.9.3}MinIO}{28}{subsubsection.2.9.3}%
-\contentsline {subsubsection}{\numberline {2.9.4}TeX Live e LanguageTool}{28}{subsubsection.2.9.4}%
-\contentsline {section}{\numberline {3}Solução Proposta}{28}{section.3}%
-\contentsline {subsection}{\numberline {3.1}Escopo}{28}{subsection.3.1}%
-\contentsline {subsection}{\numberline {3.2}Especificação de Requisitos}{31}{subsection.3.2}%
-\contentsline {subsubsection}{\numberline {3.2.1}Requisitos Funcionais}{31}{subsubsection.3.2.1}%
-\contentsline {subsubsection}{\numberline {3.2.2}Requisitos Não Funcionais}{33}{subsubsection.3.2.2}%
-\contentsline {subsection}{\numberline {3.3}Especificação da Solução}{35}{subsection.3.3}%
-\contentsline {subsection}{\numberline {3.4}Configurações e Parâmetros Adotados}{41}{subsection.3.4}%
-\contentsline {subsubsection}{\numberline {3.4.1}Cadastro e seleção dos modelos de linguagem}{41}{subsubsection.3.4.1}%
-\contentsline {subsection}{\numberline {3.5}Métrica Proposta: Função de Complexidade de Consulta}{43}{subsection.3.5}%
-\contentsline {subsubsection}{\numberline {3.5.1}Autocorreção por métrica determinística}{43}{subsubsection.3.5.1}%
-\contentsline {subsubsection}{\numberline {3.5.2}Definição da métrica}{43}{subsubsection.3.5.2}%
-\contentsline {subsubsection}{\numberline {3.5.3}Exemplo de aplicação}{44}{subsubsection.3.5.3}%
-\contentsline {subsection}{\numberline {3.6}Tecnologias Adotadas}{45}{subsection.3.6}%
-\contentsline {subsection}{\numberline {3.7}Modelagem do Banco de Dados}{46}{subsection.3.7}%
-\contentsline {subsection}{\numberline {3.8}Estado Atual de Desenvolvimento}{49}{subsection.3.8}%
-\contentsline {section}{\numberline {4}\textit {Pipeline} de Processamento}{52}{section.4}%
-\contentsline {subsection}{\numberline {4.1}Fase 1: Refinamento do Tema}{52}{subsection.4.1}%
-\contentsline {subsection}{\numberline {4.2}Fase 2: Busca Exploratória}{52}{subsection.4.2}%
-\contentsline {subsection}{\numberline {4.3}Fase 3: Extração de Termos}{53}{subsection.4.3}%
-\contentsline {paragraph}{Exemplo numérico de cálculo.}{56}{paragraph*.1}%
-\contentsline {subsection}{\numberline {4.4}Fase 4: Busca Final}{57}{subsection.4.4}%
-\contentsline {subsection}{\numberline {4.5}Fase 5: Geração do Relatório}{57}{subsection.4.5}%
-\contentsline {subsubsection}{\numberline {4.5.1}Consolidação e gráficos}{57}{subsubsection.4.5.1}%
-\contentsline {subsubsection}{\numberline {4.5.2}Redação das seções}{58}{subsubsection.4.5.2}%
-\contentsline {subsubsection}{\numberline {4.5.3}Montagem do documento}{59}{subsubsection.4.5.3}%
-\contentsline {subsubsection}{\numberline {4.5.4}Edição e revisão}{60}{subsubsection.4.5.4}%
-\contentsline {subsubsection}{\numberline {4.5.5}Exportação}{60}{subsubsection.4.5.5}%
-\contentsline {section}{\numberline {5}Conclusão}{60}{section.5}%
-\contentsline {subsection}{\numberline {5.1}Síntese das Contribuições}{60}{subsection.5.1}%
-\contentsline {subsection}{\numberline {5.2}Atendimento aos Objetivos}{61}{subsection.5.2}%
-\contentsline {subsection}{\numberline {5.3}Limitações}{62}{subsection.5.3}%
-\contentsline {subsection}{\numberline {5.4}Trabalhos Futuros}{63}{subsection.5.4}%
-\contentsline {subsection}{\numberline {5.5}Considerações Finais}{63}{subsection.5.5}%
-\contentsline {section}{Referências}{64}{subsection.5.5}%
+\contentsline {subsection}{\numberline {2.3}\textit {Large Language Models} (LLMs)}{15}{subsection.2.3}%
+\contentsline {subsection}{\numberline {2.4}Engenharia de \textit {Prompt}}{17}{subsection.2.4}%
+\contentsline {subsection}{\numberline {2.5}\textit {Retrieval-Augmented Generation} (RAG)}{17}{subsection.2.5}%
+\contentsline {subsection}{\numberline {2.6}Representações Vetoriais e Busca em Espaços Densos}{18}{subsection.2.6}%
+\contentsline {subsection}{\numberline {2.7}Recuperação de Informação e Extração Terminológica}{18}{subsection.2.7}%
+\contentsline {subsection}{\numberline {2.8}Princípios SOLID de Projeto de Software}{19}{subsection.2.8}%
+\contentsline {section}{\numberline {3}Solução Proposta}{20}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Escopo}{20}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Especificação de Requisitos}{25}{subsection.3.2}%
+\contentsline {subsubsection}{\numberline {3.2.1}Requisitos Funcionais}{25}{subsubsection.3.2.1}%
+\contentsline {subsubsection}{\numberline {3.2.2}Requisitos Não Funcionais}{27}{subsubsection.3.2.2}%
+\contentsline {subsection}{\numberline {3.3}Especificação da Arquitetura}{29}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}Configurações, Parâmetros e Heurísticas Adotadas}{32}{subsection.3.4}%
+\contentsline {subsubsection}{\numberline {3.4.1}Seleção e Configuração dos Modelos de Linguagem por Ponto de Uso}{33}{subsubsection.3.4.1}%
+\contentsline {subsubsection}{\numberline {3.4.2}Arquitetura Defensiva em Camadas para Saída Estruturada}{33}{subsubsection.3.4.2}%
+\contentsline {subsection}{\numberline {3.5}Métrica Proposta: Função de Complexidade de Consulta}{34}{subsection.3.5}%
+\contentsline {subsubsection}{\numberline {3.5.1}Autocorreção por Métrica Determinística}{34}{subsubsection.3.5.1}%
+\contentsline {subsubsection}{\numberline {3.5.2}Definição Matemática da Função de Complexidade}{34}{subsubsection.3.5.2}%
+\contentsline {subsection}{\numberline {3.6}Tecnologias Adotadas e Infraestrutura de Execução}{35}{subsection.3.6}%
+\contentsline {subsection}{\numberline {3.7}Modelagem do Banco de Dados}{36}{subsection.3.7}%
+\contentsline {subsection}{\numberline {3.8}Implementação Plenamente Desenvolvida}{38}{subsection.3.8}%
+\contentsline {section}{\numberline {4}\textit {Pipeline} de Processamento}{40}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Fase 1: Refinamento do Tema}{40}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Fase 2: Busca Exploratória e Filtros Documentais}{40}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Fase 3: Extração e Ranqueamento de Termos}{41}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Fase 4: Busca Final e Inferência Estatística}{42}{subsection.4.4}%
+\contentsline {subsection}{\numberline {4.5}Fase 5: Geração e Revisão do Relatório Técnico}{42}{subsection.4.5}%
+\contentsline {section}{\numberline {5}Conclusão}{43}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Síntese das Contribuições}{43}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Atendimento aos Objetivos}{44}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Limitações}{45}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}Trabalhos Futuros}{45}{subsection.5.4}%
+\contentsline {subsection}{\numberline {5.5}Considerações Finais}{46}{subsection.5.5}%
+\contentsline {section}{Referências}{48}{subsection.5.5}%
 \renewcommand {\cftsecpresnum }{Apêndice }\setlength {\cftsecnumwidth }{6.5em}
-\contentsline {section}{\numberline {A}PROMPTS DE INTELIGÊNCIA ARTIFICIAL NO PIPELINE DE PROSPECÇÃO}{67}{appendix.A}%
-\contentsline {subsection}{\numberline {A.1}Organização dos \textit {prompts}}{67}{subsection.A.1}%
-\contentsline {subsection}{\numberline {A.2}Sessão de exemplo}{68}{subsection.A.2}%
-\contentsline {subsection}{\numberline {A.3}Fase 1: Refinamento do tema}{68}{subsection.A.3}%
-\contentsline {subsection}{\numberline {A.4}Fase 2: Busca exploratória}{69}{subsection.A.4}%
-\contentsline {subsection}{\numberline {A.5}Fase 3: Extração de termos}{71}{subsection.A.5}%
-\contentsline {subsection}{\numberline {A.6}Fase 4: Busca final}{71}{subsection.A.6}%
-\contentsline {subsection}{\numberline {A.7}Fase 5: Geração do relatório (exemplo completo)}{73}{subsection.A.7}%
+\contentsline {section}{\numberline {A}PROMPTS DE INTELIGÊNCIA ARTIFICIAL NO PIPELINE DE PROSPECÇÃO}{52}{appendix.A}%
+\contentsline {subsection}{\numberline {A.1}Organização dos \textit {prompts}}{52}{subsection.A.1}%
+\contentsline {subsection}{\numberline {A.2}Sessão de exemplo}{53}{subsection.A.2}%
+\contentsline {subsection}{\numberline {A.3}Fase 1: Refinamento do tema}{53}{subsection.A.3}%
+\contentsline {subsection}{\numberline {A.4}Fase 2: Busca exploratória}{54}{subsection.A.4}%
+\contentsline {subsection}{\numberline {A.5}Fase 3: Extração de termos}{56}{subsection.A.5}%
+\contentsline {subsection}{\numberline {A.6}Fase 4: Busca final}{56}{subsection.A.6}%
+\contentsline {subsection}{\numberline {A.7}Fase 5: Geração do relatório (exemplo completo)}{58}{subsection.A.7}%
+\contentsline {section}{\numberline {B}CASO DE ESTUDO (CATALISADOR DE PETRÓLEO)}{62}{appendix.B}%
+\contentsline {subsection}{\numberline {B.1}Configuração dos Modelos e Auditoria da Sessão}{62}{subsection.B.1}%
+\contentsline {subsection}{\numberline {B.2}Parâmetros de Entrada da Pesquisa (\textit {Intake})}{63}{subsection.B.2}%
+\contentsline {subsection}{\numberline {B.3}Busca Exploratória e Análise Estrutural de Complexidade}{63}{subsection.B.3}%
+\contentsline {subsection}{\numberline {B.4}Extração e Pontuação de Termos por PLN Local}{65}{subsection.B.4}%
+\contentsline {subsection}{\numberline {B.5}Busca Final e Projeção das Curvas~S no \textit {Frontend}}{66}{subsection.B.5}%
+\contentsline {subsection}{\numberline {B.6}Relatório Técnico Final Consolidado (REPTEC 001/2026)}{67}{subsection.B.6}%
+\contentsline {subsection}{\numberline {B.7}Análise Crítica e Inconsistências Observadas no Relatório Gerado}{90}{subsection.B.7}%
+\contentsline {section}{\numberline {C}MANUAL VISUAL E TELAS DA INTERFACE GRÁFICA DO SISTEMA AGIA}{91}{appendix.C}%
+\contentsline {subsection}{\numberline {C.1}Gestão de Sessões e Parametrização Inicial}{91}{subsection.C.1}%
+\contentsline {subsection}{\numberline {C.2}Busca Exploratória e Triagem de Resultados}{92}{subsection.C.2}%
+\contentsline {subsection}{\numberline {C.3}Mineração de Termos e Sintaxe da Busca Final}{93}{subsection.C.3}%
+\contentsline {subsection}{\numberline {C.4}Indicadores Bibliométricos e Curvas S}{94}{subsection.C.4}%
+\contentsline {subsection}{\numberline {C.5}Geração Textual via RAG, Edição LaTeX e Revisão}{94}{subsection.C.5}%
+\contentsline {subsection}{\numberline {C.6}Configurações Globais e Ponto de Uso de Modelos}{96}{subsection.C.6}%

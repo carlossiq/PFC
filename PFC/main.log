@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.8.10)  25 SEP 2026 10:37
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.8.10)  16 OCT 2026 20:04
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -507,7 +507,16 @@ LaTeX Info: Redefining \Relbar on input line 970.
 \mathdisplay@stack=\toks31
 LaTeX Info: Redefining \[ on input line 2965.
 LaTeX Info: Redefining \] on input line 2966.
-) (c:/texlive/2026/texmf-dist/tex/latex/enumitem/enumitem.sty
+) (c:/texlive/2026/texmf-dist/tex/latex/amsfonts/amssymb.sty
+Package: amssymb 2013/01/14 v3.01 AMS font symbols
+ (c:/texlive/2026/texmf-dist/tex/latex/amsfonts/amsfonts.sty
+Package: amsfonts 2013/01/14 v3.01 Basic AMSFonts support
+\symAMSa=\mathgroup4
+\symAMSb=\mathgroup5
+LaTeX Font Info:    Redeclaring math symbol \hbar on input line 98.
+LaTeX Font Info:    Overwriting math alphabet `\mathfrak' in version `bold'
+(Font)                  U/euf/m/n --> U/euf/b/n on input line 106.
+)) (c:/texlive/2026/texmf-dist/tex/latex/enumitem/enumitem.sty
 Package: enumitem 2025/02/06 v3.11 Customized lists
 \labelindent=\skip175
 \enit@outerparindent=\dimen196
@@ -543,30 +552,65 @@ File: lstmisc.sty 2025/11/14 1.11b (Carsten Heinz)
 File: listings.cfg 2025/11/14 1.11b listings configuration
 ))
 Package: listings 2025/11/14 1.11b (Carsten Heinz)
- (./main.aux
+ (c:/texlive/2026/texmf-dist/tex/latex/pdfpages/pdfpages.sty
+Package: pdfpages 2026/03/30 v0.6h Insert pages of external PDF documents (AM)
+ (c:/texlive/2026/texmf-dist/tex/latex/base/ifthen.sty
+Package: ifthen 2024/03/16 v1.1e Standard LaTeX ifthen package (DPC)
+) (c:/texlive/2026/texmf-dist/tex/latex/tools/calc.sty
+Package: calc 2025/03/01 v4.3b Infix arithmetic (KKT,FJ)
+\calc@Acount=\count344
+\calc@Bcount=\count345
+\calc@Adimen=\dimen257
+\calc@Bdimen=\dimen258
+\calc@Askip=\skip176
+\calc@Bskip=\skip177
+LaTeX Info: Redefining \setlength on input line 86.
+LaTeX Info: Redefining \addtolength on input line 87.
+\calc@Ccount=\count346
+\calc@Cskip=\skip178
+) (c:/texlive/2026/texmf-dist/tex/latex/eso-pic/eso-pic.sty
+Package: eso-pic 2026/05/31 v3.0e eso-pic (RN)
+\ESO@tempdima=\dimen259
+\ESO@tempdimb=\dimen260
+)
+\AM@pagewidth=\dimen261
+\AM@pageheight=\dimen262
+\AM@fboxrule=\dimen263
+ (c:/texlive/2026/texmf-dist/tex/latex/pdfpages/pppdftex.def
+File: pppdftex.def 2026/03/30 v0.6h Pdfpages driver for pdfTeX (AM)
+)
+\pdfpages@includegraphics@status=\count347
+\AM@pagebox=\box73
+\AM@global@opts=\toks34
+\AM@pagecnt=\count348
+\AM@toc@title=\toks35
+\AM@lof@heading=\toks36
+\c@AM@survey=\count349
+\AM@templatesizebox=\box74
+) (./main.aux
 Package babel Info: 'brazil' activates 'portuges' shorthands.
 (babel)             Reported on input line 9.
 )
 \openout1 = `main.aux'.
 
-LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 119.
-LaTeX Font Info:    ... okay on input line 119.
-LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 119.
-LaTeX Font Info:    ... okay on input line 119.
-LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 119.
-LaTeX Font Info:    ... okay on input line 119.
-LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 119.
-LaTeX Font Info:    ... okay on input line 119.
-LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 119.
-LaTeX Font Info:    ... okay on input line 119.
-LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 119.
-LaTeX Font Info:    ... okay on input line 119.
-LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 119.
-LaTeX Font Info:    ... okay on input line 119.
-LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 119.
-LaTeX Font Info:    ... okay on input line 119.
-LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 119.
-LaTeX Font Info:    ... okay on input line 119.
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 118.
+LaTeX Font Info:    ... okay on input line 118.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 118.
+LaTeX Font Info:    ... okay on input line 118.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 118.
+LaTeX Font Info:    ... okay on input line 118.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 118.
+LaTeX Font Info:    ... okay on input line 118.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 118.
+LaTeX Font Info:    ... okay on input line 118.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 118.
+LaTeX Font Info:    ... okay on input line 118.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 118.
+LaTeX Font Info:    ... okay on input line 118.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 118.
+LaTeX Font Info:    ... okay on input line 118.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 118.
+LaTeX Font Info:    ... okay on input line 118.
 
 *geometry* driver: auto-detecting
 *geometry* detected driver: pdftex
@@ -604,38 +648,54 @@ LaTeX Font Info:    ... okay on input line 119.
 
 (c:/texlive/2026/texmf-dist/tex/context/base/mkii/supp-pdf.mkii
 [Loading MPS to PDF converter (version 2006.09.02).]
-\scratchcounter=\count344
-\scratchdimen=\dimen257
-\scratchbox=\box73
-\nofMPsegments=\count345
-\nofMParguments=\count346
-\everyMPshowfont=\toks34
-\MPscratchCnt=\count347
-\MPscratchDim=\dimen258
-\MPnumerator=\count348
-\makeMPintoPDFobject=\count349
-\everyMPtoPDFconversion=\toks35
+\scratchcounter=\count350
+\scratchdimen=\dimen264
+\scratchbox=\box75
+\nofMPsegments=\count351
+\nofMParguments=\count352
+\everyMPshowfont=\toks37
+\MPscratchCnt=\count353
+\MPscratchDim=\dimen265
+\MPnumerator=\count354
+\makeMPintoPDFobject=\count355
+\everyMPtoPDFconversion=\toks38
 ) (c:/texlive/2026/texmf-dist/tex/latex/epstopdf-pkg/epstopdf-base.sty
 Package: epstopdf-base 2020-01-24 v2.11 Base part for package epstopdf
 Package epstopdf-base Info: Redefining graphics rule for `.eps' on input line 485.
  (c:/texlive/2026/texmf-dist/tex/latex/latexconfig/epstopdf-sys.cfg
 File: epstopdf-sys.cfg 2010/07/13 v1.3 Configuration of (r)epstopdf for TeX Live
 ))
-Package hyperref Info: Link coloring OFF on input line 119.
+Package hyperref Info: Link coloring OFF on input line 118.
  (./main.out) (./main.out)
 \@outlinefile=\write3
 \openout3 = `main.out'.
 
-\c@lstlisting=\count350
+\c@lstlisting=\count356
+ (c:/texlive/2026/texmf-dist/tex/latex/pdflscape/pdflscape.sty
+Package: pdflscape 2025-06-23 v0.14 Display of landscape pages in PDF
+ (c:/texlive/2026/texmf-dist/tex/latex/pdflscape/pdflscape-nometadata.sty
+Package: pdflscape-nometadata 2025-06-23 v0.14 Display of landscape pages in PDF (HO)
+ (c:/texlive/2026/texmf-dist/tex/latex/graphics/lscape.sty
+Package: lscape 2020/05/28 v3.02 Landscape Pages (DPC)
+)
+Package pdflscape Info: Auto-detected driver: pdftex on input line 81.
+))
 Package babel Info: Main language set to 'brazil'.
  [1
 
 {c:/texlive/2026/texmf-var/fonts/map/pdftex/updmap/pdftex.map}{c:/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-t1.enc}]
-Underfull \hbox (badness 10000) in paragraph at lines 193--194
+Underfull \hbox (badness 10000) in paragraph at lines 192--193
 
  []
 
-[2] [3{c:/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc}] [4] [5] (./main.toc [6])
+LaTeX Font Info:    Trying to load font information for U+msa on input line 197.
+(c:/texlive/2026/texmf-dist/tex/latex/amsfonts/umsa.fd
+File: umsa.fd 2013/01/14 v3.01 AMS symbols A
+)
+LaTeX Font Info:    Trying to load font information for U+msb on input line 197.
+ (c:/texlive/2026/texmf-dist/tex/latex/amsfonts/umsb.fd
+File: umsb.fd 2013/01/14 v3.01 AMS symbols B
+) [2] [3{c:/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc}] [4] [5] (./main.toc [6])
 \tf@toc=\write4
 \openout4 = `main.toc'.
 
@@ -643,399 +703,1125 @@ Underfull \hbox (badness 10000) in paragraph at lines 193--194
 pdfTeX warning (ext4): destination with the same identifier (name{page.3}) has been already used, duplicate ignored
 <to be read again> 
                    \relax 
-l.457 
+l.456 
        [3]
 pdfTeX warning (ext4): destination with the same identifier (name{page.4}) has been already used, duplicate ignored
 <to be read again> 
                    \relax 
-l.505 
+l.504 
        [4]
 pdfTeX warning (ext4): destination with the same identifier (name{page.5}) has been already used, duplicate ignored
 <to be read again> 
                    \relax 
-l.553 
+l.552 
        [5]
 pdfTeX warning (ext4): destination with the same identifier (name{page.6}) has been already used, duplicate ignored
 <to be read again> 
                    \relax 
-l.605 
+l.604 
        [6]
 pdfTeX warning (ext4): destination with the same identifier (name{page.7}) has been already used, duplicate ignored
 <to be read again> 
                    \relax 
-l.670 
+l.662 
        [7]
-<img/perfil_cientifico_tecnologico.png, id=448, 1453.43pt x 1090.0725pt>
+<img/perfil_cientifico_tecnologico.png, id=453, 1453.43pt x 1090.0725pt>
 File: img/perfil_cientifico_tecnologico.png Graphic file (type png)
 <use img/perfil_cientifico_tecnologico.png>
-Package pdftex.def Info: img/perfil_cientifico_tecnologico.png  used on input line 710.
+Package pdftex.def Info: img/perfil_cientifico_tecnologico.png  used on input line 699.
 (pdftex.def)             Requested size: 227.62206pt x 170.70596pt.
  [8]
-<img/Relatorio_1.png, id=454, 571.38469pt x 807.015pt>
+<img/Relatorio_1.png, id=459, 571.38469pt x 807.015pt>
 File: img/Relatorio_1.png Graphic file (type png)
 <use img/Relatorio_1.png>
-Package pdftex.def Info: img/Relatorio_1.png  used on input line 717.
+Package pdftex.def Info: img/Relatorio_1.png  used on input line 706.
 (pdftex.def)             Requested size: 364.19667pt x 514.38214pt.
  [9
 pdfTeX warning (ext4): destination with the same identifier (name{figure.1}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.721 
+l.710 
        <./img/perfil_cientifico_tecnologico.png (PNG copy)>]
-<img/Relatorio_2.png, id=463, 571.38469pt x 810.77907pt>
+<img/Relatorio_2.png, id=468, 571.38469pt x 810.77907pt>
 File: img/Relatorio_2.png Graphic file (type png)
 <use img/Relatorio_2.png>
-Package pdftex.def Info: img/Relatorio_2.png  used on input line 724.
+Package pdftex.def Info: img/Relatorio_2.png  used on input line 713.
 (pdftex.def)             Requested size: 364.19667pt x 516.78133pt.
  [10
 pdfTeX warning (ext4): destination with the same identifier (name{figure.2}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.728 
+l.717 
        <./img/Relatorio_1.png>] [11
 pdfTeX warning (ext4): destination with the same identifier (name{figure.3}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.742 
+l.731 
        <./img/Relatorio_2.png>]
-<img/S_Curve_Madeo.png, id=482, 1675.25874pt x 945.5325pt>
+<img/S_Curve_Madeo.png, id=487, 1675.25874pt x 945.5325pt>
 File: img/S_Curve_Madeo.png Graphic file (type png)
 <use img/S_Curve_Madeo.png>
-Package pdftex.def Info: img/S_Curve_Madeo.png  used on input line 745.
+Package pdftex.def Info: img/S_Curve_Madeo.png  used on input line 734.
 (pdftex.def)             Requested size: 318.66948pt x 179.85503pt.
  [12
 pdfTeX warning (ext4): destination with the same identifier (name{figure.4}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.787 
-       <./img/S_Curve_Madeo.png (PNG copy)>] [13] [14
+l.775 ...textit{Technology Readiness Level} (TRL)}
+                                                   <./img/S_Curve_Madeo.png (PNG copy)>] [13]
+<img/curva_s_sintetica_gpmpsp.png, id=526, 854.7132pt x 371.4678pt>
+File: img/curva_s_sintetica_gpmpsp.png Graphic file (type png)
+<use img/curva_s_sintetica_gpmpsp.png>
+Package pdftex.def Info: img/curva_s_sintetica_gpmpsp.png  used on input line 842.
+(pdftex.def)             Requested size: 455.24411pt x 197.85757pt.
+ [14
 pdfTeX warning (ext4): destination with the same identifier (name{table.1}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.899 
-      ]
-<img/curva_s_sintetica_gpmpsp.png, id=528, 854.7132pt x 371.4678pt>
-File: img/curva_s_sintetica_gpmpsp.png Graphic file (type png)
-<use img/curva_s_sintetica_gpmpsp.png>
-Package pdftex.def Info: img/curva_s_sintetica_gpmpsp.png  used on input line 902.
-(pdftex.def)             Requested size: 455.24411pt x 197.85757pt.
- [15
+l.853 ...displaystyle\sum_{i} (y_i - \bar{y})^2}$$
+                                                  
 pdfTeX warning (ext4): destination with the same identifier (name{figure.5}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.937 
-       <./img/curva_s_sintetica_gpmpsp.png>] [16]
-<img/self_attention_transformer.png, id=549, 1678.27pt x 944.52875pt>
+l.853 ...displaystyle\sum_{i} (y_i - \bar{y})^2}$$
+                                                   <./img/curva_s_sintetica_gpmpsp.png>] [15]
+<img/self_attention_transformer.png, id=550, 1678.27pt x 944.52875pt>
 File: img/self_attention_transformer.png Graphic file (type png)
 <use img/self_attention_transformer.png>
-Package pdftex.def Info: img/self_attention_transformer.png  used on input line 1033.
+Package pdftex.def Info: img/self_attention_transformer.png  used on input line 885.
 (pdftex.def)             Requested size: 432.48051pt x 243.39542pt.
- [17] [18
+ [16
 pdfTeX warning (ext4): destination with the same identifier (name{figure.6}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.1080 
-        <./img/self_attention_transformer.png (PNG copy)>] [19] [20] [21] [22] [23] [24] [25] [26] [27] [28] [29]
-<img/drawio.png, id=700, 1487.5575pt x 1543.7675pt>
+l.900 
+       <./img/self_attention_transformer.png (PNG copy)>] [17] [18]
+Overfull \hbox (19.39658pt too wide) in paragraph at lines 950--951
+[]\T1/cmr/bx/n/12 C-value \T1/cmr/m/n/12 [[]23[]]: mé-trica pro-je-tada para men-su-rar o grau de au-to-no-mia le-xi-cal (\T1/cmr/m/it/12 termhood\T1/cmr/m/n/12 )
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 966--966
+\T1/cmr/m/n/10.95 Res-pon-si-bi-
+ []
+
+
+Underfull \hbox (badness 1292) in paragraph at lines 966--966
+\T1/cmr/m/n/10.95 mí-nio (ti-pos pu-ros), por-tas
+ []
+
+
+Underfull \hbox (badness 3396) in paragraph at lines 966--966
+\T1/cmr/m/n/10.95 (con-tra-tos), ser-vi-ços (ne-gó-
+ []
+
+
+Underfull \hbox (badness 2393) in paragraph at lines 966--966
+\T1/cmr/m/n/10.95 cio), adap-ta-do-res (I/O ex-
+ []
+
+
+Underfull \hbox (badness 3158) in paragraph at lines 966--967
+\T1/cmr/m/n/10.95 rou-ter (va-li-da-ção HTTP), re-
+ []
+
+
+Underfull \hbox (badness 1292) in paragraph at lines 966--967
+\T1/cmr/m/n/10.95 fica), s_curve.py (ajuste es-ta-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 968--968
+[]|\T1/cmr/bx/n/10.95 OCP
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 968--968
+\T1/cmr/m/n/10.95 (Open-
+ []
+
+
+Underfull \hbox (badness 1199) in paragraph at lines 968--968
+\T1/cmr/m/n/10.95 API de busca = novo par
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 970--970
+\T1/cmr/m/n/10.95 Subs-ti-tu-
+ []
+
+
+Underfull \hbox (badness 1087) in paragraph at lines 970--970
+\T1/cmr/m/n/10.95 Scho-larly-Se-ar-ch-Port. In-ter-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 970--971
+[]|\T1/cmr/m/n/10.95 AnthropicLLMAdapter, Ge-mi-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 970--971
+\T1/cmr/m/n/10.95 niLL-MA-dap-ter, Moc-kLL-MA-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 970--971
+\T1/cmr/m/n/10.95 Chat-Ser-vice des-co-nhece qual
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 972--972
+[]|\T1/cmr/bx/n/10.95 ISP \T1/cmr/m/n/10.95 (In-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 972--972
+\T1/cmr/m/n/10.95 ter-face
+ []
+
+
+Underfull \hbox (badness 2443) in paragraph at lines 972--972
+[]|\T1/cmr/m/n/10.95 Portas são in-ter-fa-ces mí-ni-
+ []
+
+
+Underfull \hbox (badness 1424) in paragraph at lines 972--972
+\T1/cmr/m/n/10.95 bed-dings), Pa-tent-Se-ar-ch-Port
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 974--974
+[]|\T1/cmr/bx/n/10.95 DIP \T1/cmr/m/n/10.95 (De-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 974--974
+\T1/cmr/m/n/10.95 pen-dency
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 974--975
+[]|\T1/cmr/m/n/10.95 Rotas HTTP re-ce-bem ser-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 974--975
+\T1/cmr/m/n/10.95 vi-ços via con-tai-ner em re-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 974--975
+\T1/cmr/m/n/10.95 quest.app.state.container, não
+ []
+
+[19] [20
+pdfTeX warning (ext4): destination with the same identifier (name{table.2}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.993 
+      ] [21]
+Underfull \hbox (badness 1014) in paragraph at lines 1043--1044
+[]|\T1/cmr/m/n/10.95 Estáticos: ren-de-ri-za-dos por tem-plate Jinja2
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1045--1046
+[]|\T1/cmr/m/n/10.95 Fixa: ge-rada por fun-ção de-ter-mi-nís-tica
+ []
+
+[22]
+<img/drawio.png, id=627, 1487.5575pt x 1543.7675pt>
 File: img/drawio.png Graphic file (type png)
 <use img/drawio.png>
-Package pdftex.def Info: img/drawio.png  used on input line 1766.
+Package pdftex.def Info: img/drawio.png  used on input line 1072.
 (pdftex.def)             Requested size: 455.24411pt x 472.43843pt.
- [30]
-Overfull \hbox (10.98657pt too wide) in paragraph at lines 1790--1790
+ [23
+pdfTeX warning (ext4): destination with the same identifier (name{table.3}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1076 
+       ] [24
+pdfTeX warning (ext4): destination with the same identifier (name{figure.7}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1078 
+        <./img/drawio.png>]
+Overfull \hbox (10.98657pt too wide) in paragraph at lines 1100--1100
  []|\T1/cmr/m/n/12 RF01| 
  []
 
 
-Overfull \hbox (10.98657pt too wide) in paragraph at lines 1794--1794
+Overfull \hbox (10.98657pt too wide) in paragraph at lines 1104--1104
  []|\T1/cmr/m/n/12 RF02| 
  []
 
 
-Overfull \hbox (10.98657pt too wide) in paragraph at lines 1799--1799
+Overfull \hbox (10.98657pt too wide) in paragraph at lines 1109--1109
  []|\T1/cmr/m/n/12 RF03| 
  []
 
 
-Overfull \hbox (10.98657pt too wide) in paragraph at lines 1804--1804
+Overfull \hbox (10.98657pt too wide) in paragraph at lines 1114--1114
  []|\T1/cmr/m/n/12 RF04| 
  []
 
 
-Overfull \hbox (10.98657pt too wide) in paragraph at lines 1812--1812
+Overfull \hbox (10.98657pt too wide) in paragraph at lines 1122--1122
  []|\T1/cmr/m/n/12 RF05| 
  []
 
 
-Overfull \hbox (10.98657pt too wide) in paragraph at lines 1819--1819
+Overfull \hbox (10.98657pt too wide) in paragraph at lines 1129--1129
  []|\T1/cmr/m/n/12 RF06| 
  []
 
 
-Overfull \hbox (10.98657pt too wide) in paragraph at lines 1823--1823
+Overfull \hbox (10.98657pt too wide) in paragraph at lines 1133--1133
  []|\T1/cmr/m/n/12 RF07| 
  []
 
 
-Overfull \hbox (10.98657pt too wide) in paragraph at lines 1827--1827
+Overfull \hbox (10.98657pt too wide) in paragraph at lines 1137--1137
  []|\T1/cmr/m/n/12 RF08| 
  []
 
 
-Overfull \hbox (10.98657pt too wide) in paragraph at lines 1834--1834
+Overfull \hbox (10.98657pt too wide) in paragraph at lines 1144--1144
  []|\T1/cmr/m/n/12 RF09| 
  []
 
 
-Overfull \hbox (10.98657pt too wide) in paragraph at lines 1841--1841
+Overfull \hbox (10.98657pt too wide) in paragraph at lines 1151--1151
  []|\T1/cmr/m/n/12 RF10| 
  []
 
 
-Overfull \hbox (10.98657pt too wide) in paragraph at lines 1845--1845
+Overfull \hbox (10.98657pt too wide) in paragraph at lines 1155--1155
  []|\T1/cmr/m/n/12 RF11| 
  []
 
 
-Overfull \hbox (10.98657pt too wide) in paragraph at lines 1849--1849
+Overfull \hbox (10.98657pt too wide) in paragraph at lines 1159--1159
  []|\T1/cmr/m/n/12 RF12| 
  []
 
 
-Overfull \hbox (10.98657pt too wide) in paragraph at lines 1855--1855
+Overfull \hbox (10.98657pt too wide) in paragraph at lines 1165--1165
  []|\T1/cmr/m/n/12 RF13| 
  []
 
-[31
-pdfTeX warning (ext4): destination with the same identifier (name{figure.7}) has been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.1863 \end{longtable}
-                       <./img/drawio.png>] [32]
-Overfull \hbox (14.1023pt too wide) in paragraph at lines 1881--1881
+[25] [26]
+Overfull \hbox (14.1023pt too wide) in paragraph at lines 1196--1196
  []|\T1/cmr/m/n/12 RNF01| 
  []
 
 
-Overfull \hbox (14.1023pt too wide) in paragraph at lines 1886--1886
+Overfull \hbox (14.1023pt too wide) in paragraph at lines 1201--1201
  []|\T1/cmr/m/n/12 RNF02| 
  []
 
 
-Overfull \hbox (14.1023pt too wide) in paragraph at lines 1892--1892
+Overfull \hbox (14.1023pt too wide) in paragraph at lines 1205--1205
  []|\T1/cmr/m/n/12 RNF03| 
  []
 
 
-Overfull \hbox (14.1023pt too wide) in paragraph at lines 1898--1898
+Overfull \hbox (14.1023pt too wide) in paragraph at lines 1211--1211
  []|\T1/cmr/m/n/12 RNF04| 
  []
 
 
-Overfull \hbox (14.1023pt too wide) in paragraph at lines 1907--1907
+Overfull \hbox (14.1023pt too wide) in paragraph at lines 1221--1221
  []|\T1/cmr/m/n/12 RNF05| 
  []
 
 
-Overfull \hbox (14.1023pt too wide) in paragraph at lines 1912--1912
+Overfull \hbox (14.1023pt too wide) in paragraph at lines 1226--1226
  []|\T1/cmr/m/n/12 RNF06| 
  []
 
 
-Overfull \hbox (14.1023pt too wide) in paragraph at lines 1917--1917
+Overfull \hbox (14.1023pt too wide) in paragraph at lines 1230--1230
  []|\T1/cmr/m/n/12 RNF07| 
  []
 
 
-Overfull \hbox (14.1023pt too wide) in paragraph at lines 1921--1921
- []|\T1/cmr/m/n/12 RNF08| 
- []
-
-
-Overfull \hbox (2.59782pt too wide) in paragraph at lines 1921--1921
+Overfull \hbox (2.59782pt too wide) in paragraph at lines 1230--1230
 []|\T1/cmr/m/n/12 Interoperabilidade 
  []
 
 
-Overfull \hbox (14.1023pt too wide) in paragraph at lines 1927--1927
- []|\T1/cmr/m/n/12 RNF09| 
+Overfull \hbox (14.1023pt too wide) in paragraph at lines 1236--1236
+ []|\T1/cmr/m/n/12 RNF08| 
  []
 
-[33] [34]
-Overfull \hbox (2.4293pt too wide) in paragraph at lines 1957--1957
+[27] [28]
+Overfull \hbox (2.4293pt too wide) in paragraph at lines 1258--1258
 []|\T1/cmr/bx/n/12 Responsabilidade| 
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 1961--1961
-[]|\T1/cmr/m/n/12 Serviços
+Underfull \hbox (badness 10000) in paragraph at lines 1261--1261
+[]|\T1/cmr/m/n/12 Contratos abs-tra-
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 1961--1961
-[]|\T1/cmr/m/n/12 Regras de ne-gó-
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 1961--1961
-\T1/cmr/m/n/12 cio pu-ras, sem
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 1961--1961
-\T1/cmr/m/n/12 de-pen-dên-cia de
- []
-
-
-Overfull \hbox (2.07436pt too wide) in paragraph at lines 1962--1962
+Overfull \hbox (2.07436pt too wide) in paragraph at lines 1263--1263
 []|\T1/cmr/m/n/12 Adaptadores
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 1962--1962
-[]|\T1/cmr/m/n/12 Implementam as
- []
-
-
-Overfull \hbox (2.07436pt too wide) in paragraph at lines 1963--1963
+Overfull \hbox (2.07436pt too wide) in paragraph at lines 1264--1264
 []|\T1/cmr/m/n/12 Adaptadores
  []
 
-[35] [36
-pdfTeX warning (ext4): destination with the same identifier (name{table.4}) has been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.2002 
-       ] [37]
-Overfull \hbox (8.19838pt too wide) in paragraph at lines 2065--2065
-[]|\T1/cmr/bx/n/12 Princípio| 
- []
-
-
-Underfull \hbox (badness 1648) in paragraph at lines 2067--2067
-[]|\T1/cmr/m/n/12 Granularidade dos ser-vi-ços
- []
-
-<img/arquitetura_hexagonal_camadas.png, id=759, 1541.76pt x 1027.84pt>
-File: img/arquitetura_hexagonal_camadas.png Graphic file (type png)
-<use img/arquitetura_hexagonal_camadas.png>
-Package pdftex.def Info: img/arquitetura_hexagonal_camadas.png  used on input line 2078.
-(pdftex.def)             Requested size: 386.96027pt x 257.96312pt.
-[38
-pdfTeX warning (ext4): destination with the same identifier (name{table.5}) has been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.2082 
-       ]
-<img/fluxograma.png, id=768, 1355.0625pt x 2296.0179pt>
-File: img/fluxograma.png Graphic file (type png)
-<use img/fluxograma.png>
-Package pdftex.def Info: img/fluxograma.png  used on input line 2092.
-(pdftex.def)             Requested size: 352.55606pt x 597.37099pt.
- [39
-pdfTeX warning (ext4): destination with the same identifier (name{figure.8}) has been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.2096 
-        <./img/arquitetura_hexagonal_camadas.png (PNG copy)>] [40
-pdfTeX warning (ext4): destination with the same identifier (name{figure.9}) has been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.2104 
-        <./img/fluxograma.png>] [41] [42] [43] [44
+[29
 pdfTeX warning (ext4): destination with the same identifier (name{table.6}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.2331 
-       ] [45]
-Underfull \hbox (badness 1199) in paragraph at lines 2415--2416
-\T1/cmr/m/n/12 por \T1/cmtt/m/n/12 dedup_key\T1/cmr/m/n/12 , in-de-pen-den-te-mente de ses-são ou
- []
-
-[46] [47
+l.1270 
+       ]
+<img/arquitetura_hexagonal_camadas.png, id=678, 1541.76pt x 1027.84pt>
+File: img/arquitetura_hexagonal_camadas.png Graphic file (type png)
+<use img/arquitetura_hexagonal_camadas.png>
+Package pdftex.def Info: img/arquitetura_hexagonal_camadas.png  used on input line 1273.
+(pdftex.def)             Requested size: 386.96027pt x 257.96312pt.
+<img/fluxograma.png, id=680, 1355.0625pt x 2296.0179pt>
+File: img/fluxograma.png Graphic file (type png)
+<use img/fluxograma.png>
+Package pdftex.def Info: img/fluxograma.png  used on input line 1282.
+(pdftex.def)             Requested size: 373.27397pt x 632.47543pt.
+ [30
+pdfTeX warning (ext4): destination with the same identifier (name{figure.8}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1286 
+        <./img/arquitetura_hexagonal_camadas.png (PNG copy)>] [31
+pdfTeX warning (ext4): destination with the same identifier (name{figure.9}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1288 
+        <./img/fluxograma.png>] [32] [33] [34] [35
 pdfTeX warning (ext4): destination with the same identifier (name{table.7}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.2438 
-       ] [48]
-<img/modelo_dados_der.pdf, id=860, page=1, 1084.05pt x 1927.2pt>
-File: img/modelo_dados_der.pdf Graphic file (type pdf)
-<use img/modelo_dados_der.pdf, page 1>
-Package pdftex.def Info: img/modelo_dados_der.pdf , page1 used on input line 2527.
-(pdftex.def)             Requested size: 359.49098pt x 618.45253pt.
- [49
+l.1399     \item \textbf
+                        {PostgreSQL e SQLAlchemy}: persistÃªncia transaciona...] [36]
+Underfull \hbox (badness 3514) in paragraph at lines 1447--1448
+[]|\T1/cmtt/m/n/10.95 research_session \T1/cmr/m/n/10.95 (novo), \T1/cmtt/m/n/10.95 session_input \T1/cmr/m/n/10.95 (tema, des-cri-ção,
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1451--1451
+[]|\T1/cmr/bx/n/10.95 Fase 2:
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1451--1451
+\T1/cmr/bx/n/10.95 Busca Ex-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1451--1452
+[]|\T1/cmtt/m/n/10.95 session_probe_query \T1/cmr/m/n/10.95 (que-ries ex-plo-ra-tó-rias),
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1451--1452
+\T1/cmtt/m/n/10.95 patent\T1/cmr/m/n/10.95 /\T1/cmtt/m/n/10.95 article \T1/cmr/m/n/10.95 (do-cu-men-tos re-cu-pe-ra-dos),
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1451--1452
+\T1/cmtt/m/n/10.95 probe_query_patent\T1/cmr/m/n/10.95 /\T1/cmtt/m/n/10.95 probe_query_article \T1/cmr/m/n/10.95 (re-la-ci-o-na-men-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1453--1453
+\T1/cmr/bx/n/10.95 tra-ção de
+ []
+
+
+Underfull \hbox (badness 2707) in paragraph at lines 1453--1454
+[]|\T1/cmtt/m/n/10.95 probe_query_term \T1/cmr/m/n/10.95 (ter-mos can-di-da-tos com sco-res de PLN:
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1455--1455
+[]|\T1/cmr/bx/n/10.95 Fase 4:
+ []
+
+
+Underfull \hbox (badness 1642) in paragraph at lines 1455--1456
+[]|\T1/cmtt/m/n/10.95 session_probe_query \T1/cmr/m/n/10.95 (que-ries fi-nais: es-pe-cí-fica, ba-lan-ce-ada,
+ []
+
+
+Underfull \hbox (badness 6284) in paragraph at lines 1455--1456
+\T1/cmr/m/n/10.95 am-pla), \T1/cmtt/m/n/10.95 patent\T1/cmr/m/n/10.95 /\T1/cmtt/m/n/10.95 article \T1/cmr/m/n/10.95 (no-vos do-cu-men-tos de-du-pli-ca-dos),
+ []
+
+[37
 pdfTeX warning (ext4): destination with the same identifier (name{table.8}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.2552 
-       ] [50
-pdfTeX warning (ext4): destination with the same identifier (name{figure.10}) has been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.2552 
-        <./img/modelo_dados_der.pdf>]
-Overfull \hbox (43.26274pt too wide) in paragraph at lines 2579--2583
-[]\T1/cmr/bx/n/12 Estimação de com-ple-tude amos-tral e es-ta-bi-li-dade de \T1/cmr/bx/it/12 ran-king \T1/cmr/bx/n/12 (Chao1/\T1/cmr/bx/it/12 bootstrap\T1/cmr/bx/n/12 ):
- []
-
-[51]
-<img/pipeline_cinco_fases.png, id=907, 1678.27pt x 331.2375pt>
-File: img/pipeline_cinco_fases.png Graphic file (type png)
-<use img/pipeline_cinco_fases.png>
-Package pdftex.def Info: img/pipeline_cinco_fases.png  used on input line 2634.
-(pdftex.def)             Requested size: 409.71692pt x 80.86327pt.
- [52
-pdfTeX warning (ext4): destination with the same identifier (name{figure.11}) has been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.2667 
-        <./img/pipeline_cinco_fases.png>] [53] [54] [55]
-Overfull \hbox (5.25937pt too wide) detected at line 2876
-[]\OT1/cmr/m/n/12 ([]) = [] + [] = 0[]01613 + 0[]01639 = 0[]03252
- []
-
-[56] [57] [58
+l.1461 
+       ]
+<img/modelo_dados_der.pdf, id=744, page=1, 1084.05pt x 1927.2pt>
+File: img/modelo_dados_der.pdf Graphic file (type pdf)
+<use img/modelo_dados_der.pdf, page 1>
+Package pdftex.def Info: img/modelo_dados_der.pdf , page1 used on input line 1464.
+(pdftex.def)             Requested size: 359.49098pt x 618.45253pt.
+ [38
 pdfTeX warning (ext4): destination with the same identifier (name{table.9}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.3021 
-       ] [59] [60] [61] [62] [63] [64] [65] [66] [67
+l.1481   \end{itemize}
+                      ] [39
+pdfTeX warning (ext4): destination with the same identifier (name{figure.10}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1481   \end{itemize}
+                       <./img/modelo_dados_der.pdf>]
+<img/pipeline_cinco_fases.png, id=779, 1678.27pt x 331.2375pt>
+File: img/pipeline_cinco_fases.png Graphic file (type png)
+<use img/pipeline_cinco_fases.png>
+Package pdftex.def Info: img/pipeline_cinco_fases.png  used on input line 1493.
+(pdftex.def)             Requested size: 409.71692pt x 80.86327pt.
+ [40
+pdfTeX warning (ext4): destination with the same identifier (name{figure.11}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1511   \end{enumerate}
+                         <./img/pipeline_cinco_fases.png>] [41] [42] [43] [44] [45] [46] [47] [48] [49] [50] [51] [52
 pdfTeX warning (ext4): destination with the same identifier (name{table.10}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.3609 
+l.2050 
        ]
-Package hyperref Info: bookmark level for unknown lstlisting defaults to 0 on input line 3649.
- (./apendice/fase1_prompt_trecho.txt [68]) (./apendice/fase1_mensagem.txt) [69] (./apendice/fase2_prompt_trecho.txt) (./apendice/fase2_mensagem.txt [70]) (./apendice/fase2_dica_api.txt) (./apendice/fase2_retentativa.txt) [71] (./apendice/fase4_prompt_trecho.txt) (./apendice/fase4_contexto.txt [72]) (./apendice/fase5_sistema.txt) (./apendice/fase5_secao.txt [73] [74]) (./apendice/fase5_retentativa.txt) [75
+Package hyperref Info: bookmark level for unknown lstlisting defaults to 0 on input line 2090.
+ (./apendice/fase1_prompt_trecho.txt [53]) (./apendice/fase1_mensagem.txt) [54] (./apendice/fase2_prompt_trecho.txt) (./apendice/fase2_mensagem.txt [55]) (./apendice/fase2_dica_api.txt) (./apendice/fase2_retentativa.txt) [56] (./apendice/fase4_prompt_trecho.txt) (./apendice/fase4_contexto.txt [57]) (./apendice/fase5_sistema.txt) (./apendice/fase5_secao.txt [58] [59]) (./apendice/fase5_retentativa.txt) [60
 pdfTeX warning (ext4): destination with the same identifier (name{table.11}) has been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.3750 ...e5-revisao}]{apendice/fase5_revisao.txt}
-                                                  ] (./apendice/fase5_revisao.txt) [76] (./main.aux)
+l.2190 ...e5-revisao}]{apendice/fase5_revisao.txt}
+                                                  ] (./apendice/fase5_revisao.txt) [61]
+<img/teste (1).png, id=1241, 536.0025pt x 304.13625pt>
+File: img/teste (1).png Graphic file (type png)
+<use img/teste (1).png>
+Package pdftex.def Info: img/teste (1).png  used on input line 2205.
+(pdftex.def)             Requested size: 409.71692pt x 232.47783pt.
+<img/teste (7).png, id=1243, 377.61075pt x 81.30376pt>
+File: img/teste (7).png Graphic file (type png)
+<use img/teste (7).png>
+Package pdftex.def Info: img/teste (7).png  used on input line 2214.
+(pdftex.def)             Requested size: 386.96027pt x 83.3195pt.
+ [62
+pdfTeX warning (ext4): destination with the same identifier (name{figure.12}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2222 
+       
+pdfTeX warning (ext4): destination with the same identifier (name{figure.13}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2222 
+        <./img/teste (1).png> <./img/teste (7).png>]
+<img/teste (2).png, id=1254, 1085.2545pt x 335.45325pt>
+File: img/teste (2).png Graphic file (type png)
+<use img/teste (2).png>
+Package pdftex.def Info: img/teste (2).png  used on input line 2225.
+(pdftex.def)             Requested size: 432.48051pt x 133.67729pt.
+ [63
+pdfTeX warning (ext4): destination with the same identifier (name{figure.14}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2250     \end{lstlisting}
+                            <./img/teste (2).png>]
+<img/teste (3).png, id=1271, 1081.03876pt x 190.311pt>
+File: img/teste (3).png Graphic file (type png)
+<use img/teste (3).png>
+Package pdftex.def Info: img/teste (3).png  used on input line 2264.
+(pdftex.def)             Requested size: 432.48051pt x 76.13466pt.
+<img/teste (4).png, id=1274, 494.44725pt x 196.93575pt>
+File: img/teste (4).png Graphic file (type png)
+<use img/teste (4).png>
+Package pdftex.def Info: img/teste (4).png  used on input line 2273.
+(pdftex.def)             Requested size: 432.48051pt x 172.25522pt.
+<img/teste (5).png, id=1275, 504.08325pt x 200.54926pt>
+File: img/teste (5).png Graphic file (type png)
+<use img/teste (5).png>
+Package pdftex.def Info: img/teste (5).png  used on input line 2280.
+(pdftex.def)             Requested size: 432.48051pt x 172.0681pt.
+ [64
+pdfTeX warning (ext4): destination with the same identifier (name{figure.15}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2284 
+       
+pdfTeX warning (ext4): destination with the same identifier (name{figure.16}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2284 
+        <./img/teste (3).png> <./img/teste (4).png>]
+Overfull \hbox (111.4317pt too wide) in paragraph at lines 2294--2312
+ [][] 
+ []
+
+[65
+pdfTeX warning (ext4): destination with the same identifier (name{figure.17}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2317 
+       
+pdfTeX warning (ext4): destination with the same identifier (name{table.12}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2317 
+        <./img/teste (5).png>]
+<img/teste (6).png, id=1297, 1070.19826pt x 407.72325pt>
+File: img/teste (6).png Graphic file (type png)
+<use img/teste (6).png>
+Package pdftex.def Info: img/teste (6).png  used on input line 2334.
+(pdftex.def)             Requested size: 455.24411pt x 173.43872pt.
+ [66] [67
+pdfTeX warning (ext4): destination with the same identifier (name{figure.18}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2343 \newpage
+                <./img/teste (6).png>]
+<anexo/Teste.pdf, id=1314, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf>
+Package pdftex.def Info: anexo/Teste.pdf  used on input line 2345.
+(pdftex.def)             Requested size: 597.50682pt x 845.04504pt.
+<anexo/Teste.pdf, id=1316, page=1, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 1>
+Package pdftex.def Info: anexo/Teste.pdf , page1 used on input line 2345.
+(pdftex.def)             Requested size: 597.50682pt x 845.04504pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 1>
+Package pdftex.def Info: anexo/Teste.pdf , page1 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 1>
+Package pdftex.def Info: anexo/Teste.pdf , page1 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 1>
+Package pdftex.def Info: anexo/Teste.pdf , page1 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 1>
+Package pdftex.def Info: anexo/Teste.pdf , page1 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [68
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1332, page=2, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 2>
+Package pdftex.def Info: anexo/Teste.pdf , page2 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 2>
+Package pdftex.def Info: anexo/Teste.pdf , page2 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 2>
+Package pdftex.def Info: anexo/Teste.pdf , page2 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [69
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1343, page=3, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 3>
+Package pdftex.def Info: anexo/Teste.pdf , page3 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 3>
+Package pdftex.def Info: anexo/Teste.pdf , page3 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 3>
+Package pdftex.def Info: anexo/Teste.pdf , page3 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [70
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1358, page=4, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 4>
+Package pdftex.def Info: anexo/Teste.pdf , page4 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 4>
+Package pdftex.def Info: anexo/Teste.pdf , page4 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 4>
+Package pdftex.def Info: anexo/Teste.pdf , page4 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [71
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1363, page=5, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 5>
+Package pdftex.def Info: anexo/Teste.pdf , page5 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 5>
+Package pdftex.def Info: anexo/Teste.pdf , page5 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 5>
+Package pdftex.def Info: anexo/Teste.pdf , page5 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [72
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1368, page=6, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 6>
+Package pdftex.def Info: anexo/Teste.pdf , page6 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 6>
+Package pdftex.def Info: anexo/Teste.pdf , page6 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 6>
+Package pdftex.def Info: anexo/Teste.pdf , page6 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [73
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1373, page=7, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 7>
+Package pdftex.def Info: anexo/Teste.pdf , page7 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 7>
+Package pdftex.def Info: anexo/Teste.pdf , page7 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 7>
+Package pdftex.def Info: anexo/Teste.pdf , page7 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [74
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1386, page=8, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 8>
+Package pdftex.def Info: anexo/Teste.pdf , page8 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 8>
+Package pdftex.def Info: anexo/Teste.pdf , page8 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 8>
+Package pdftex.def Info: anexo/Teste.pdf , page8 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [75
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1392, page=9, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 9>
+Package pdftex.def Info: anexo/Teste.pdf , page9 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 9>
+Package pdftex.def Info: anexo/Teste.pdf , page9 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 9>
+Package pdftex.def Info: anexo/Teste.pdf , page9 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [76
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1398, page=10, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 10>
+Package pdftex.def Info: anexo/Teste.pdf , page10 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 10>
+Package pdftex.def Info: anexo/Teste.pdf , page10 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 10>
+Package pdftex.def Info: anexo/Teste.pdf , page10 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [77
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1409, page=11, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 11>
+Package pdftex.def Info: anexo/Teste.pdf , page11 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 11>
+Package pdftex.def Info: anexo/Teste.pdf , page11 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 11>
+Package pdftex.def Info: anexo/Teste.pdf , page11 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [78
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1414, page=12, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 12>
+Package pdftex.def Info: anexo/Teste.pdf , page12 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 12>
+Package pdftex.def Info: anexo/Teste.pdf , page12 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 12>
+Package pdftex.def Info: anexo/Teste.pdf , page12 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [79
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1422, page=13, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 13>
+Package pdftex.def Info: anexo/Teste.pdf , page13 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 13>
+Package pdftex.def Info: anexo/Teste.pdf , page13 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 13>
+Package pdftex.def Info: anexo/Teste.pdf , page13 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [80
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1431, page=14, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 14>
+Package pdftex.def Info: anexo/Teste.pdf , page14 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 14>
+Package pdftex.def Info: anexo/Teste.pdf , page14 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 14>
+Package pdftex.def Info: anexo/Teste.pdf , page14 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [81
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1439, page=15, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 15>
+Package pdftex.def Info: anexo/Teste.pdf , page15 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 15>
+Package pdftex.def Info: anexo/Teste.pdf , page15 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 15>
+Package pdftex.def Info: anexo/Teste.pdf , page15 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [82
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1449, page=16, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 16>
+Package pdftex.def Info: anexo/Teste.pdf , page16 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 16>
+Package pdftex.def Info: anexo/Teste.pdf , page16 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 16>
+Package pdftex.def Info: anexo/Teste.pdf , page16 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [83
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1457, page=17, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 17>
+Package pdftex.def Info: anexo/Teste.pdf , page17 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 17>
+Package pdftex.def Info: anexo/Teste.pdf , page17 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 17>
+Package pdftex.def Info: anexo/Teste.pdf , page17 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [84
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1467, page=18, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 18>
+Package pdftex.def Info: anexo/Teste.pdf , page18 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 18>
+Package pdftex.def Info: anexo/Teste.pdf , page18 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 18>
+Package pdftex.def Info: anexo/Teste.pdf , page18 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [85
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1472, page=19, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 19>
+Package pdftex.def Info: anexo/Teste.pdf , page19 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 19>
+Package pdftex.def Info: anexo/Teste.pdf , page19 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 19>
+Package pdftex.def Info: anexo/Teste.pdf , page19 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [86
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1478, page=20, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 20>
+Package pdftex.def Info: anexo/Teste.pdf , page20 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 20>
+Package pdftex.def Info: anexo/Teste.pdf , page20 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 20>
+Package pdftex.def Info: anexo/Teste.pdf , page20 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [87
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1483, page=21, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 21>
+Package pdftex.def Info: anexo/Teste.pdf , page21 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 21>
+Package pdftex.def Info: anexo/Teste.pdf , page21 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 21>
+Package pdftex.def Info: anexo/Teste.pdf , page21 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [88
+
+ <./anexo/Teste.pdf>]
+<anexo/Teste.pdf, id=1488, page=22, 597.50829pt x 845.0471pt>
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 22>
+Package pdftex.def Info: anexo/Teste.pdf , page22 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 22>
+Package pdftex.def Info: anexo/Teste.pdf , page22 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+File: anexo/Teste.pdf Graphic file (type pdf)
+<use anexo/Teste.pdf, page 22>
+Package pdftex.def Info: anexo/Teste.pdf , page22 used on input line 2345.
+(pdftex.def)             Requested size: 597.53416pt x 845.08372pt.
+ [89
+
+ <./anexo/Teste.pdf>] [90]
+<img/interface (14).png, id=1508, 1150.89975pt x 546.24075pt>
+File: img/interface (14).png Graphic file (type png)
+<use img/interface (14).png>
+Package pdftex.def Info: img/interface (14).png  used on input line 2379.
+(pdftex.def)             Requested size: 418.82375pt x 198.78027pt.
+File: img/teste (2).png Graphic file (type png)
+<use img/teste (2).png>
+Package pdftex.def Info: img/teste (2).png  used on input line 2388.
+(pdftex.def)             Requested size: 418.82375pt x 129.45444pt.
+<img/interface (1).png, id=1511, 1150.2975pt x 546.24075pt>
+File: img/interface (1).png Graphic file (type png)
+<use img/interface (1).png>
+Package pdftex.def Info: img/interface (1).png  used on input line 2395.
+(pdftex.def)             Requested size: 418.82375pt x 198.88863pt.
+ [91
+pdfTeX warning (ext4): destination with the same identifier (name{figure.19}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2399 
+       
+pdfTeX warning (ext4): destination with the same identifier (name{figure.20}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2399 
+        <./img/interface (14).png>]
+<img/interface (2).png, id=1522, 1150.2975pt x 546.24075pt>
+File: img/interface (2).png Graphic file (type png)
+<use img/interface (2).png>
+Package pdftex.def Info: img/interface (2).png  used on input line 2406.
+(pdftex.def)             Requested size: 418.82375pt x 198.88863pt.
+<img/interface (4).png, id=1523, 1148.49075pt x 548.64975pt>
+File: img/interface (4).png Graphic file (type png)
+<use img/interface (4).png>
+Package pdftex.def Info: img/interface (4).png  used on input line 2413.
+(pdftex.def)             Requested size: 418.82375pt x 200.0755pt.
+ [92
+pdfTeX warning (ext4): destination with the same identifier (name{figure.21}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2417 
+       
+pdfTeX warning (ext4): destination with the same identifier (name{figure.22}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2417 
+        <./img/interface (1).png> <./img/interface (2).png>]
+<img/interface (5).png, id=1535, 1148.49075pt x 548.0475pt>
+File: img/interface (5).png Graphic file (type png)
+<use img/interface (5).png>
+Package pdftex.def Info: img/interface (5).png  used on input line 2424.
+(pdftex.def)             Requested size: 418.82375pt x 199.85588pt.
+<img/interface (7).png, id=1536, 1147.8885pt x 545.6385pt>
+File: img/interface (7).png Graphic file (type png)
+<use img/interface (7).png>
+Package pdftex.def Info: img/interface (7).png  used on input line 2431.
+(pdftex.def)             Requested size: 418.82375pt x 199.08562pt.
+ [93
+pdfTeX warning (ext4): destination with the same identifier (name{figure.23}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2435 
+       
+pdfTeX warning (ext4): destination with the same identifier (name{figure.24}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2435 
+        <./img/interface (4).png> <./img/interface (5).png>]
+<img/interface (8).png, id=1546, 1148.49075pt x 545.03625pt>
+File: img/interface (8).png Graphic file (type png)
+<use img/interface (8).png>
+Package pdftex.def Info: img/interface (8).png  used on input line 2442.
+(pdftex.def)             Requested size: 418.82375pt x 198.75777pt.
+<img/interface (9).png, id=1549, 1150.89975pt x 546.24075pt>
+File: img/interface (9).png Graphic file (type png)
+<use img/interface (9).png>
+Package pdftex.def Info: img/interface (9).png  used on input line 2453.
+(pdftex.def)             Requested size: 418.82375pt x 198.78027pt.
+ [94
+pdfTeX warning (ext4): destination with the same identifier (name{figure.25}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2457 
+       
+pdfTeX warning (ext4): destination with the same identifier (name{figure.26}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2457 
+        <./img/interface (7).png> <./img/interface (8).png>]
+<img/interface (10).png, id=1560, 1148.49075pt x 546.24075pt>
+File: img/interface (10).png Graphic file (type png)
+<use img/interface (10).png>
+Package pdftex.def Info: img/interface (10).png  used on input line 2460.
+(pdftex.def)             Requested size: 418.82375pt x 199.19702pt.
+<img/interface (12).png, id=1563, 1148.49075pt x 546.24075pt>
+File: img/interface (12).png Graphic file (type png)
+<use img/interface (12).png>
+Package pdftex.def Info: img/interface (12).png  used on input line 2469.
+(pdftex.def)             Requested size: 418.82375pt x 199.19702pt.
+ [95
+pdfTeX warning (ext4): destination with the same identifier (name{figure.27}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2473 
+       
+pdfTeX warning (ext4): destination with the same identifier (name{figure.28}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2473 
+        <./img/interface (9).png> <./img/interface (10).png>]
+<img/interface (13).png, id=1572, 1147.8885pt x 546.24075pt>
+File: img/interface (13).png Graphic file (type png)
+<use img/interface (13).png>
+Package pdftex.def Info: img/interface (13).png  used on input line 2476.
+(pdftex.def)             Requested size: 418.82375pt x 199.30537pt.
+<img/interface (15).png, id=1575, 1150.2975pt x 548.0475pt>
+File: img/interface (15).png Graphic file (type png)
+<use img/interface (15).png>
+Package pdftex.def Info: img/interface (15).png  used on input line 2487.
+(pdftex.def)             Requested size: 418.82375pt x 199.54646pt.
+ [96
+pdfTeX warning (ext4): destination with the same identifier (name{figure.29}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2491 
+       
+pdfTeX warning (ext4): destination with the same identifier (name{figure.30}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2491 
+        <./img/interface (12).png> <./img/interface (13).png>]
+<img/interface (16).png, id=1584, 1148.49075pt x 546.24075pt>
+File: img/interface (16).png Graphic file (type png)
+<use img/interface (16).png>
+Package pdftex.def Info: img/interface (16).png  used on input line 2494.
+(pdftex.def)             Requested size: 418.82375pt x 199.19702pt.
+ [97
+pdfTeX warning (ext4): destination with the same identifier (name{figure.31}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2500 \end{document}
+                     
+pdfTeX warning (ext4): destination with the same identifier (name{figure.32}) has been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.2500 \end{document}
+                      <./img/interface (15).png> <./img/interface (16).png>] (./main.aux)
  ***********
 LaTeX2e <2026-06-01>
 L3 programming layer <2026-07-20>
  ***********
 Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: C681CF031F6E6DA35DF33DE6C264D3A2;13904.
- )
-(\end occurred inside a group at level 1)
-
-### semi simple group (level 1) entered at line 1774 (\begingroup)
-### bottom level 
+(rerunfilecheck)             Checksum: DCD422B000C90394BF7014438CF45C8C;17625.
+ ) 
 Here is how much of TeX's memory you used:
- 16657 strings out of 467159
- 261961 string characters out of 5413461
- 1413849 words of memory out of 5000000
- 45160 multiletter control sequences out of 15000+600000
- 645508 words of font info for 78 fonts, out of 8000000 for 9000
+ 18435 strings out of 467159
+ 291298 string characters out of 5413461
+ 1429551 words of memory out of 5000000
+ 46812 multiletter control sequences out of 15000+600000
+ 649164 words of font info for 93 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 75i,12n,79p,936b,2618s stack positions out of 10000i,1000n,20000p,200000b,200000s
-<c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi12.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi6.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr12.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr6.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbi1000.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbi1200.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1000.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1095.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1200.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1728.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0600.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0800.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1000.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1095.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1200.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfti1000.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfti1095.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfti1200.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sftt1000.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sftt1095.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sftt1200.pfb>
-Output written on main.pdf (81 pages, 7406486 bytes).
+ 75i,17n,79p,1477b,2257s stack positions out of 10000i,1000n,20000p,200000b,200000s
+<c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi12.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr12.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr6.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/tex-gyre/qtmb.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/tex-gyre/qtmbi.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/tex-gyre/qtmr.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/tex-gyre/qtmri.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbi1000.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbi1200.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1000.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1095.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1200.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1728.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0700.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0800.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1000.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1095.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1200.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfti1000.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfti1095.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfti1200.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sftt1000.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sftt1095.pfb><c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sftt1200.pfb>
+Output written on main.pdf (102 pages, 11210384 bytes).
 PDF statistics:
- 1617 PDF objects out of 1728 (max. 8388607)
- 1436 compressed objects within 15 object streams
- 507 named destinations out of 1000 (max. 500000)
- 614 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 1838 PDF objects out of 2073 (max. 8388607)
+ 1538 compressed objects within 16 object streams
+ 586 named destinations out of 1000 (max. 500000)
+ 842 words of extra memory for PDF output out of 10000 (max. 10000000)
 

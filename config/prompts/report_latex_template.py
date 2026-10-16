@@ -225,7 +225,7 @@ Como apresentado brevemente, o ciclo de vida da tecnologia pode ser monitorado, 
 
 \VAR{metodologia}
 
-\subsection{Apoio Computacional à Prospecção}
+\subsection{Apoio Computacional e Processamento de Linguagem Natural na Redação}
 \VAR{apoio_computacional}
 
 \section{RESULTADOS}

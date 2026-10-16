@@ -58,12 +58,12 @@ DEFAULT_BIBLIOGRAPHY: list[str] = [
     "MADEO, F. C. B. Prospecção tecnológica utilizando a análise multicritério e técnicas "
     "bibliométricas: estudo de caso para o setor de Defesa. 2019. 144 p. Dissertação "
     "(Mestrado em Engenharia de Defesa) - Instituto Militar de Engenharia, Rio de Janeiro, 2019.",
-    "NIETO, M.; LOPÉZ, F.; CRUZ, F. Performance analysis of technology using the S curve "
+    "NIETO, M.; LÓPEZ, F.; CRUZ, F. Performance analysis of technology using the S curve "
     "model: the case of digital signal processing (DSP) technologies. Technovation, v. 18, "
     "n. 6-7, p. 439-457, 1998.",
     "PORTER, A. L. QTIP: Quick technology intelligence processes. Technological Forecasting "
     "and Social Change, v. 72, n. 9, p. 1070-1081, 2005.",
-    # Obras citadas em 5.4 Apoio Computacional à Prospecção (ver
+    # Obras citadas em 5.4 Apoio Computacional e Processamento de Linguagem Natural na Redação (ver
     # render_apoio_computacional) - os mesmos dados da bibliografia do PFC
     # (PFC/main.tex).
     "BROWN, T. B. et al. Language models are few-shot learners. Advances in Neural Information "
@@ -211,7 +211,7 @@ def merge_bibliography(escaped_defaults: list[str], stored: list[str]) -> list[s
 
 
 # ---------------------------------------------------------------------------
-# 5.4 Apoio Computacional à Prospecção
+# 5.4 Apoio Computacional e Processamento de Linguagem Natural na Redação
 # ---------------------------------------------------------------------------
 # Etapa registrada em session_ai_call (`step`) -> como a etapa é nomeada na
 # Metodologia. A ordem aqui é a ordem das etapas no texto.
@@ -264,68 +264,69 @@ def _texttt(model: str) -> str:
 
 def render_apoio_computacional(stages: list[tuple[str, list[str]]]) -> str:
     """Subseção 5.4 (LaTeX pronto): o que é um LLM, as técnicas de
-    engenharia de prompt, extração de termos, estatística, curva S e RAG -
-    cada técnica com a obra que a define (todas em DEFAULT_BIBLIOGRAPHY) -
-    e, por fim, os modelos usados em cada etapa desta prospecção.
-    `stages` vem de models_by_stage, com os nomes de modelo JÁ escapados
-    pra LaTeX pelo chamador. Descreve só o que o sistema faz de fato."""
+    engenharia de prompt, extração de termos (BM25F, KeyBERT, RRF) e a
+    verificação paramétrica do material sintetizado - cada técnica com a
+    obra que a define (todas em DEFAULT_BIBLIOGRAPHY) - e, por fim, os
+    modelos usados em cada etapa desta prospecção. `stages` vem de
+    models_by_stage, com os nomes de modelo JÁ escapados pra LaTeX pelo
+    chamador. Descreve só o que o sistema faz de fato."""
     paragraphs = [
-        "As etapas descritas nesta seção foram conduzidas com o apoio de ferramentas computacionais que "
-        "integram técnicas de Inteligência Artificial (IA) e de Processamento de Linguagem Natural (PLN) à "
-        "análise bibliométrica, sempre com a revisão e a validação do analista de prospecção em cada etapa.",
+        "A elaboração e a redação analítica desta seção foram executadas com o apoio de ferramentas "
+        "computacionais que integram técnicas de Inteligência Artificial (IA) e de Processamento de Linguagem "
+        "Natural (PLN) à análise bibliométrica. Essas técnicas atuaram de forma integrada desde a mineração e o "
+        "refinamento de termos técnicos até a síntese textual dos dados bibliométricos, garantindo rigor factual "
+        "e redução de vieses, sempre com a revisão e a validação do analista de prospecção em cada etapa. O "
+        "fluxo metodológico adotado envolveu os seguintes pilares conceituais:\n"
+        "\\begin{enumerate}[label=\\alph*.]",
 
-        "Modelos de linguagem de grande porte (\\textit{Large Language Models} -- LLM) são redes neurais "
-        "baseadas na arquitetura \\textit{Transformer} (VASWANI et al., 2017), treinadas sobre grandes volumes "
-        "de texto para prever a continuação de uma sequência. Em escala suficiente, esses modelos passam a "
-        "executar tarefas descritas em linguagem natural a partir de instruções e de poucos exemplos, sem "
-        "treinamento específico (BROWN et al., 2020; ZHAO et al., 2023). Como também podem produzir "
-        "afirmações plausíveis, porém sem fundamento -- as chamadas alucinações (JI et al., 2023) --, seu uso "
-        "neste estudo restringiu-se a tarefas verificáveis, com as salvaguardas descritas a seguir.",
+        "    \\item \\textbf{Modelos de Linguagem de Grande Porte (\\textit{Large Language Models} -- LLM)}: "
+        "redes neurais profundas fundamentadas na arquitetura \\textit{Transformer} (VASWANI et al., 2017), "
+        "treinadas sobre vastos corpus textuais para inferir relações semânticas e sintáticas complexas (BROWN "
+        "et al., 2020; ZHAO et al., 2023). Neste estudo, os LLM foram empregados de maneira restrita e "
+        "supervisionada para: (i) estruturar as primeiras consultas booleanas de busca; (ii) apoiar a filtragem "
+        "dos dados brutos retornados pelas bases; e (iii) apoiar a redação preliminar das seções analíticas a "
+        "partir de um arranjo de Geração Aumentada por Recuperação (\\textit{Retrieval-Augmented Generation} -- "
+        "RAG) (LEWIS et al., 2020; GAO et al., 2024), no qual o modelo sintetiza estritamente os fatos contidos "
+        "nos documentos locais recuperados, mitigando o risco de alucinações factuais (JI et al., 2023).",
 
-        "A qualidade das respostas de um LLM depende da forma como a tarefa é formulada na instrução "
-        "(\\textit{prompt}); a engenharia de \\textit{prompt} reúne padrões para essa formulação (WHITE et al., "
-        "2023). Foram empregadas as seguintes técnicas:\n"
-        "\\begin{itemize}\n"
-        "    \\item \\textbf{persona}: cada instrução atribui ao modelo o papel de especialista em prospecção "
-        "tecnológica e na construção de estratégias de busca (WHITE et al., 2023);\n"
-        "    \\item \\textbf{exemplos na instrução (\\textit{few-shot})}: exemplos contrastantes de respostas "
-        "adequadas e inadequadas orientam o nível de especificidade esperado (BROWN et al., 2020);\n"
-        "    \\item \\textbf{raciocínio passo a passo (\\textit{chain-of-thought})}: a construção da estratégia "
-        "de busca é decomposta em etapas explícitas -- identificar os conceitos do tema, eleger os centrais e "
-        "agrupar sinônimos --, o que melhora o desempenho dos modelos em tarefas de raciocínio "
-        "(WEI et al., 2022);\n"
-        "    \\item \\textbf{saída estruturada}: as respostas são exigidas em formato JSON e validadas por "
-        "esquema antes do uso, aproveitando-se apenas os campos aceitos por cada base de dados;\n"
-        "    \\item \\textbf{autocorreção orientada por métrica}: cada estratégia gerada recebe um índice de "
-        "complexidade calculado de forma determinística; quando o índice excede o limite, a medida obtida é "
-        "devolvida ao modelo com a instrução de simplificar a consulta, em até três tentativas.\n"
-        "\\end{itemize}",
+        "    \\item \\textbf{Engenharia de Instruções (\\textit{Prompt Engineering})}: conjunto sistemático de "
+        "princípios para formular comandos e contextos que maximizam a acurácia e a objetividade das respostas "
+        "geradas pelo LLM (WHITE et al., 2023). Na condução desta prospecção, foram estabelecidas diretrizes "
+        "estritas: atribuição de papel profissional (\\textit{persona} de analista de prospecção tecnológica e "
+        "de patentes); decomposição do raciocínio analítico em etapas encadeadas, técnica de "
+        "\\textit{chain-of-thought} (\\textit{Chain-of-Thought Prompting}) (WEI et al., 2022); delimitação de "
+        "escopo por exemplos guiados, técnica de \\textit{few-shot} (\\textit{Few-Shot Prompting}) (BROWN et "
+        "al., 2020); e estipulação de formatos de saída estruturada em esquemas controlados de dados, "
+        "assegurando que o texto final mantivesse conformidade com a terminologia técnica da área analisada.",
 
-        "Inicialmente, os LLM propõem estratégias de busca a partir do tema e das palavras-chave informados, "
-        "respeitando a sintaxe de cada base de dados. Essas estratégias são executadas em buscas exploratórias "
-        "(\\textit{probe}), cujos documentos fornecem o vocabulário efetivamente empregado na literatura e nas "
-        "patentes sobre o tema. Desse conjunto são extraídos termos candidatos por padrões gramaticais (SCHOPF; "
-        "KLIMEK; MATTHES, 2022), ranqueados por dois critérios complementares: um estatístico-lexical, pelo "
-        "algoritmo BM25F (ROBERTSON; ZARAGOZA; TAYLOR, 2004), e um semântico, pelo método KeyBERT "
-        "(GROOTENDORST, 2020), baseado em representações vetoriais de sentenças (REIMERS; GUREVYCH, 2019). Os "
-        "dois rankings são combinados por fusão de postos (\\textit{Reciprocal Rank Fusion}) (CORMACK; CLARKE; "
-        "BUETTCHER, 2009), e termos aninhados são tratados pela medida C-value (FRANTZI; ANANIADOU; MIMA, 2000). "
-        "Os termos mais representativos orientam a construção da estratégia de busca final, em três níveis de "
-        "abrangência (específica, balanceada ou ampla), selecionada pelo analista.",
+        "    \\item \\textbf{BM25F (\\textit{Best Matching 25 with Fields})}: algoritmo determinístico de "
+        "recuperação de informação baseado em frequência lexical e pesos estatísticos ponderados por campos de "
+        "documentos estruturados (como título, resumo e reivindicações) (ROBERTSON; ZARAGOZA; TAYLOR, 2004). O "
+        "BM25F avalia a relevância direta e a raridade estatística dos termos ao longo da base, impedindo que "
+        "termos frequentes porém pouco específicos dominem a seleção e garantindo a identificação precisa de "
+        "palavras-chave exatas relacionadas ao tema analisado.",
 
-        "A busca final é realizada ano a ano, preservando a série histórica completa, e a amostra analisada é "
-        "ampliada até que o estimador de riqueza Chao1 (CHAO, 1984) indique sua saturação; a estabilidade dos "
-        "rankings de depositantes, instituições e classificações é verificada por reamostragem "
-        "\\textit{bootstrap} (EFRON, 1979). As curvas S são ajustadas automaticamente pelo modelo logístico de "
-        "substituição (FISHER; PRY, 1971), com a identificação dos pontos GP, MP e SP e do estágio "
-        "correspondente do ciclo de vida.",
+        "    \\item \\textbf{KeyBERT}: método de extração não supervisionada de palavras-chave baseado em "
+        "aprendizado profundo que opera por meio de representações vetoriais densas de sentenças "
+        "(\\textit{embeddings}) geradas por arquiteturas BERT (GROOTENDORST, 2020; REIMERS; GUREVYCH, 2019). Ao "
+        "contrário de métodos puramente baseados em contagem de ocorrências, o KeyBERT mede a similaridade de "
+        "cosseno entre o vetor do documento inteiro e os vetores de frases candidatas, identificando expressões "
+        "conceituais e sinônimos que compartilham afinidade temática profunda com o tema, mesmo sem a exata "
+        "repetição formal de palavras.",
 
-        "Por fim, a redação das seções analíticas deste relatório contou com o apoio de LLM por meio de geração "
-        "aumentada por recuperação (\\textit{Retrieval-Augmented Generation} -- RAG) (LEWIS et al., 2020; GAO et "
-        "al., 2024): para cada seção, recuperam-se os trechos mais relevantes dos documentos obtidos nas buscas, "
-        "e somente esse conteúdo, com os indicadores calculados, é fornecido ao modelo. Citações que não "
-        "correspondem a um documento recuperado são descartadas automaticamente, e o texto foi submetido à "
-        "revisão final do analista.",
+        "    \\item \\textbf{Fusão Recíproca de Postos (\\textit{Reciprocal Rank Fusion} -- RRF)}: técnica "
+        "algorítmica de combinação de rankings com base na posição relativa de itens provenientes de diferentes "
+        "sistemas de busca, sem a necessidade de normalização prévia de escores numéricos absolutos (CORMACK; "
+        "CLARKE; BUETTCHER, 2009). Empregou-se o RRF para harmonizar o ordenamento lexical gerado pelo BM25F com "
+        "o ordenamento contextual-semântico fornecido pelo KeyBERT. Esse cruzamento resultou em uma taxonomia "
+        "robusta e balanceada de termos tecnológicos, que alimentou as equações finais de busca bibliométrica e "
+        "serviu de base temática para orientar os prompts de redação desta seção.\n"
+        "\\end{enumerate}",
+
+        "Todo o material sintetizado via LLM passou por verificação paramétrica automatizada -- saturação de "
+        "riqueza amostral pelo estimador Chao1 (CHAO, 1984) e estabilidade de rankings por reamostragem "
+        "\\textit{bootstrap} (EFRON, 1979) -- e pela validação final, revisão textual e controle técnico do "
+        "analista humano responsável.",
     ]
     if stages:
         items = "; ".join(f"{label}: {', '.join(_texttt(model) for model in models)}" for label, models in stages)

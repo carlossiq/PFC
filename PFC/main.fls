@@ -153,6 +153,10 @@ INPUT c:/texlive/2026/texmf-dist/tex/latex/amsmath/amsgen.sty
 INPUT c:/texlive/2026/texmf-dist/tex/latex/amsmath/amsbsy.sty
 INPUT c:/texlive/2026/texmf-dist/tex/latex/amsmath/amsbsy.sty
 INPUT c:/texlive/2026/texmf-dist/tex/latex/amsmath/amsopn.sty
+INPUT c:/texlive/2026/texmf-dist/tex/latex/amsfonts/amssymb.sty
+INPUT c:/texlive/2026/texmf-dist/tex/latex/amsfonts/amssymb.sty
+INPUT c:/texlive/2026/texmf-dist/tex/latex/amsfonts/amsfonts.sty
+INPUT c:/texlive/2026/texmf-dist/tex/latex/amsfonts/amsfonts.sty
 INPUT c:/texlive/2026/texmf-dist/tex/latex/enumitem/enumitem.sty
 INPUT c:/texlive/2026/texmf-dist/tex/latex/enumitem/enumitem.sty
 INPUT c:/texlive/2026/texmf-dist/tex/latex/cite/cite.sty
@@ -168,6 +172,17 @@ INPUT c:/texlive/2026/texmf-dist/tex/latex/listings/lstmisc.sty
 INPUT c:/texlive/2026/texmf-dist/tex/latex/listings/listings.cfg
 INPUT c:/texlive/2026/texmf-dist/tex/latex/listings/listings.cfg
 INPUT c:/texlive/2026/texmf-dist/tex/latex/listings/listings.cfg
+INPUT c:/texlive/2026/texmf-dist/tex/latex/pdfpages/pdfpages.sty
+INPUT c:/texlive/2026/texmf-dist/tex/latex/pdfpages/pdfpages.sty
+INPUT c:/texlive/2026/texmf-dist/tex/latex/base/ifthen.sty
+INPUT c:/texlive/2026/texmf-dist/tex/latex/base/ifthen.sty
+INPUT c:/texlive/2026/texmf-dist/tex/latex/tools/calc.sty
+INPUT c:/texlive/2026/texmf-dist/tex/latex/tools/calc.sty
+INPUT c:/texlive/2026/texmf-dist/tex/latex/eso-pic/eso-pic.sty
+INPUT c:/texlive/2026/texmf-dist/tex/latex/eso-pic/eso-pic.sty
+INPUT c:/texlive/2026/texmf-dist/tex/latex/pdfpages/pppdftex.def
+INPUT c:/texlive/2026/texmf-dist/tex/latex/pdfpages/pppdftex.def
+INPUT c:/texlive/2026/texmf-dist/tex/latex/pdfpages/pppdftex.def
 INPUT ./main.aux
 INPUT ./main.aux
 INPUT main.aux
@@ -188,6 +203,12 @@ OUTPUT main.pdf
 INPUT ./main.out
 INPUT ./main.out
 OUTPUT main.out
+INPUT c:/texlive/2026/texmf-dist/tex/latex/pdflscape/pdflscape.sty
+INPUT c:/texlive/2026/texmf-dist/tex/latex/pdflscape/pdflscape.sty
+INPUT c:/texlive/2026/texmf-dist/tex/latex/pdflscape/pdflscape-nometadata.sty
+INPUT c:/texlive/2026/texmf-dist/tex/latex/pdflscape/pdflscape-nometadata.sty
+INPUT c:/texlive/2026/texmf-dist/tex/latex/graphics/lscape.sty
+INPUT c:/texlive/2026/texmf-dist/tex/latex/graphics/lscape.sty
 INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecbx1200.tfm
 INPUT c:/texlive/2026/texmf-var/fonts/map/pdftex/updmap/pdftex.map
 INPUT c:/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-t1.enc
@@ -202,6 +223,18 @@ INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmsy6.tfm
 INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmex10.tfm
 INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex8.tfm
 INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex7.tfm
+INPUT c:/texlive/2026/texmf-dist/tex/latex/amsfonts/umsa.fd
+INPUT c:/texlive/2026/texmf-dist/tex/latex/amsfonts/umsa.fd
+INPUT c:/texlive/2026/texmf-dist/tex/latex/amsfonts/umsa.fd
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/symbols/msam10.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/symbols/msam10.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/symbols/msam7.tfm
+INPUT c:/texlive/2026/texmf-dist/tex/latex/amsfonts/umsb.fd
+INPUT c:/texlive/2026/texmf-dist/tex/latex/amsfonts/umsb.fd
+INPUT c:/texlive/2026/texmf-dist/tex/latex/amsfonts/umsb.fd
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/symbols/msbm10.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/symbols/msbm10.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/symbols/msbm7.tfm
 INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/tcrm1200.tfm
 INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecrm1095.tfm
 INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecti1095.tfm
@@ -233,20 +266,28 @@ INPUT ./img/S_Curve_Madeo.png
 INPUT ./img/S_Curve_Madeo.png
 INPUT ./img/S_Curve_Madeo.png
 INPUT ./img/S_Curve_Madeo.png
-INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ectt1200.tfm
 INPUT ./img/curva_s_sintetica_gpmpsp.png
 INPUT ./img/curva_s_sintetica_gpmpsp.png
 INPUT ./img/curva_s_sintetica_gpmpsp.png
 INPUT ./img/curva_s_sintetica_gpmpsp.png
 INPUT ./img/curva_s_sintetica_gpmpsp.png
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecrm0800.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecrm0600.tfm
 INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecbi1200.tfm
 INPUT ./img/self_attention_transformer.png
 INPUT ./img/self_attention_transformer.png
 INPUT ./img/self_attention_transformer.png
 INPUT ./img/self_attention_transformer.png
 INPUT ./img/self_attention_transformer.png
-INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecrm0800.tfm
-INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecrm0600.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmr10.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmmi10.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmsy10.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmex10.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/symbols/msam10.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/symbols/msbm10.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecbx1095.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ectt1200.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ectt1095.tfm
 INPUT ./img/drawio.png
 INPUT ./img/drawio.png
 INPUT ./img/drawio.png
@@ -276,10 +317,17 @@ INPUT ./img/pipeline_cinco_fases.png
 INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecrm1000.tfm
 INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex7.tfm
 INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex7.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/symbols/msam10.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/symbols/msam7.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/symbols/msam5.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/symbols/msbm10.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/symbols/msbm7.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/amsfonts/symbols/msbm5.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecrm0700.tfm
+INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecti1000.tfm
 INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecbx1000.tfm
 INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecbi1000.tfm
 INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ectt1000.tfm
-INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecti1000.tfm
 INPUT ./apendice/fase1_prompt_trecho.txt
 INPUT ./apendice/fase1_prompt_trecho.txt
 INPUT apendice/fase1_prompt_trecho.txt
@@ -310,37 +358,235 @@ INPUT apendice/fase5_sistema.txt
 INPUT ./apendice/fase5_secao.txt
 INPUT ./apendice/fase5_secao.txt
 INPUT apendice/fase5_secao.txt
-INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmr10.tfm
-INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmmi10.tfm
-INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmsy10.tfm
-INPUT c:/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmex10.tfm
-INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ecbx1095.tfm
-INPUT c:/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/ectt1095.tfm
 INPUT ./apendice/fase5_retentativa.txt
 INPUT ./apendice/fase5_retentativa.txt
 INPUT apendice/fase5_retentativa.txt
 INPUT ./apendice/fase5_revisao.txt
 INPUT ./apendice/fase5_revisao.txt
 INPUT apendice/fase5_revisao.txt
+INPUT ./img/teste (1).png
+INPUT ./img/teste (1).png
+INPUT ./img/teste (1).png
+INPUT ./img/teste (1).png
+INPUT ./img/teste (1).png
+INPUT ./img/teste (7).png
+INPUT ./img/teste (7).png
+INPUT ./img/teste (7).png
+INPUT ./img/teste (7).png
+INPUT ./img/teste (7).png
+INPUT ./img/teste (2).png
+INPUT ./img/teste (2).png
+INPUT ./img/teste (2).png
+INPUT ./img/teste (2).png
+INPUT ./img/teste (2).png
+INPUT ./img/teste (3).png
+INPUT ./img/teste (3).png
+INPUT ./img/teste (3).png
+INPUT ./img/teste (3).png
+INPUT ./img/teste (3).png
+INPUT ./img/teste (4).png
+INPUT ./img/teste (4).png
+INPUT ./img/teste (4).png
+INPUT ./img/teste (4).png
+INPUT ./img/teste (4).png
+INPUT ./img/teste (5).png
+INPUT ./img/teste (5).png
+INPUT ./img/teste (5).png
+INPUT ./img/teste (5).png
+INPUT ./img/teste (5).png
+INPUT ./img/teste (6).png
+INPUT ./img/teste (6).png
+INPUT ./img/teste (6).png
+INPUT ./img/teste (6).png
+INPUT ./img/teste (6).png
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./anexo/Teste.pdf
+INPUT ./img/interface (14).png
+INPUT ./img/interface (14).png
+INPUT ./img/interface (14).png
+INPUT ./img/interface (14).png
+INPUT ./img/interface (14).png
+INPUT ./img/teste (2).png
+INPUT ./img/teste (2).png
+INPUT ./img/teste (2).png
+INPUT ./img/teste (2).png
+INPUT ./img/interface (1).png
+INPUT ./img/interface (1).png
+INPUT ./img/interface (1).png
+INPUT ./img/interface (1).png
+INPUT ./img/interface (1).png
+INPUT ./img/interface (2).png
+INPUT ./img/interface (2).png
+INPUT ./img/interface (2).png
+INPUT ./img/interface (2).png
+INPUT ./img/interface (2).png
+INPUT ./img/interface (4).png
+INPUT ./img/interface (4).png
+INPUT ./img/interface (4).png
+INPUT ./img/interface (4).png
+INPUT ./img/interface (4).png
+INPUT ./img/interface (5).png
+INPUT ./img/interface (5).png
+INPUT ./img/interface (5).png
+INPUT ./img/interface (5).png
+INPUT ./img/interface (5).png
+INPUT ./img/interface (7).png
+INPUT ./img/interface (7).png
+INPUT ./img/interface (7).png
+INPUT ./img/interface (7).png
+INPUT ./img/interface (7).png
+INPUT ./img/interface (8).png
+INPUT ./img/interface (8).png
+INPUT ./img/interface (8).png
+INPUT ./img/interface (8).png
+INPUT ./img/interface (8).png
+INPUT ./img/interface (9).png
+INPUT ./img/interface (9).png
+INPUT ./img/interface (9).png
+INPUT ./img/interface (9).png
+INPUT ./img/interface (9).png
+INPUT ./img/interface (10).png
+INPUT ./img/interface (10).png
+INPUT ./img/interface (10).png
+INPUT ./img/interface (10).png
+INPUT ./img/interface (10).png
+INPUT ./img/interface (12).png
+INPUT ./img/interface (12).png
+INPUT ./img/interface (12).png
+INPUT ./img/interface (12).png
+INPUT ./img/interface (12).png
+INPUT ./img/interface (13).png
+INPUT ./img/interface (13).png
+INPUT ./img/interface (13).png
+INPUT ./img/interface (13).png
+INPUT ./img/interface (13).png
+INPUT ./img/interface (15).png
+INPUT ./img/interface (15).png
+INPUT ./img/interface (15).png
+INPUT ./img/interface (15).png
+INPUT ./img/interface (15).png
+INPUT ./img/interface (16).png
+INPUT ./img/interface (16).png
+INPUT ./img/interface (16).png
+INPUT ./img/interface (16).png
+INPUT ./img/interface (16).png
 INPUT main.aux
 INPUT ./main.out
 INPUT ./main.out
 INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb
 INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi12.pfb
-INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi6.pfb
 INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb
+INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb
 INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr12.pfb
 INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr6.pfb
 INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb
 INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb
 INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb
+INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb
+INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/tex-gyre/qtmb.pfb
+INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/tex-gyre/qtmbi.pfb
+INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/tex-gyre/qtmr.pfb
+INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/tex-gyre/qtmri.pfb
 INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbi1000.pfb
 INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbi1200.pfb
 INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1000.pfb
 INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1095.pfb
 INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1200.pfb
 INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfbx1728.pfb
-INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0600.pfb
+INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0700.pfb
 INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0800.pfb
 INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1000.pfb
 INPUT c:/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfrm1095.pfb

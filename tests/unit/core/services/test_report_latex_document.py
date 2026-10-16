@@ -105,8 +105,8 @@ def test_template_metodologia_describes_computational_support_and_models():
     apoio = render_apoio_computacional([("redação das seções analíticas", ["gemma3:4b"])])
     tex = _render(metodologia="PARAGRAFO-INTERPOLADO", apoio_computacional=apoio)
 
-    assert r"\subsection{Apoio Computacional à Prospecção}" in tex
-    for technique in ("BM25F", "KeyBERT", r"\textit{probe}", r"\textit{Reciprocal Rank Fusion}", "LLM",
+    assert r"\subsection{Apoio Computacional e Processamento de Linguagem Natural na Redação}" in tex
+    for technique in ("BM25F", "KeyBERT", r"\textit{Reciprocal Rank Fusion}", "LLM",
                       r"\textit{chain-of-thought}", r"\textit{few-shot}", "persona"):
         assert technique in tex
     # 5.4 vem depois do parágrafo interpolado da 5.3 e antes dos Resultados.
