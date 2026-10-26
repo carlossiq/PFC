@@ -1,0 +1,1432 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+\PassOptionsToPackage{dvipsnames,svgnames,x11names}{xcolor}
+\documentclass[
+  brazilian,
+  a4paper,12pt,oneside]{report}
+\usepackage{xcolor}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\newenvironment{Shaded}{}{}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.49,0.56,0.16}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\BuiltInTok}[1]{\textcolor[rgb]{0.00,0.50,0.00}{#1}}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textit{#1}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.53,0.00,0.00}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.56,0.13,0.00}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.73,0.13,0.13}{\textit{#1}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.02,0.16,0.49}{#1}}
+\newcommand{\ImportTok}[1]{\textcolor[rgb]{0.00,0.50,0.00}{\textbf{#1}}}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.40,0.40,0.40}{#1}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{#1}}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.74,0.48,0.00}{#1}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.73,0.40,0.53}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.10,0.09,0.49}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\usepackage{longtable,booktabs,array}
+\newcounter{none} % for unnumbered tables
+\usepackage{calc} % for calculating minipage widths
+% Correct order of tables after \paragraph or \subparagraph
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+% Allow footnotes in longtable head/foot
+\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}
+\makesavenoteenv{longtable}
+\ifLuaTeX
+\usepackage[bidi=basic,shorthands=off]{babel}
+\else
+\usepackage[bidi=default,shorthands=off]{babel}
+\fi
+\ifLuaTeX
+  \usepackage{selnolig} % disable illegal ligatures
+\fi
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\usepackage{bookmark}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  pdftitle={Manual de Configuração},
+  pdfauthor={Documentação do sistema AGIA},
+  pdflang={pt-BR},
+  colorlinks=true,
+  linkcolor={blue},
+  filecolor={Maroon},
+  citecolor={Blue},
+  urlcolor={blue},
+  pdfcreator={LaTeX via pandoc}}
+
+\title{Manual de Configuração}
+\usepackage{etoolbox}
+\makeatletter
+\providecommand{\subtitle}[1]{% add subtitle to \maketitle
+  \apptocmd{\@title}{\par {\large #1 \par}}{}{}
+}
+\makeatother
+\subtitle{Sistema AGIA --- Prospecção Tecnológica}
+\author{Documentação do sistema AGIA}
+\date{17/10/2026}
+
+\begin{document}
+\maketitle
+
+{
+\setcounter{tocdepth}{1}
+\tableofcontents
+}
+\emph{Atualizado em 17/10/2026.}
+
+Este manual descreve \textbf{tudo o que pode ser configurado} no
+sistema: variáveis do arquivo \texttt{.}\allowbreak{}\texttt{env},
+parâmetros da tela \textbf{Configurações}, provedores de IA, APIs de
+busca, relatório e segurança.
+
+Pré-requisito: o sistema instalado e em execução, com o banco migrado e
+o backend no ar.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{1. Como a configuração é
+organizada}\label{como-a-configurauxe7uxe3o-uxe9-organizada}
+
+Há \textbf{três lugares} onde um valor pode ser definido. Eles não são
+equivalentes:
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Onde
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+O que fica ali
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Quando vale
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\textbf{Arquivo \texttt{.}\allowbreak{}\texttt{env}} (na raiz do
+projeto) & Infraestrutura (banco, MinIO, endereços dos serviços), flags
+de API e \textbf{credenciais} & Infraestrutura e flags: lidas sempre.
+Credenciais: copiadas para o banco só na \textbf{primeira subida}. Não
+definem mais os parâmetros de comportamento. \\
+\textbf{Padrões do código} & Os valores iniciais de todos os parâmetros
+de comportamento & Gravados no banco pelo seed automático, na primeira
+subida. \\
+\textbf{Banco de dados} (tabelas
+\texttt{app\_}\allowbreak{}\texttt{settings},
+\texttt{search\_}\allowbreak{}\texttt{api\_}\allowbreak{}\texttt{selection},
+\texttt{llm\_}\allowbreak{}\texttt{provider\_}\allowbreak{}\texttt{configs},
+\texttt{llm\_}\allowbreak{}\texttt{call\_}\allowbreak{}\texttt{site\_}\allowbreak{}\texttt{bindings})
+& Todas as configurações editáveis & Fonte da verdade depois do seed. \\
+\textbf{Tela Configurações} (ou API
+\texttt{/}\allowbreak{}\texttt{config/}\allowbreak{}\texttt{*}) &
+Interface para editar o banco & Onde você deve mudar valores no dia a
+dia. \\
+\end{longtable}
+}
+
+\textbf{Regra prática:} para mudar um parâmetro de comportamento ou um
+modelo de IA, use a \textbf{tela Configurações}. O
+\texttt{.}\allowbreak{}\texttt{env} não controla mais esses valores, em
+nenhuma subida. Flags de API continuam lidas do
+\texttt{.}\allowbreak{}\texttt{env} a cada requisição. Credenciais são
+copiadas do \texttt{.}\allowbreak{}\texttt{env} para o banco na primeira
+subida; depois disso, altere-as pela tela.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{\texorpdfstring{2. Ciclo de vida: do
+\texttt{.}\allowbreak{}\texttt{env} ao
+banco}{2. Ciclo de vida: do .env ao banco}}\label{ciclo-de-vida-do-.env-ao-banco}
+
+Na subida do backend:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  \textbf{Migrações} (\texttt{alembic\ upgrade\ head}, passo manual da
+  instalação) criam as tabelas de sessão.
+\item
+  O backend cria as demais tabelas e executa o \textbf{seed}, que
+  preenche as tabelas de configuração.
+\item
+  O \textbf{seed} só grava valores de cada tabela de configuração
+  \textbf{se ela estiver vazia}. Os parâmetros de comportamento vêm dos
+  padrões do código; credenciais vêm do
+  \texttt{.}\allowbreak{}\texttt{env}. Chaves novas introduzidas em
+  versões futuras são acrescentadas sem sobrescrever o que já existe.
+\item
+  \textbf{Sincronização:} os valores do banco são carregados na memória
+  do backend, e o código passa a usá-los a partir daí.
+\item
+  \textbf{Edição pela tela:} cada alteração é gravada no banco e
+  aplicada \textbf{imediatamente}, sem reiniciar, exceto nos casos
+  listados na \hyperref[10-quando-reiniciar-o-backend]{seção 10}.
+\end{enumerate}
+
+\textbf{Consequência importante:} editar parâmetros de comportamento no
+\texttt{.}\allowbreak{}\texttt{env} não tem efeito. Para mudar um valor,
+use a tela. Para voltar ao padrão do código, apague a linha da chave na
+tabela \texttt{app\_}\allowbreak{}\texttt{settings} e reinicie o
+backend: o seed recria a chave com o padrão.
+
+\begin{quote}
+Se o seu banco foi criado antes desta mudança, alguns valores podem ter
+vindo do \texttt{.}\allowbreak{}\texttt{env} daquela época (ex.: ano
+inicial 2010, relevância 0,5). Eles continuam no banco e valem até você
+alterá-los. Confira na tela \textbf{Configurações} o valor vigente.
+\end{quote}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{\texorpdfstring{3. Arquivo
+\texttt{.}\allowbreak{}\texttt{env}}{3. Arquivo .env}}\label{arquivo-.env}
+
+O \texttt{.}\allowbreak{}\texttt{env} é lido pelo sistema na subida e
+\textbf{não deve ser versionado} (nem enviado a repositórios), porque
+contém credenciais. Ele é criado na instalação, com as variáveis
+descritas abaixo.
+
+Convenção: o nome da variável é o nome do parâmetro em
+\texttt{UPPER\_}\allowbreak{}\texttt{SNAKE\_}\allowbreak{}\texttt{CASE}.
+Ex.:
+\texttt{ollama\_}\allowbreak{}\texttt{base\_}\allowbreak{}\texttt{url}
+-\textgreater{}
+\texttt{OLLAMA\_}\allowbreak{}\texttt{BASE\_}\allowbreak{}\texttt{URL}.
+
+\begin{quote}
+\textbf{Só estas variáveis são lidas do
+\texttt{.}\allowbreak{}\texttt{env}:} infraestrutura (banco, MinIO,
+ChromaDB, LaTeX, LanguageTool, endereço do Ollama), flags de API e
+credenciais. Credenciais são copiadas para o banco só na primeira
+subida. Os parâmetros de comportamento (busca, IA, extração de termos,
+inferência, relatório) não estão aqui: seus padrões estão na
+\hyperref[6-paruxe2metros-da-tela-configurauxe7uxf5es]{seção 6} e são
+alterados pela tela.
+\end{quote}
+
+\section{3.1 Banco de dados}\label{banco-de-dados}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.0833}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2500}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Variável
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Padrão
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Descrição
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Quando mudar
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{DATABASE\_}\allowbreak{}\texttt{URL} &
+\texttt{postgresql+asyncpg:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{postgres:}\allowbreak{}\texttt{postgres@localhost:}\allowbreak{}\texttt{5432/}\allowbreak{}\texttt{pfc\_}\allowbreak{}\texttt{db}
+& URL do PostgreSQL. O driver \texttt{asyncpg} é usado pelo backend; as
+migrações usam \texttt{psycopg2} automaticamente. & Banco em outro host,
+porta, usuário ou senha. \\
+\end{longtable}
+}
+
+\section{3.2 Aplicação}\label{aplicauxe7uxe3o}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.1311}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.2787}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.5902}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Variável
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Padrão
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Descrição
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{APP\_}\allowbreak{}\texttt{NAME} &
+\texttt{Technology\ Prospecting\ API} & Nome exibido na documentação da
+API e nos logs. \\
+\texttt{APP\_}\allowbreak{}\texttt{VERSION} &
+\texttt{0.}\allowbreak{}\texttt{1.}\allowbreak{}\texttt{0} & Versão
+exibida na documentação da API. \\
+\texttt{ENVIRONMENT} & \texttt{development} & Com \texttt{production}, o
+banco usa pool de conexões; fora disso, conexões são abertas sob
+demanda. Também controla o formato dos logs. \\
+\texttt{DEBUG} & \texttt{True} & Modo de depuração do FastAPI. Desligue
+em ambientes compartilhados. \\
+\texttt{LOG\_}\allowbreak{}\texttt{LEVEL} & \texttt{INFO} & Nível de
+log. \\
+\texttt{SQL\_}\allowbreak{}\texttt{ECHO} & \texttt{False} & Registra
+\textbf{todas} as queries SQL no log. Ligue só para depurar uma query
+específica (o log fica muito grande). \\
+\end{longtable}
+}
+
+\section{3.3 API}\label{api}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.1186}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.4407}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.4407}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Variável
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Padrão
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Descrição
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{API\_}\allowbreak{}\texttt{PREFIX} &
+\texttt{/}\allowbreak{}\texttt{api/}\allowbreak{}\texttt{v1} & Prefixo
+de todas as rotas. O frontend assume esse valor. Mudar exige ajustar
+\texttt{VITE\_}\allowbreak{}\texttt{API\_}\allowbreak{}\texttt{BASE\_}\allowbreak{}\texttt{URL}. \\
+\texttt{ALLOWED\_}\allowbreak{}\texttt{ORIGINS} &
+\texttt{{[}"http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{3000","http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{5173","http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{8000"{]}}
+& Origens autorizadas pelo CORS. \textbf{Formato JSON obrigatório.}
+Inclua a origem do frontend (ex.:
+\texttt{http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{5173}). \\
+\end{longtable}
+}
+
+\section{3.4 Flags de API}\label{flags-de-api}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.2667}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.0667}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.6667}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Variável
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Padrão
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Descrição
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{LENS\_}\allowbreak{}\texttt{PATENT\_}\allowbreak{}\texttt{ENABLED}
+& \texttt{True} & Habilita a Lens como fonte de \textbf{patentes} na
+busca final. \\
+\texttt{LENS\_}\allowbreak{}\texttt{SCHOLARLY\_}\allowbreak{}\texttt{ENABLED}
+& \texttt{True} & Habilita a Lens como fonte de \textbf{artigos} na
+busca final. \\
+\texttt{OPS\_}\allowbreak{}\texttt{ENABLED} & \texttt{True} & Habilita a
+OPS (Escritório Europeu de Patentes) para patentes. \\
+\texttt{SCOPUS\_}\allowbreak{}\texttt{ENABLED} & \texttt{True} &
+Habilita a Scopus para artigos. \\
+\texttt{LENS\_}\allowbreak{}\texttt{ENABLED} & \texttt{True} &
+Liga/desliga \textbf{as duas} APIs Lens de uma vez (compatibilidade com
+versões anteriores). \\
+\end{longtable}
+}
+
+Essas flags são lidas a cada requisição, na montagem das listas de
+campos disponíveis para a IA. Na \textbf{primeira subida},
+\texttt{OPS\_}\allowbreak{}\texttt{ENABLED} e
+\texttt{SCOPUS\_}\allowbreak{}\texttt{ENABLED} também definem qual API
+cada família começa ativa. Depois disso, a escolha é feita na tela
+Configurações › Busca (ver \hyperref[5-apis-de-busca]{seção 5}).
+
+\section{3.5 MinIO (armazenamento dos gráficos, das figuras e da
+capa)}\label{minio-armazenamento-dos-gruxe1ficos-das-figuras-e-da-capa}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.1864}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.1695}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.6441}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Variável
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Padrão
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Descrição
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{MINIO\_}\allowbreak{}\texttt{ENDPOINT} &
+\texttt{localhost:}\allowbreak{}\texttt{9000} & Endereço da API S3 (sem
+\texttt{http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}). \\
+\texttt{MINIO\_}\allowbreak{}\texttt{ACCESS\_}\allowbreak{}\texttt{KEY}
+& \texttt{minioadmin} & Usuário. Deve coincidir com o usuário
+configurado no serviço MinIO. \\
+\texttt{MINIO\_}\allowbreak{}\texttt{SECRET\_}\allowbreak{}\texttt{KEY}
+& \texttt{minioadmin} & Senha. Deve coincidir com a senha configurada no
+serviço MinIO. \\
+\texttt{MINIO\_}\allowbreak{}\texttt{BUCKET} &
+\texttt{session-}\allowbreak{}\texttt{charts} & Bucket criado
+automaticamente na subida. \\
+\texttt{MINIO\_}\allowbreak{}\texttt{SECURE} & \texttt{False} &
+\texttt{True} para HTTPS. \\
+\end{longtable}
+}
+
+Se o MinIO não responder, o backend sobe com aviso
+(\texttt{minio\_}\allowbreak{}\texttt{bucket\_}\allowbreak{}\texttt{ensure\_}\allowbreak{}\texttt{failed}),
+mas gráficos, anexos e a capa do relatório não são persistidos.
+
+\section{3.6 ChromaDB (RAG do
+relatório)}\label{chromadb-rag-do-relatuxf3rio}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}lll@{}}
+\toprule\noalign{}
+Variável & Padrão & Descrição \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{CHROMA\_}\allowbreak{}\texttt{HOST} & \texttt{localhost} &
+Endereço do serviço ChromaDB. \\
+\texttt{CHROMA\_}\allowbreak{}\texttt{PORT} & \texttt{8001} & Porta no
+host. A 8000 é a do backend. \\
+\end{longtable}
+}
+
+\section{3.7 Compilador LaTeX e revisão de
+língua}\label{compilador-latex-e-revisuxe3o-de-luxedngua}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.2167}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.2500}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.5333}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Variável
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Padrão
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Descrição
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{LATEX\_}\allowbreak{}\texttt{COMPILER\_}\allowbreak{}\texttt{URL}
+&
+\texttt{http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{8090}
+& Serviço que compila o \texttt{.}\allowbreak{}\texttt{tex} em PDF (sob
+demanda). \\
+\texttt{LANGUAGETOOL\_}\allowbreak{}\texttt{URL} &
+\texttt{http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{8010}
+& Serviço de revisão ortográfica e gramatical. \\
+\end{longtable}
+}
+
+\section{3.8 Chaves de provedores de IA
+externos}\label{chaves-de-provedores-de-ia-externos}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.2667}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.0667}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.6667}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Variável
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Padrão
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Descrição
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{LLM\_}\allowbreak{}\texttt{GEMINI\_}\allowbreak{}\texttt{API\_}\allowbreak{}\texttt{KEY}
+& vazio & Chave do Google Gemini. Copiada para o banco na primeira
+subida; depois, edite pela tela. \\
+\texttt{LLM\_}\allowbreak{}\texttt{ANTHROPIC\_}\allowbreak{}\texttt{API\_}\allowbreak{}\texttt{KEY}
+& vazio & Chave da Anthropic (é separada de uma assinatura Claude Pro).
+Mesmo comportamento da chave do Gemini. \\
+\end{longtable}
+}
+
+O provedor e o modelo de cada ponto de uso são escolhidos na tela (ver
+\hyperref[4-provedores-de-ia]{seção 4}). Os modelos iniciais estão na
+\hyperref[63-inteliguxeancia-artificial]{seção 6.3}.
+
+\section{3.9 Endereço do Ollama}\label{endereuxe7o-do-ollama}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.1667}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.2333}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.6000}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Variável
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Padrão
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Descrição
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{OLLAMA\_}\allowbreak{}\texttt{BASE\_}\allowbreak{}\texttt{URL} &
+\texttt{http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{11434}
+& Endereço do servidor compatível com a API da OpenAI. Local: o serviço
+do Docker. Intranet: o endpoint da intranet. Copiado para o banco na
+primeira subida. \\
+\texttt{OLLAMA\_}\allowbreak{}\texttt{API\_}\allowbreak{}\texttt{KEY} &
+vazio & Bearer token. Deixe vazio para o Ollama local, que não exige
+autenticação. \\
+\end{longtable}
+}
+
+\section{3.10 Credenciais de busca}\label{credenciais-de-busca}
+
+Veja a \hyperref[5-apis-de-busca]{seção 5} para o passo a passo.
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}lll@{}}
+\toprule\noalign{}
+Variável & Padrão & Descrição \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{LENS\_}\allowbreak{}\texttt{API\_}\allowbreak{}\texttt{TOKEN} &
+vazio & Token da API Lens (patentes e artigos). \\
+\texttt{OPS\_}\allowbreak{}\texttt{CONSUMER\_}\allowbreak{}\texttt{KEY}
+& vazio & Consumer key OAuth2 da OPS (EPO). \\
+\texttt{OPS\_}\allowbreak{}\texttt{CONSUMER\_}\allowbreak{}\texttt{SECRET}
+& vazio & Consumer secret OAuth2 da OPS. \\
+\texttt{SCOPUS\_}\allowbreak{}\texttt{API\_}\allowbreak{}\texttt{KEY} &
+vazio & Chave da Scopus (Elsevier). \\
+\end{longtable}
+}
+
+\section{3.11 Frontend}\label{frontend}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.1667}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.2833}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.5500}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Variável
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Padrão
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Descrição
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{VITE\_}\allowbreak{}\texttt{API\_}\allowbreak{}\texttt{BASE\_}\allowbreak{}\texttt{URL}
+&
+\texttt{http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{8000/}\allowbreak{}\texttt{api/}\allowbreak{}\texttt{v1}
+& Endereço da API vista pelo navegador. Só mude se o backend estiver em
+outro endereço. Vale após reiniciar o servidor de desenvolvimento do
+frontend. \\
+\end{longtable}
+}
+
+Se essa variável não for definida, o padrão do código é usado.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{4. Provedores de IA}\label{provedores-de-ia}
+
+O sistema usa IA em \textbf{cinco pontos de uso} (chamadas), e cada um
+pode apontar para um provedor diferente:
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.2333}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.7667}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Ponto de uso
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Para que serve
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{theme\_}\allowbreak{}\texttt{candidates} & Geração e
+especificação de variações do tema (Refinamento de Parâmetros). \\
+\texttt{probe\_}\allowbreak{}\texttt{query} & Geração da query
+exploratória. \\
+\texttt{final\_}\allowbreak{}\texttt{query} & Geração da query final. \\
+\texttt{report\_}\allowbreak{}\texttt{writing} & Redação do texto das
+seções do relatório. \\
+\texttt{report\_}\allowbreak{}\texttt{review} & Sugestões de revisão de
+texto do relatório. \\
+\end{longtable}
+}
+
+\section{4.1 Cadastrar um provedor}\label{cadastrar-um-provedor}
+
+Tela \textbf{Configurações › Inteligência Artificial › Provider}, botão
+\textbf{Adicionar nova configuração}. Campos:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Provider:} \texttt{gemini}, \texttt{anthropic} ou
+  \texttt{ollama} (este cobre qualquer servidor compatível com a API da
+  OpenAI: Ollama local ou o LLM da intranet).
+\item
+  \textbf{Modelo:} nome do modelo no provedor (ex.:
+  \texttt{gemini-}\allowbreak{}\texttt{2.}\allowbreak{}\texttt{0-}\allowbreak{}\texttt{flash-}\allowbreak{}\texttt{exp},
+  \texttt{claude-}\allowbreak{}\texttt{haiku-}\allowbreak{}\texttt{4-}\allowbreak{}\texttt{5},
+  \texttt{qwen2.}\allowbreak{}\texttt{5:}\allowbreak{}\texttt{3b-}\allowbreak{}\texttt{instruct}).
+\item
+  \textbf{Base URL:} obrigatória para \texttt{ollama}.
+\item
+  \textbf{API key:} obrigatória para \texttt{gemini} e
+  \texttt{anthropic}; \textbf{opcional} para \texttt{ollama}.
+\end{itemize}
+
+Uma mesma combinação de provedor, modelo e URL não pode ser cadastrada
+duas vezes (o sistema recusa com ``talvez já exista uma igual'').
+
+\section{4.2 Escolher o provedor de cada ponto de
+uso}\label{escolher-o-provedor-de-cada-ponto-de-uso}
+
+Na mesma tela, \textbf{Qual IA cada chamada usa}: para cada ponto de
+uso, escolha uma das configurações cadastradas. A troca vale para a
+\textbf{próxima} chamada.
+
+\section{4.3 Remover um provedor}\label{remover-um-provedor}
+
+\textbf{Remover configuração} exclui o cadastro. Os pontos de uso que o
+usavam precisam ser reapontados antes.
+
+\section{4.4 Chaves de API e
+segurança}\label{chaves-de-api-e-seguranuxe7a}
+
+A chave gravada no banco aparece \textbf{mascarada} nas listagens da
+tela. Ela fica guardada no banco, então proteja o acesso ao PostgreSQL
+(ver \hyperref[9-seguranuxe7a]{seção 9}).
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{5. APIs de busca}\label{apis-de-busca}
+
+O sistema consulta \textbf{duas famílias} de fontes:
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.1356}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.5763}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.2881}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Família
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Fontes disponíveis
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Padrão na primeira subida
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\textbf{Patentes} & OPS (Escritório Europeu de Patentes), Lens Patent &
+OPS \\
+\textbf{Artigos} & Scopus, Lens Scholarly & Scopus \\
+\end{longtable}
+}
+
+Também existe a \textbf{OpenAlex} (pública, sem chave), usada como
+complemento para obter resumos que a Scopus não devolve para algumas
+chaves. Ela não exige configuração.
+
+\section{5.1 Passo a passo}\label{passo-a-passo}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  \textbf{Obtenha as credenciais} (são pessoais; não as envie a
+  repositórios nem por canais inseguros):
+
+  \begin{itemize}
+  \tightlist
+  \item
+    \textbf{OPS:} consumer key e secret, no portal de desenvolvedores do
+    Escritório Europeu de Patentes.
+  \item
+    \textbf{Scopus:} API key, no portal de desenvolvedores da Elsevier.
+  \item
+    \textbf{Lens:} token, em lens.org (serve para patentes e artigos).
+  \end{itemize}
+\item
+  \textbf{Preencha} as credenciais no
+  \texttt{.}\allowbreak{}\texttt{env} antes da primeira subida (elas são
+  copiadas para o banco nessa subida), ou depois em Configurações ›
+  Busca e credenciais:
+  \texttt{OPS\_}\allowbreak{}\texttt{CONSUMER\_}\allowbreak{}\texttt{KEY},
+  \texttt{OPS\_}\allowbreak{}\texttt{CONSUMER\_}\allowbreak{}\texttt{SECRET},
+  \texttt{SCOPUS\_}\allowbreak{}\texttt{API\_}\allowbreak{}\texttt{KEY}
+  e
+  \texttt{LENS\_}\allowbreak{}\texttt{API\_}\allowbreak{}\texttt{TOKEN}.
+\item
+  \textbf{Escolha a API ativa} de cada família na tela Busca (ou via
+  API, ver \hyperref[8-configurauxe7uxe3o-pela-api]{seção 8}).
+\item
+  \textbf{Reinicie o backend.} Esse passo é obrigatório: os adaptadores
+  de busca são montados na subida. Sem o reinício, a API que você acabou
+  de configurar \textbf{não aparece} como disponível, mesmo com a chave
+  preenchida.
+\end{enumerate}
+
+\section{5.2 O que acontece sem
+credencial}\label{o-que-acontece-sem-credencial}
+
+\begin{itemize}
+\tightlist
+\item
+  A família sem credencial é \textbf{pulada} na montagem (aviso
+  \texttt{container\_}\allowbreak{}\texttt{*\_}\allowbreak{}\texttt{api\_}\allowbreak{}\texttt{skipped\ …\ missing\_}\allowbreak{}\texttt{credentials}
+  no log).
+\item
+  O sistema sobe normalmente, mas a busca externa daquela família volta
+  \textbf{vazia}.
+\item
+  Com nenhuma API de patentes e nenhuma de artigos configurada, nenhuma
+  prospecção retorna resultados.
+\end{itemize}
+
+\section{5.3 Como uma API é
+escolhida}\label{como-uma-api-uxe9-escolhida}
+
+\begin{itemize}
+\tightlist
+\item
+  Família \textbf{Patentes}: a seleção guarda a API ativa (\texttt{ops}
+  ou \texttt{lens\_}\allowbreak{}\texttt{patent}).
+\item
+  Família \textbf{Artigos}: idem, com \texttt{scopus} ou
+  \texttt{lens\_}\allowbreak{}\texttt{scholarly}.
+\item
+  A tela Busca mostra as opções e o estado de cada uma.
+\end{itemize}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{6. Parâmetros da tela
+Configurações}\label{paruxe2metros-da-tela-configurauxe7uxf5es}
+
+A tela \textbf{Configurações} tem seis grupos. Cada parâmetro abaixo é
+editável, gravado no banco e aplicado ao vivo (exceto os marcados como
+reinício). Os padrões são os do código; o valor \textbf{vigente} é o que
+aparece na tela.
+
+\section{6.1 Geral}\label{geral}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.1667}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2500}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.3833}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Parâmetro
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Chave
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Padrão
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Para que serve
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Modelo de teste & \texttt{test\_}\allowbreak{}\texttt{mode} &
+\texttt{false} & Usa respostas falsas em todas as chamadas de IA. Não
+ligar em uso normal. \\
+Modelo do KeyBERT &
+\texttt{llm\_}\allowbreak{}\texttt{keybert\_}\allowbreak{}\texttt{model}
+&
+\texttt{distiluse-}\allowbreak{}\texttt{base-}\allowbreak{}\texttt{multilingual-}\allowbreak{}\texttt{cased-}\allowbreak{}\texttt{v2}
+& Modelo de embeddings da extração de termos e do RAG. \textbf{Reinício
+obrigatório.} \\
+Timeout do Ollama (s) &
+\texttt{ollama\_}\allowbreak{}\texttt{request\_}\allowbreak{}\texttt{timeout\_}\allowbreak{}\texttt{seconds}
+& \texttt{600} & Espera máxima por chamadas ao servidor Ollama ou
+compatível. \\
+Corte relativo do RAG &
+\texttt{rag\_}\allowbreak{}\texttt{relative\_}\allowbreak{}\texttt{min\_}\allowbreak{}\texttt{relevance}
+& \texttt{0.}\allowbreak{}\texttt{75} & Descarta trechos recuperados
+muito abaixo do melhor. \\
+Top-K do RAG por seção &
+\texttt{rag\_}\allowbreak{}\texttt{top\_}\allowbreak{}\texttt{k\_}\allowbreak{}\texttt{per\_}\allowbreak{}\texttt{section}
+& \texttt{5} & Quantos trechos entram no prompt de cada seção. \\
+Idioma da revisão de texto &
+\texttt{languagetool\_}\allowbreak{}\texttt{language} &
+\texttt{pt-}\allowbreak{}\texttt{BR} & Idioma do botão Revisão do
+editor. \\
+\end{longtable}
+}
+
+\section{6.2 Busca}\label{busca}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.1311}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.4098}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.0492}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.4098}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Parâmetro
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Chave
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Padrão
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Para que serve
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Ano inicial padrão &
+\texttt{search\_}\allowbreak{}\texttt{year\_}\allowbreak{}\texttt{from}
+& \texttt{2015} & Início da janela da busca exploratória. Quanto mais
+antigo, mais lenta e menos focada. \\
+Ano final padrão &
+\texttt{search\_}\allowbreak{}\texttt{year\_}\allowbreak{}\texttt{to} &
+\texttt{2026} & Fim da janela. Não deve ser maior que o ano atual. \\
+Top-K da probe &
+\texttt{probe\_}\allowbreak{}\texttt{top\_}\allowbreak{}\texttt{k} &
+\texttt{10} & Resultados da busca exploratória. Aumentar encarece a
+extração de termos. \\
+Top-K da busca final &
+\texttt{final\_}\allowbreak{}\texttt{top\_}\allowbreak{}\texttt{k} &
+\texttt{100} & Resultados da busca final para os agregados. Muito alto
+pode esbarrar em paginação das APIs. \\
+Credenciais de busca &
+\texttt{lens\_}\allowbreak{}\texttt{api\_}\allowbreak{}\texttt{token},
+\texttt{ops\_}\allowbreak{}\texttt{consumer\_}\allowbreak{}\texttt{key},
+\texttt{ops\_}\allowbreak{}\texttt{consumer\_}\allowbreak{}\texttt{secret},
+\texttt{scopus\_}\allowbreak{}\texttt{api\_}\allowbreak{}\texttt{key} &
+vazio & Ver \hyperref[5-apis-de-busca]{seção 5}. \\
+\end{longtable}
+}
+
+\section{6.3 Inteligência Artificial}\label{inteliguxeancia-artificial}
+
+Tela própria, com provedores e pontos de uso. Ver
+\hyperref[4-provedores-de-ia]{seção 4}.
+
+Os modelos iniciais dos provedores não são parâmetros da tela: são
+gravados no cadastro do provedor na primeira subida e podem ser
+alterados lá.
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.1167}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.2333}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.6500}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Provedor
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Modelo inicial
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Observação
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{ollama} &
+\texttt{qwen2.}\allowbreak{}\texttt{5:}\allowbreak{}\texttt{3b-}\allowbreak{}\texttt{instruct}
+& Cadastrado sempre. O endereço vem de
+\texttt{OLLAMA\_}\allowbreak{}\texttt{BASE\_}\allowbreak{}\texttt{URL}. \\
+\texttt{gemini} &
+\texttt{gemini-}\allowbreak{}\texttt{2.}\allowbreak{}\texttt{0-}\allowbreak{}\texttt{flash-}\allowbreak{}\texttt{exp}
+& Cadastrado só se
+\texttt{LLM\_}\allowbreak{}\texttt{GEMINI\_}\allowbreak{}\texttt{API\_}\allowbreak{}\texttt{KEY}
+estiver preenchida. \\
+\texttt{anthropic} &
+\texttt{claude-}\allowbreak{}\texttt{haiku-}\allowbreak{}\texttt{4-}\allowbreak{}\texttt{5}
+& Cadastrado só se
+\texttt{LLM\_}\allowbreak{}\texttt{ANTHROPIC\_}\allowbreak{}\texttt{API\_}\allowbreak{}\texttt{KEY}
+estiver preenchida. \\
+\end{longtable}
+}
+
+\section{6.4 Relevância \& Qualidade}\label{relevuxe2ncia-qualidade}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2500}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2333}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.0500}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.4667}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Parâmetro
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Chave
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Padrão
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Para que serve
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Threshold de relevância &
+\texttt{relevance\_}\allowbreak{}\texttt{threshold} &
+\texttt{0.}\allowbreak{}\texttt{4} & Corte mínimo para um resultado ser
+considerado válido. \\
+Complexidade máxima de query &
+\texttt{llm\_}\allowbreak{}\texttt{max\_}\allowbreak{}\texttt{query\_}\allowbreak{}\texttt{complexity}
+& \texttt{0.}\allowbreak{}\texttt{6} & Teto de complexidade de query
+gerada por IA. \\
+\end{longtable}
+}
+
+\section{6.5 Extração de Termos}\label{extrauxe7uxe3o-de-termos}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2034}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2881}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.0508}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.4576}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Parâmetro
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Chave
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Padrão
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Efeito de aumentar
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Peso do título &
+\texttt{term\_}\allowbreak{}\texttt{extraction\_}\allowbreak{}\texttt{title\_}\allowbreak{}\texttt{weight}
+& \texttt{3.}\allowbreak{}\texttt{0} & Termos dependem mais do
+título. \\
+Peso do abstract &
+\texttt{term\_}\allowbreak{}\texttt{extraction\_}\allowbreak{}\texttt{abstract\_}\allowbreak{}\texttt{weight}
+& \texttt{1.}\allowbreak{}\texttt{0} & Abstract domina sobre o
+título. \\
+Threshold de score &
+\texttt{term\_}\allowbreak{}\texttt{extraction\_}\allowbreak{}\texttt{score\_}\allowbreak{}\texttt{threshold}
+& \texttt{0.}\allowbreak{}\texttt{024} & Menos termos, só os melhores.
+Se o lote inteiro ficar abaixo, entra o piso abaixo. \\
+Piso de termos devolvidos &
+\texttt{term\_}\allowbreak{}\texttt{extraction\_}\allowbreak{}\texttt{min\_}\allowbreak{}\texttt{returned\_}\allowbreak{}\texttt{terms}
+& \texttt{10} & Mais termos garantidos, possivelmente de qualidade
+menor. \\
+Penalidade de unigrama &
+\texttt{term\_}\allowbreak{}\texttt{extraction\_}\allowbreak{}\texttt{unigram\_}\allowbreak{}\texttt{penalty}
+& \texttt{-}\allowbreak{}\texttt{0.}\allowbreak{}\texttt{4} & Mais
+negativo favorece termos compostos. \\
+Bônus de bigrama &
+\texttt{term\_}\allowbreak{}\texttt{extraction\_}\allowbreak{}\texttt{bigram\_}\allowbreak{}\texttt{bonus}
+& \texttt{0.}\allowbreak{}\texttt{0} & Favorece bigramas quando alto. \\
+Bônus de trigrama &
+\texttt{term\_}\allowbreak{}\texttt{extraction\_}\allowbreak{}\texttt{trigram\_}\allowbreak{}\texttt{bonus}
+& \texttt{0.}\allowbreak{}\texttt{25} & Favorece frases mais longas e
+específicas. \\
+Penalidade de bigrama ruim &
+\texttt{term\_}\allowbreak{}\texttt{extraction\_}\allowbreak{}\texttt{bad\_}\allowbreak{}\texttt{bigram\_}\allowbreak{}\texttt{penalty}
+& \texttt{-}\allowbreak{}\texttt{0.}\allowbreak{}\texttt{8} & Filtra
+mais padrões gramaticais ruins. \\
+Penalidade de trigrama ruim &
+\texttt{term\_}\allowbreak{}\texttt{extraction\_}\allowbreak{}\texttt{bad\_}\allowbreak{}\texttt{trigram\_}\allowbreak{}\texttt{penalty}
+& \texttt{-}\allowbreak{}\texttt{0.}\allowbreak{}\texttt{8} & Idem, para
+trigramas. \\
+BM25 k1 &
+\texttt{term\_}\allowbreak{}\texttt{extraction\_}\allowbreak{}\texttt{bm25\_}\allowbreak{}\texttt{k1}
+& \texttt{1.}\allowbreak{}\texttt{2} & Termos muito repetidos dominam
+mais. \\
+BM25 b &
+\texttt{term\_}\allowbreak{}\texttt{extraction\_}\allowbreak{}\texttt{bm25\_}\allowbreak{}\texttt{b}
+& \texttt{0.}\allowbreak{}\texttt{75} & Penaliza mais documentos
+longos. \\
+RRF k &
+\texttt{term\_}\allowbreak{}\texttt{extraction\_}\allowbreak{}\texttt{rrf\_}\allowbreak{}\texttt{k}
+& \texttt{60} & Valores altos suavizam a fusão de rankings. \\
+Frequência mínima (C-value) &
+\texttt{term\_}\allowbreak{}\texttt{extraction\_}\allowbreak{}\texttt{cvalue\_}\allowbreak{}\texttt{min\_}\allowbreak{}\texttt{frequency}
+& \texttt{1} & Descarta termos raros. \\
+\end{longtable}
+}
+
+\section{6.6 Inferência Estatística}\label{inferuxeancia-estatuxedstica}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2131}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.3443}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.0492}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.3934}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Parâmetro
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Chave
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Padrão
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Para que serve
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Duração máxima (s) &
+\texttt{statistical\_}\allowbreak{}\texttt{inference\_}\allowbreak{}\texttt{max\_}\allowbreak{}\texttt{duration\_}\allowbreak{}\texttt{seconds}
+& \texttt{60} & Tempo para pedir buscas extras até a amostra saturar. \\
+Threshold de saturação &
+\texttt{statistical\_}\allowbreak{}\texttt{inference\_}\allowbreak{}\texttt{saturation\_}\allowbreak{}\texttt{threshold}
+& \texttt{0.}\allowbreak{}\texttt{5} & Cobertura mínima estimada. \\
+Threshold de singletons &
+\texttt{statistical\_}\allowbreak{}\texttt{inference\_}\allowbreak{}\texttt{f1\_}\allowbreak{}\texttt{ratio\_}\allowbreak{}\texttt{threshold}
+& \texttt{0.}\allowbreak{}\texttt{7} & Proporção máxima de itens vistos
+uma vez. \\
+Mínimo de doubletons &
+\texttt{statistical\_}\allowbreak{}\texttt{inference\_}\allowbreak{}\texttt{f2\_}\allowbreak{}\texttt{min}
+& \texttt{5} & Mínimo de itens vistos duas vezes. \\
+Reamostragens (bootstrap) &
+\texttt{statistical\_}\allowbreak{}\texttt{inference\_}\allowbreak{}\texttt{bootstrap\_}\allowbreak{}\texttt{resamples}
+& \texttt{1000} & Precisão da estabilidade do ranking. Mais = mais
+lento. \\
+Máximo de títulos (relevância) &
+\texttt{statistical\_}\allowbreak{}\texttt{inference\_}\allowbreak{}\texttt{max\_}\allowbreak{}\texttt{titles\_}\allowbreak{}\texttt{for\_}\allowbreak{}\texttt{relevance}
+& \texttt{20} & Títulos usados na relevância semântica. \\
+\end{longtable}
+}
+
+\section{6.7 Fuzzy matching}\label{fuzzy-matching}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2667}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.0500}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.4833}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Parâmetro
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Chave
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Padrão
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Para que serve
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Threshold de fuzzy match &
+\texttt{depositant\_}\allowbreak{}\texttt{fuzzy\_}\allowbreak{}\texttt{match\_}\allowbreak{}\texttt{threshold}
+& \texttt{90.}\allowbreak{}\texttt{0} & Similaridade para tratar nomes
+parecidos como a mesma entidade. Mais baixo agrupa mais (risco de juntar
+entidades diferentes). \\
+\end{longtable}
+}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{7. Relatório: capa, LaTeX e
+revisão}\label{relatuxf3rio-capa-latex-e-revisuxe3o}
+
+\section{7.1 Imagem de capa}\label{imagem-de-capa}
+
+Tela \textbf{Configurações › Geral › Imagem de capa do relatório}, com
+recorte. Use \textbf{Trocar imagem} para enviar outra capa, ou
+\textbf{Restaurar imagem padrão} para voltar ao brasão do sistema. A
+capa padrão é enviada ao MinIO automaticamente na subida, se ainda não
+houver capa. Uma capa enviada pelo usuário nunca é sobrescrita pelo
+sistema. A imagem recortada é usada na capa do REPTEC.
+
+API: \texttt{GET}, \texttt{POST} e
+\texttt{DELETE\ /}\allowbreak{}\texttt{config/}\allowbreak{}\texttt{report-}\allowbreak{}\texttt{cover-}\allowbreak{}\texttt{image}
+(o \texttt{DELETE} restaura a capa padrão).
+
+\section{7.2 Compilação de PDF}\label{compilauxe7uxe3o-de-pdf}
+
+O PDF é gerado pelo serviço
+\texttt{latex-}\allowbreak{}\texttt{compiler} (container), sob demanda.
+Limites do compilador:
+
+\begin{itemize}
+\tightlist
+\item
+  Roda \textbf{sem internet}: só usa os pacotes instalados no serviço.
+\item
+  Usa \textbf{pdflatex}
+  (\texttt{latexmk\ -}\allowbreak{}\texttt{pdf\ -}\allowbreak{}\texttt{halt-}\allowbreak{}\texttt{on-}\allowbreak{}\texttt{error},
+  limite de 120 s por compilação).
+\item
+  Não suporta \texttt{fontspec} nem XeLaTeX/LuaLaTeX; caracteres fora do
+  alfabeto latino não compilam.
+\end{itemize}
+
+\textbf{Pacotes disponíveis:} \texttt{graphicx}, \texttt{float},
+\texttt{tabularx}, \texttt{array}, \texttt{enumitem}, \texttt{caption},
+\texttt{hyperref}, \texttt{setspace} e \texttt{babel} (português), além
+dos que o próprio template carrega (\texttt{geometry},
+\texttt{fancyhdr}, \texttt{microtype}, \texttt{lastpage},
+\texttt{titlesec}, \texttt{tocloft}, \texttt{indentfirst},
+\texttt{tgtermes}). As coleções LaTeX recomendadas e de fontes também
+estão instaladas.
+
+\textbf{Pacotes ausentes:} \texttt{multirow}, \texttt{makecell},
+\texttt{siunitx}, \texttt{wrapfig}, \texttt{ulem} e \texttt{soul}. Um
+\texttt{\textbackslash{}usepackage} desses interrompe a compilação com
+``File \ldots{} .sty not found''.
+
+Para adicionar um pacote ao compilador, inclua-o na lista de instalação
+do serviço \texttt{latex-}\allowbreak{}\texttt{compiler} e reconstrua
+esse serviço. Isso exige internet no momento do build.
+
+\section{7.3 Revisão de texto}\label{revisuxe3o-de-texto}
+
+O botão \textbf{Revisão} usa o LanguageTool
+(\texttt{LANGUAGETOOL\_}\allowbreak{}\texttt{URL}, idioma
+\texttt{languagetool\_}\allowbreak{}\texttt{language}) e a IA para
+sugerir correções. Cada sugestão é aplicada ou ignorada individualmente.
+O sistema recusa sugestões que alterem tempo verbal, pontuação ou
+maiúsculas.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{8. Configuração pela API}\label{configurauxe7uxe3o-pela-api}
+
+Todas as rotas ficam sob
+\texttt{/}\allowbreak{}\texttt{api/}\allowbreak{}\texttt{v1}. A
+documentação interativa fica em \url{http://localhost:8000/docs}.
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.4500}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.5500}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Método e rota
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Função
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{GET\ /}\allowbreak{}\texttt{config/}\allowbreak{}\texttt{settings}
+& Lista todas as configurações editáveis, com valor, tipo, categoria e
+limites. \\
+\texttt{PUT\ /}\allowbreak{}\texttt{config/}\allowbreak{}\texttt{settings/}\allowbreak{}\texttt{\{key\}}
+& Altera uma configuração. Corpo:
+\texttt{\{"value":}\allowbreak{}\texttt{\ ".}\allowbreak{}\texttt{.}\allowbreak{}\texttt{.}\allowbreak{}\texttt{"\}}.
+\textbf{O valor é sempre texto}, mesmo para números e booleanos (ex.:
+\texttt{"2015"}, \texttt{"false"}). Aplicada imediatamente. \\
+\texttt{GET\ /}\allowbreak{}\texttt{config/}\allowbreak{}\texttt{search-}\allowbreak{}\texttt{apis}
+& Mostra as opções de API por família e a ativa. \\
+\texttt{PUT\ /}\allowbreak{}\texttt{config/}\allowbreak{}\texttt{search-}\allowbreak{}\texttt{apis/}\allowbreak{}\texttt{\{family\}}
+& Troca a API ativa. Corpo:
+\texttt{\{"active\_}\allowbreak{}\texttt{provider\_}\allowbreak{}\texttt{code":}\allowbreak{}\texttt{\ "ops"\}}.
+\textbf{Reinício obrigatório.} \\
+\texttt{GET\ /}\allowbreak{}\texttt{config/}\allowbreak{}\texttt{llm/}\allowbreak{}\texttt{providers}
+& Provedores suportados e se exigem chave ou URL. \\
+\texttt{GET\ /}\allowbreak{}\texttt{config/}\allowbreak{}\texttt{llm/}\allowbreak{}\texttt{configs}
+& Configurações de IA cadastradas (chave mascarada). \\
+\texttt{POST\ /}\allowbreak{}\texttt{config/}\allowbreak{}\texttt{llm/}\allowbreak{}\texttt{configs}
+& Cadastra uma configuração de IA. \\
+\texttt{PUT\ /}\allowbreak{}\texttt{config/}\allowbreak{}\texttt{llm/}\allowbreak{}\texttt{configs/}\allowbreak{}\texttt{\{id\}}
+& Altera uma configuração de IA. \\
+\texttt{DELETE\ /}\allowbreak{}\texttt{config/}\allowbreak{}\texttt{llm/}\allowbreak{}\texttt{configs/}\allowbreak{}\texttt{\{id\}}
+& Remove uma configuração de IA. \\
+\texttt{GET\ /}\allowbreak{}\texttt{config/}\allowbreak{}\texttt{llm/}\allowbreak{}\texttt{call-}\allowbreak{}\texttt{sites}
+& Mostra qual configuração atende cada ponto de uso. \\
+\texttt{PUT\ /}\allowbreak{}\texttt{config/}\allowbreak{}\texttt{llm/}\allowbreak{}\texttt{call-}\allowbreak{}\texttt{sites/}\allowbreak{}\texttt{\{call\_}\allowbreak{}\texttt{site\}}
+& Aponta um ponto de uso para outra configuração. \\
+\texttt{GET}, \texttt{POST},
+\texttt{DELETE\ /}\allowbreak{}\texttt{config/}\allowbreak{}\texttt{report-}\allowbreak{}\texttt{cover-}\allowbreak{}\texttt{image}
+& Imagem de capa do relatório. \\
+\end{longtable}
+}
+
+Exemplo --- alterar o ano inicial da busca:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{curl} \OperatorTok{{-}}\NormalTok{X PUT http}\OperatorTok{://}\NormalTok{localhost}\OperatorTok{:}\DecValTok{8000}\OperatorTok{/}\NormalTok{api}\OperatorTok{/}\NormalTok{v1}\OperatorTok{/}\NormalTok{config}\OperatorTok{/}\NormalTok{settings}\OperatorTok{/}\NormalTok{search\_year\_from \textasciigrave{}}
+  \OperatorTok{{-}}\NormalTok{H }\StringTok{"Content{-}Type: application/json"}\NormalTok{ \textasciigrave{}}
+  \OperatorTok{{-}}\NormalTok{d }\StringTok{\textquotesingle{}\{"value": "2015"\}\textquotesingle{}}
+\end{Highlighting}
+\end{Shaded}
+
+Exemplo --- trocar a API de patentes para OPS:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{curl} \OperatorTok{{-}}\NormalTok{X PUT http}\OperatorTok{://}\NormalTok{localhost}\OperatorTok{:}\DecValTok{8000}\OperatorTok{/}\NormalTok{api}\OperatorTok{/}\NormalTok{v1}\OperatorTok{/}\NormalTok{config}\OperatorTok{/}\NormalTok{search{-}apis}\OperatorTok{/}\NormalTok{patent \textasciigrave{}}
+  \OperatorTok{{-}}\NormalTok{H }\StringTok{"Content{-}Type: application/json"}\NormalTok{ \textasciigrave{}}
+  \OperatorTok{{-}}\NormalTok{d }\StringTok{\textquotesingle{}\{"active\_provider\_code": "ops"\}\textquotesingle{}}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{9. Segurança}\label{seguranuxe7a}
+
+Itens que \textbf{você deve tratar antes de uso compartilhado ou em
+intranet}:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  \textbf{Senhas padrão.} Os serviços do Docker vêm com senhas de
+  desenvolvimento: PostgreSQL (\texttt{postgres}/\texttt{postgres}),
+  MinIO (\texttt{minioadmin}/\texttt{minioadmin}) e pgAdmin
+  (\texttt{admin@example.}\allowbreak{}\texttt{com}/\texttt{admin}).
+  Troque antes de expor qualquer porta.
+\item
+  \textbf{Chaves no banco.} Chaves de API de IA e de busca ficam
+  gravadas no PostgreSQL. Restrinja o acesso ao banco e não faça backup
+  em local aberto.
+\item
+  \textbf{Arquivo \texttt{.}\allowbreak{}\texttt{env} fora do
+  repositório.} O \texttt{.}\allowbreak{}\texttt{env} real contém
+  chaves. Não o envie a repositórios; confira antes de cada envio de
+  código.
+\item
+  \textbf{\texttt{SECRET\_}\allowbreak{}\texttt{KEY} e
+  \texttt{ALGORITHM} não são usados.} O sistema não tem autenticação por
+  token, então esses valores não têm efeito. Não os trate como proteção.
+\item
+  \textbf{Modo de teste desligado.}
+  \texttt{TEST\_}\allowbreak{}\texttt{MODE=}\allowbreak{}\texttt{False}
+  em uso real. Com ele ligado, a aplicação responde com dados falsos e
+  não chama nenhuma IA.
+\item
+  \textbf{CORS.} Em \texttt{ALLOWED\_}\allowbreak{}\texttt{ORIGINS},
+  deixe apenas as origens que de fato acessam a API.
+\item
+  \textbf{Exposição de portas.} Os serviços do Docker publicam portas no
+  host. Em uma máquina compartilhada, limite a interface de cada porta
+  (ex.:
+  \texttt{127.}\allowbreak{}\texttt{0.}\allowbreak{}\texttt{0.}\allowbreak{}\texttt{1:}\allowbreak{}\texttt{5432:}\allowbreak{}\texttt{5432})
+  na configuração dos serviços.
+\end{enumerate}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{10. Quando reiniciar o
+backend}\label{quando-reiniciar-o-backend}
+
+A maior parte das alterações vale na hora. \textbf{Reinicie o backend}
+nestes casos:
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.4667}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.5333}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Alteração
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Motivo
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Credenciais de OPS, Scopus ou Lens (novas ou trocadas) & Os adaptadores
+de busca são montados na subida. \\
+Troca da API ativa de patentes ou artigos & Idem. O backend registra no
+log o evento
+\texttt{search\_}\allowbreak{}\texttt{api\_}\allowbreak{}\texttt{selection\_}\allowbreak{}\texttt{updated\_}\allowbreak{}\texttt{restart\_}\allowbreak{}\texttt{required}. \\
+Modelo do KeyBERT
+(\texttt{llm\_}\allowbreak{}\texttt{keybert\_}\allowbreak{}\texttt{model})
+& Carregado uma vez no boot. \\
+Alteração no \texttt{.}\allowbreak{}\texttt{env} (credenciais e flags) &
+Lido na subida. Parâmetros de comportamento não são lidos do
+\texttt{.}\allowbreak{}\texttt{env} (ver
+\hyperref[2-ciclo-de-vida-do-env-ao-banco]{seção 2}). \\
+\texttt{ALLOWED\_}\allowbreak{}\texttt{ORIGINS},
+\texttt{DATABASE\_}\allowbreak{}\texttt{URL},
+\texttt{API\_}\allowbreak{}\texttt{PREFIX} & Configuração de subida. \\
+\end{longtable}
+}
+
+Para reiniciar: interrompa o processo do backend (\texttt{Ctrl+C}) e
+suba de novo.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{11. Exemplos de cenários}\label{exemplos-de-cenuxe1rios}
+
+Os ajustes abaixo são feitos na tela \textbf{Configurações} (não no
+\texttt{.}\allowbreak{}\texttt{env}).
+
+\textbf{Cenário A --- Máquina sem acesso a IA externa (padrão).}
+Provedor \texttt{ollama} para as queries, com
+\texttt{OLLAMA\_}\allowbreak{}\texttt{BASE\_}\allowbreak{}\texttt{URL=}\allowbreak{}\texttt{http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{11434}
+e o modelo baixado. Não precisa de chave de IA. Precisa de chave de
+busca para obter resultados.
+
+\textbf{Cenário B --- Usar Gemini para as queries e Ollama para o texto
+do relatório.} 1. Cadastre um provedor \texttt{gemini} com a chave em
+Configurações › Inteligência Artificial. 2. Em \textbf{Qual IA cada
+chamada usa}, aponte \texttt{theme\_}\allowbreak{}\texttt{candidates},
+\texttt{probe\_}\allowbreak{}\texttt{query} e
+\texttt{final\_}\allowbreak{}\texttt{query} para o Gemini. 3. Deixe
+\texttt{report\_}\allowbreak{}\texttt{writing} e
+\texttt{report\_}\allowbreak{}\texttt{review} no Ollama.
+
+\textbf{Cenário C --- Servidor de IA da intranet.} 1. Cadastre um
+provedor \texttt{ollama} com a Base URL do servidor e, se houver, a API
+key. 2. Aponte os pontos de uso para essa configuração. 3. Ajuste o
+timeout do Ollama se o servidor for lento.
+
+\textbf{Cenário D --- Busca mais focada (menos ruído).} - Aumente o
+threshold de relevância (ex.: 0,5) e o corte relativo do RAG. - Reduza o
+ano inicial se o tema for recente.
+
+\textbf{Cenário E --- Busca mais ampla (mais resultados, mais ruído).} -
+Reduza o threshold de relevância. - Aumente o Top-K da busca final
+(atenção ao tempo e aos limites das APIs).
+
+\textbf{Cenário F --- Termos mais curtos e genéricos ou mais longos e
+específicos.} - Mais longos: aumente o bônus de trigrama e deixe a
+penalidade de unigrama mais negativa. - Mais curtos: reduza o bônus de
+trigrama e aproxime a penalidade de unigrama de zero.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{12. Limitações conhecidas}\label{limitauxe7uxf5es-conhecidas}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Valores do \texttt{.}\allowbreak{}\texttt{env} após a primeira
+  subida.} Editar no \texttt{.}\allowbreak{}\texttt{env} parâmetros de
+  comportamento não tem efeito, e editar credenciais também não: ambos
+  já foram gravados no banco. Use a tela.
+\item
+  \textbf{Credenciais novas exigem reinício.} Ver
+  \hyperref[10-quando-reiniciar-o-backend]{seção 10}.
+\item
+  \textbf{Status do Ollama.} A consulta de provedor atual pode indicar
+  \texttt{available:}\allowbreak{}\texttt{\ true} mesmo com o Ollama
+  parado. Teste com
+  \texttt{curl\ http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{11434/}\allowbreak{}\texttt{api/}\allowbreak{}\texttt{tags}.
+\item
+  \textbf{Rodapé da barra lateral.} Em versões anteriores, mostrava
+  valores fixos (``LLM: GEMINI 2.5'', ``API Artigos: SCOPUS'') e não
+  refletia a configuração atual. Para conferir qual IA está em uso,
+  consulte a tela Configurações.
+\item
+  \textbf{Primeira subida precisa de internet} para baixar o modelo de
+  embeddings.
+\item
+  \textbf{Modelo do spaCy.} Ele não é instalado pelos pacotes Python do
+  projeto; instale-o conforme o passo de ambiente Python descrito na
+  instalação. Sem ele, a extração de termos funciona, mas com resultados
+  diferentes.
+\end{itemize}
+
+\end{document}

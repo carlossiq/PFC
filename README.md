@@ -18,7 +18,7 @@ verdade técnica do projeto, mais detalhada que este arquivo.
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) rodando
 - Python 3.12+
-- Node 20+ e npm
+- Node 20.19+ ou 22.12+ e npm (exigido pelo Vite 8)
 
 ### 1. Variáveis de ambiente
 
@@ -35,9 +35,9 @@ editar algo se for:
   sem eles, os adapters dessas fontes ficam desabilitados e o app sobe normalmente assim
   mesmo (log de aviso, não erro).
 
-O frontend já vem com `frontend/.env` configurado pra falar com
-`http://localhost:8000/api/v1` (default do backend local) — só mexer se o backend rodar
-em outra porta/host.
+O frontend não precisa de configuração: sem `frontend/.env`, ele usa
+`http://localhost:8000/api/v1` (default do backend local). Crie o arquivo a partir de
+`frontend/.env.example` só se o backend rodar em outra porta/host.
 
 ### 2. Subir os containers
 
@@ -75,9 +75,15 @@ falta de modelo):
 docker exec -it pfc_ollama ollama pull qwen2.5:3b-instruct
 ```
 
-**GPU (opcional, mas recomendado)**: se você tem uma GPU NVIDIA, o `docker-compose.yml`
-já pede o repasse dela pro container `ollama` (`deploy.resources.reservations.devices`).
-Sem isso o Ollama roda em CPU silenciosamente — sem erro, só lento (uma geração de texto
+**GPU (opcional, mas recomendado)**: se você tem uma GPU NVIDIA, use o override
+`docker-compose.gpu.yml`, que pede o repasse dela pro container `ollama`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+
+Sem GPU NVIDIA, **não** use esse override: a reserva de dispositivo impede o container
+`ollama` de subir. Sem o override, o Ollama roda em CPU silenciosamente — sem erro, só lento (uma geração de texto
 que leva ~3s na GPU pode levar mais de 1 minuto na CPU). Pré-requisitos, só no Windows
 com Docker Desktop: driver NVIDIA razoavelmente recente (qualquer um dos últimos anos já
 serve — CUDA-on-WSL vem embutido) e backend WSL2 do Docker Desktop habilitado (é o
@@ -97,6 +103,7 @@ python -m venv .venv
 # source .venv/bin/activate   # Linux/Mac
 
 pip install -r requirements.txt
+python -m spacy download en_core_web_sm   # modelo do spaCy (extração de termos)
 ```
 
 ### 4. Banco de dados — aplicar as migrações
@@ -105,6 +112,12 @@ Com o `postgres` do passo 2 já saudável:
 
 ```bash
 alembic upgrade head
+```
+
+Para conferir o setup do banco de ponta a ponta (migrations e seed, rodados duas vezes):
+
+```bash
+python scripts/verify_fresh_setup.py
 ```
 
 Isso cria/atualiza o schema ativo (`db/research_session_models.py` — `research_session`,
@@ -172,18 +185,9 @@ alembic downgrade -1
 ## Rodando os testes
 
 ```bash
+pip install -r requirements-dev.txt
 pytest
 ```
-
-Seis falhas pré-existentes, sem relação com nada aqui - `test_intake.py` (falha na
-coleção: `DocumentTypeEnum` não existe mais em `schemas/intake.py`), `test_llm.py`
-(`TEST_MODE` não força mock mesmo com `provider="anthropic"` explícito - vale
-investigar, pode estar deixando teste chamar API paga de verdade; e um normalizador
-com assinatura desatualizada), `test_dedup.py` (expectativa de normalização de texto
-desatualizada) e `test_chat_service_scopus_final_search.py` (3 falhas - estratégia de
-busca final Scopus, `"year"` vs `"range"`, parece drift real de lógica, não só teste
-velho). As de `test_routes.py` que testavam rotas mortas (`/intake`, `/test/llm`,
-`/test/nlp`, `/test/query-builder`, `/test/field-schema`) já foram removidas.
 
 ## Saiba mais
 

@@ -69,19 +69,9 @@ services:
       - ollama_data:/root/.ollama
     networks:
       - pfc_network
-    # Repasse de GPU NVIDIA (Docker Desktop + WSL2) - sem isso o Ollama cai
-    # pro CPU silenciosamente (log "discovering available GPUs..." sem achar
-    # nada), o que deixa a geração de texto bem mais lenta. Requer driver
-    # NVIDIA com suporte a CUDA-on-WSL no host Windows (qualquer driver
-    # razoavelmente recente já tem) - nada precisa ser instalado dentro do
-    # container além disso.
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    # Repasse de GPU NVIDIA fica em docker-compose.gpu.yml (override opcional):
+    # sem ele, o Ollama roda em CPU. Não fica aqui porque a reserva de
+    # dispositivo nvidia falha em máquinas sem GPU NVIDIA.
 
   # ChromaDB - vector store do RAG (app/adapters/driven/storage/chroma_adapter.py).
   # Container HTTP em vez de PersistentClient embutido: um client em processo

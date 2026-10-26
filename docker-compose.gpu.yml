@@ -1,0 +1,13 @@
+# Override opcional: repasse de GPU NVIDIA para o container ollama.
+# Uso: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# Exige driver NVIDIA e, no Windows, backend WSL2 do Docker Desktop. Sem GPU
+# NVIDIA, não use este arquivo - a reserva abaixo impede o container de subir.
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

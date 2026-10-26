@@ -1,0 +1,897 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+\PassOptionsToPackage{dvipsnames,svgnames,x11names}{xcolor}
+\documentclass[
+  brazilian,
+  a4paper,12pt,oneside]{report}
+\usepackage{xcolor}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\newenvironment{Shaded}{}{}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.49,0.56,0.16}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\BuiltInTok}[1]{\textcolor[rgb]{0.00,0.50,0.00}{#1}}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textit{#1}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.53,0.00,0.00}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.56,0.13,0.00}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.73,0.13,0.13}{\textit{#1}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{1.00,0.00,0.00}{\textbf{#1}}}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.25,0.63,0.44}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.02,0.16,0.49}{#1}}
+\newcommand{\ImportTok}[1]{\textcolor[rgb]{0.00,0.50,0.00}{\textbf{#1}}}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.40,0.40,0.40}{#1}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.00,0.44,0.13}{#1}}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.74,0.48,0.00}{#1}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.73,0.40,0.53}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.10,0.09,0.49}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.25,0.44,0.63}{#1}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.38,0.63,0.69}{\textbf{\textit{#1}}}}
+\usepackage{longtable,booktabs,array}
+\newcounter{none} % for unnumbered tables
+\usepackage{calc} % for calculating minipage widths
+% Correct order of tables after \paragraph or \subparagraph
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+% Allow footnotes in longtable head/foot
+\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}
+\makesavenoteenv{longtable}
+\ifLuaTeX
+\usepackage[bidi=basic,shorthands=off]{babel}
+\else
+\usepackage[bidi=default,shorthands=off]{babel}
+\fi
+\ifLuaTeX
+  \usepackage{selnolig} % disable illegal ligatures
+\fi
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\usepackage{bookmark}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  pdftitle={Manual de Instalação},
+  pdfauthor={Documentação do sistema AGIA},
+  pdflang={pt-BR},
+  colorlinks=true,
+  linkcolor={blue},
+  filecolor={Maroon},
+  citecolor={Blue},
+  urlcolor={blue},
+  pdfcreator={LaTeX via pandoc}}
+
+\title{Manual de Instalação}
+\usepackage{etoolbox}
+\makeatletter
+\providecommand{\subtitle}[1]{% add subtitle to \maketitle
+  \apptocmd{\@title}{\par {\large #1 \par}}{}{}
+}
+\makeatother
+\subtitle{Sistema AGIA --- Prospecção Tecnológica}
+\author{Documentação do sistema AGIA}
+\date{17/10/2026}
+
+\begin{document}
+\maketitle
+
+{
+\setcounter{tocdepth}{1}
+\tableofcontents
+}
+\emph{Atualizado em 17/10/2026.}
+
+Este manual leva uma máquina \textbf{sem nada instalado} até o sistema
+rodando, com banco de dados, serviços de apoio e interface. Depois da
+instalação, os parâmetros do sistema são ajustados pela tela de
+Configurações, e o uso do sistema está descrito na própria aplicação, no
+menu Documentação.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{1. Visão geral da
+arquitetura}\label{visuxe3o-geral-da-arquitetura}
+
+O sistema tem duas aplicações e seis serviços de apoio.
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.1311}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.1803}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2459}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.4426}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Componente
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Tecnologia
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Onde roda
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Função
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Backend & FastAPI (Python 3.12) & Sua máquina (\texttt{uvicorn}) & API,
+regras de negócio, orquestração das buscas e da IA \\
+Frontend & React + Vite (Node 20+) & Sua máquina
+(\texttt{npm\ run\ dev}) & Interface web \\
+\texttt{postgres} & PostgreSQL 16 & Docker & Banco principal (sessões,
+configurações, resultados) \\
+\texttt{minio} & MinIO (S3) & Docker & Armazena os gráficos, as figuras
+e a capa do relatório \\
+\texttt{ollama} & Ollama & Docker & LLM local (refino de tema, queries,
+texto do relatório) \\
+\texttt{chromadb} & ChromaDB & Docker & Base vetorial do RAG do
+relatório \\
+\texttt{latex-}\allowbreak{}\texttt{compiler} & TeX Live + FastAPI &
+Docker (construído localmente) & Compila o
+\texttt{.}\allowbreak{}\texttt{tex} em PDF \\
+\texttt{languagetool} & LanguageTool 6.8 & Docker & Revisão de
+ortografia e concordância \\
+\texttt{pgadmin} & pgAdmin 4 & Docker (opcional) & Interface web para
+inspecionar o banco \\
+\end{longtable}
+}
+
+O backend e o frontend rodam fora do Docker para facilitar a depuração e
+o recarregamento automático durante o desenvolvimento. Os serviços de
+apoio ficam em containers para que a instalação seja reproduzível.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{2. Requisitos}\label{requisitos}
+
+\section{2.1 Software}\label{software}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.1500}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.1833}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.6667}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Item
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Versão mínima
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Observação
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Docker Desktop & versão recente & No Windows, exige o backend
+\textbf{WSL 2} habilitado (padrão atual). Veja a seção 8. \\
+Python & 3.12 & Testado com 3.12.2. \\
+Node.js + npm & 20 & Necessário apenas para o frontend. \\
+Git & qualquer recente & Para obter o código. \\
+\end{longtable}
+}
+
+\section{2.2 Hardware e rede}\label{hardware-e-rede}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{GPU NVIDIA (opcional, recomendada):} o Ollama usa a GPU se ela
+  estiver disponível. Sem GPU, a geração de texto roda em CPU: sem erro,
+  mas bem mais lenta (uma geração que leva cerca de 3 s em GPU pode
+  passar de 1 minuto em CPU).
+\item
+  \textbf{Espaço em disco:} considere vários gigabytes entre imagens
+  Docker (TeX Live base, LanguageTool, Ollama), o modelo do Ollama e os
+  modelos de embedding baixados pelo Python.
+\item
+  \textbf{Internet:} necessária na \textbf{primeira instalação} para
+  baixar imagens Docker, pacotes Python e npm, o modelo do Ollama e os
+  modelos de embedding (Hugging Face). Depois disso, o sistema pode
+  rodar offline, desde que os modelos já estejam em cache.
+\item
+  \textbf{Credenciais de busca (obrigatórias para obter resultados):}
+  chaves de OPS e Scopus, ou token da Lens. Veja a seção ``Credenciais
+  de busca'' no passo 2.
+\end{itemize}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{3. Passo a passo da
+instalação}\label{passo-a-passo-da-instalauxe7uxe3o}
+
+Os comandos abaixo são para \textbf{PowerShell no Windows}. Onde o
+Linux/macOS é diferente, a alternativa aparece em comentário.
+
+\section{Passo 1 --- Obter o código}\label{passo-1-obter-o-cuxf3digo}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{git clone }\OperatorTok{\textless{}}\NormalTok{url{-}do{-}repositório}\OperatorTok{\textgreater{}}\NormalTok{ PFC}
+\FunctionTok{cd}\NormalTok{ PFC}
+\end{Highlighting}
+\end{Shaded}
+
+\section{\texorpdfstring{Passo 2 --- Criar o arquivo
+\texttt{.}\allowbreak{}\texttt{env}}{Passo 2 --- Criar o arquivo .env}}\label{passo-2-criar-o-arquivo-.env}
+
+Crie, na raiz do projeto, um arquivo chamado
+\texttt{.}\allowbreak{}\texttt{env} com o conteúdo abaixo. Ele guarda
+apenas infraestrutura, flags e credenciais. Os valores já funcionam com
+os serviços do Docker; só as credenciais de busca e de provedores
+externos precisam ser preenchidas.
+
+\begin{verbatim}
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/pfc_db
+ENVIRONMENT=development
+DEBUG=True
+LOG_LEVEL=INFO
+API_PREFIX=/api/v1
+ALLOWED_ORIGINS=["http://localhost:3000","http://localhost:5173","http://localhost:8000"]
+LENS_PATENT_ENABLED=True
+LENS_SCHOLARLY_ENABLED=True
+OPS_ENABLED=True
+SCOPUS_ENABLED=True
+LENS_ENABLED=True
+MINIO_ENDPOINT=localhost:9000
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+MINIO_BUCKET=session-charts
+MINIO_SECURE=False
+CHROMA_HOST=localhost
+CHROMA_PORT=8001
+LATEX_COMPILER_URL=http://localhost:8090
+LANGUAGETOOL_URL=http://localhost:8010
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_API_KEY=
+LLM_GEMINI_API_KEY=
+LLM_ANTHROPIC_API_KEY=
+LENS_API_TOKEN=
+OPS_CONSUMER_KEY=
+OPS_CONSUMER_SECRET=
+SCOPUS_API_KEY=
+\end{verbatim}
+
+\begin{quote}
+\textbf{Atenção:} o \texttt{ALLOWED\_}\allowbreak{}\texttt{ORIGINS}
+precisa estar em \textbf{formato JSON}
+(\texttt{{[}"http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{3000",.}\allowbreak{}\texttt{.}\allowbreak{}\texttt{.}\allowbreak{}\texttt{{]}}).
+Não use lista separada por vírgula: o backend não sobe com esse formato.
+\end{quote}
+
+Os parâmetros de comportamento (busca, IA, extração de termos,
+relatório) não entram no \texttt{.}\allowbreak{}\texttt{env}. Eles têm
+valores padrão e são ajustados pela tela de Configurações, depois da
+primeira subida.
+
+\subsection{Credenciais de busca}\label{credenciais-de-busca}
+
+Sem pelo menos uma credencial de patente e uma de artigo, a busca
+retorna vazia: o sistema sobe, mas não encontra documentos. As
+credenciais são pessoais e não devem ser enviadas a repositórios.
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{OPS (patentes):}
+  \texttt{OPS\_}\allowbreak{}\texttt{CONSUMER\_}\allowbreak{}\texttt{KEY}
+  e
+  \texttt{OPS\_}\allowbreak{}\texttt{CONSUMER\_}\allowbreak{}\texttt{SECRET},
+  obtidos no portal de desenvolvedores do Escritório Europeu de
+  Patentes.
+\item
+  \textbf{Scopus (artigos):}
+  \texttt{SCOPUS\_}\allowbreak{}\texttt{API\_}\allowbreak{}\texttt{KEY},
+  obtida no portal de desenvolvedores da Elsevier.
+\item
+  \textbf{Lens (alternativa para patentes e artigos):}
+  \texttt{LENS\_}\allowbreak{}\texttt{API\_}\allowbreak{}\texttt{TOKEN},
+  obtido em lens.org.
+\end{itemize}
+
+Preencha no \texttt{.}\allowbreak{}\texttt{env} antes da primeira
+subida. Depois disso, as credenciais também podem ser alteradas pela
+tela de Configurações, mas o backend precisa ser reiniciado para que a
+nova credencial passe a valer.
+
+\section{Passo 3 --- Subir os serviços de apoio
+(Docker)}\label{passo-3-subir-os-serviuxe7os-de-apoio-docker}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{docker compose up }\OperatorTok{{-}}\NormalTok{d }\OperatorTok{{-}{-}}\NormalTok{build}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{itemize}
+\tightlist
+\item
+  A \textbf{primeira} execução demora alguns minutos: baixa as imagens e
+  constrói o serviço \texttt{latex-}\allowbreak{}\texttt{compiler}, que
+  instala o TeX Live e os pacotes LaTeX (precisa de internet nessa
+  etapa).
+\item
+  Execuções seguintes não reconstroem nada, a menos que a configuração
+  de construção mude.
+\end{itemize}
+
+Confira o estado dos containers:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{docker compose }\FunctionTok{ps}
+\end{Highlighting}
+\end{Shaded}
+
+Todos devem estar \texttt{running} (e \texttt{healthy} onde houver
+verificação de saúde: \texttt{postgres} e \texttt{minio}).
+
+\section{Passo 4 --- Baixar o modelo do
+Ollama}\label{passo-4-baixar-o-modelo-do-ollama}
+
+O container do Ollama sobe vazio. Sem o modelo, a geração de texto do
+relatório e as queries da IA falham.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{docker exec }\OperatorTok{{-}}\NormalTok{it pfc\_ollama ollama pull qwen2}\OperatorTok{.}\DecValTok{5}\OperatorTok{:}\NormalTok{3b{-}instruct}
+\end{Highlighting}
+\end{Shaded}
+
+Confirme que o modelo aparece:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{curl}\NormalTok{ http}\OperatorTok{://}\NormalTok{localhost}\OperatorTok{:}\DecValTok{11434}\OperatorTok{/}\NormalTok{api}\OperatorTok{/}\NormalTok{tags}
+\end{Highlighting}
+\end{Shaded}
+
+\textbf{GPU (opcional):} verifique se o Ollama está usando a placa:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{docker logs pfc\_ollama }\DecValTok{2}\OperatorTok{\textgreater{}\&}\DecValTok{1} \OperatorTok{|} \FunctionTok{Select{-}String} \StringTok{"inference compute"}
+\CommentTok{\# esperado: library=CUDA name="\textless{}sua GPU\textgreater{}" ...}
+\CommentTok{\# se aparecer library=cpu, a GPU não foi repassada: revise o driver NVIDIA e o WSL 2}
+\CommentTok{\# Linux/macOS: docker logs pfc\_ollama 2\textgreater{}\&1 | grep "inference compute"}
+\end{Highlighting}
+\end{Shaded}
+
+\section{Passo 5 --- Ambiente Python do
+backend}\label{passo-5-ambiente-python-do-backend}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{python }\OperatorTok{{-}}\NormalTok{m venv }\OperatorTok{.}\FunctionTok{venv}
+\OperatorTok{.}\FunctionTok{venv}\NormalTok{\textbackslash{}Scripts\textbackslash{}activate          }\CommentTok{\# Linux/macOS: source .venv/bin/activate}
+\NormalTok{pip install }\OperatorTok{{-}}\NormalTok{r requirements}\OperatorTok{.}\FunctionTok{txt}
+\NormalTok{python }\OperatorTok{{-}}\NormalTok{m spacy download en\_core\_web\_sm}
+\end{Highlighting}
+\end{Shaded}
+
+O terceiro comando instala o \textbf{modelo do spaCy}, que não é
+instalado pelo comando anterior. Sem ele, a extração de termos roda sem
+o filtro de padrões gramaticais e sem o vetorizador de frases-chave: o
+sistema funciona, mas os termos ficam diferentes e menos precisos
+(aparece só um aviso no log).
+
+\section{Passo 6 --- Aplicar as migrações do
+banco}\label{passo-6-aplicar-as-migrauxe7uxf5es-do-banco}
+
+Com o \texttt{postgres} saudável (passo 3):
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{alembic upgrade head}
+\end{Highlighting}
+\end{Shaded}
+
+Isso cria as tabelas de sessão
+(\texttt{research\_}\allowbreak{}\texttt{session},
+\texttt{session\_}\allowbreak{}\texttt{input},
+\texttt{session\_}\allowbreak{}\texttt{probe\_}\allowbreak{}\texttt{query},
+\texttt{session\_}\allowbreak{}\texttt{chart},
+\texttt{session\_}\allowbreak{}\texttt{report} etc.). \textbf{Este passo
+é obrigatório antes do backend}: essas tabelas não são criadas pelo
+backend.
+
+Resultado esperado: a última linha mostra
+\texttt{Running\ upgrade\ .}\allowbreak{}\texttt{.}\allowbreak{}\texttt{.}\allowbreak{}\texttt{\ 9b3d5e7f1a2c}
+(ou nenhuma linha, se o banco já estiver atualizado). Para conferir:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{alembic current}
+\CommentTok{\# esperado: 9b3d5e7f1a2c (head)}
+\end{Highlighting}
+\end{Shaded}
+
+\section{Passo 7 --- Subir o backend}\label{passo-7-subir-o-backend}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{uvicorn app}\OperatorTok{.}\FunctionTok{main}\OperatorTok{:}\NormalTok{app }\OperatorTok{{-}{-}}\NormalTok{reload }\OperatorTok{{-}{-}}\NormalTok{port }\DecValTok{8000}
+\end{Highlighting}
+\end{Shaded}
+
+Na \textbf{primeira} subida, o backend:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  cria as demais tabelas (modelos e configuração editável);
+\item
+  preenche as configurações com os padrões do código (seed automático,
+  só quando as tabelas estão vazias) e envia a capa padrão do relatório
+  (um brasão) ao MinIO, se ainda não houver uma capa;
+\item
+  carrega o modelo de embeddings
+  (\texttt{distiluse-}\allowbreak{}\texttt{base-}\allowbreak{}\texttt{multilingual-}\allowbreak{}\texttt{cased-}\allowbreak{}\texttt{v2}).
+  \textbf{Ele é baixado do Hugging Face se ainda não estiver em cache},
+  o que pode levar alguns minutos e exige internet;
+\item
+  monta os serviços de busca e de IA.
+\end{enumerate}
+
+Avisos esperados no log na primeira subida, se você ainda não preencheu
+as chaves:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{container\_}\allowbreak{}\texttt{patent\_}\allowbreak{}\texttt{api\_}\allowbreak{}\texttt{skipped\ .}\allowbreak{}\texttt{.}\allowbreak{}\texttt{.}\allowbreak{}\texttt{\ missing\_}\allowbreak{}\texttt{credentials}
+\item
+  \texttt{container\_}\allowbreak{}\texttt{scholarly\_}\allowbreak{}\texttt{api\_}\allowbreak{}\texttt{skipped\ .}\allowbreak{}\texttt{.}\allowbreak{}\texttt{.}\allowbreak{}\texttt{\ missing\_}\allowbreak{}\texttt{credentials}
+\item
+  \texttt{container\_}\allowbreak{}\texttt{chromadb\_}\allowbreak{}\texttt{unavailable}
+  (só se o container do ChromaDB não estiver no ar)
+\end{itemize}
+
+Esses avisos não impedem a subida. Eles significam que a busca externa
+não tem credencial (veja ``Credenciais de busca'' no passo 2).
+
+Documentação interativa da API: \url{http://localhost:8000/docs}.
+
+\section{Passo 8 --- Subir o frontend}\label{passo-8-subir-o-frontend}
+
+Em \textbf{outro terminal}:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{cd}\NormalTok{ frontend}
+\NormalTok{npm install}
+\NormalTok{npm run dev}
+\end{Highlighting}
+\end{Shaded}
+
+Acesse \url{http://localhost:5173}.
+
+O frontend aponta para
+\texttt{http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{8000/}\allowbreak{}\texttt{api/}\allowbreak{}\texttt{v1}
+por padrão. Só crie um arquivo
+\texttt{frontend/}\allowbreak{}\texttt{.}\allowbreak{}\texttt{env}, com
+a linha
+\texttt{VITE\_}\allowbreak{}\texttt{API\_}\allowbreak{}\texttt{BASE\_}\allowbreak{}\texttt{URL=}\allowbreak{}\texttt{\textless{}endereço\ da\ API\textgreater{}},
+se o backend estiver em outro endereço.
+
+\section{Passo 9 --- Teste de fumaça (primeira
+prospecção)}\label{passo-9-teste-de-fumauxe7a-primeira-prospecuxe7uxe3o}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  Abra \url{http://localhost:5173}.
+\item
+  No menu lateral, clique em \textbf{Start}.
+\item
+  Preencha o \textbf{Tema} (ex.: ``baterias de estado sólido'') e clique
+  em \textbf{Refinar parâmetros}. A IA deve devolver 4 variações: isso
+  confirma o Ollama e o backend.
+\item
+  Volte e clique em \textbf{Gerar Query} (sem refinar). Se a busca
+  retornar resultados, as APIs estão configuradas. Se voltar vazia,
+  confira as credenciais de busca.
+\end{enumerate}
+
+Se os dois passos funcionarem, a instalação está completa.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{4. Verificação
+pós-instalação}\label{verificauxe7uxe3o-puxf3s-instalauxe7uxe3o}
+
+Use esta tabela para validar cada componente. Todos os endereços usam
+\texttt{localhost}.
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.1500}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.5500}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3000}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Verificação
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Comando
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Resultado esperado
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Containers & \texttt{docker\ compose\ ps} & Todos \texttt{running} \\
+Postgres &
+\texttt{docker\ exec\ pfc\_}\allowbreak{}\texttt{postgres\ pg\_}\allowbreak{}\texttt{isready\ -}\allowbreak{}\texttt{U\ postgres}
+& \texttt{accepting\ connections} \\
+Migrações & \texttt{alembic\ current} & \texttt{9b3d5e7f1a2c\ (head)} \\
+Backend &
+\texttt{curl\ http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{8000/}\allowbreak{}\texttt{api/}\allowbreak{}\texttt{v1/}\allowbreak{}\texttt{health}
+&
+\texttt{\{"status":}\allowbreak{}\texttt{"healthy",.}\allowbreak{}\texttt{.}\allowbreak{}\texttt{.}\allowbreak{}\texttt{\}} \\
+Lista de sessões &
+\texttt{curl\ http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{8000/}\allowbreak{}\texttt{api/}\allowbreak{}\texttt{v1/}\allowbreak{}\texttt{research-}\allowbreak{}\texttt{session}
+&
+\texttt{\{"success":}\allowbreak{}\texttt{true,"data":}\allowbreak{}\texttt{{[}.}\allowbreak{}\texttt{.}\allowbreak{}\texttt{.}\allowbreak{}\texttt{{]}\}} \\
+Configurações &
+\texttt{curl\ http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{8000/}\allowbreak{}\texttt{api/}\allowbreak{}\texttt{v1/}\allowbreak{}\texttt{config/}\allowbreak{}\texttt{settings}
+& Lista de configurações \\
+Ollama &
+\texttt{curl\ http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{11434/}\allowbreak{}\texttt{api/}\allowbreak{}\texttt{tags}
+& Lista com
+\texttt{qwen2.}\allowbreak{}\texttt{5:}\allowbreak{}\texttt{3b-}\allowbreak{}\texttt{instruct} \\
+ChromaDB &
+\texttt{curl\ http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{8001/}\allowbreak{}\texttt{api/}\allowbreak{}\texttt{v2/}\allowbreak{}\texttt{heartbeat}
+& JSON com \texttt{nanosecond\ heartbeat} \\
+Compilador LaTeX &
+\texttt{curl\ http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{8090/}\allowbreak{}\texttt{health}
+& Resposta de saúde \\
+LanguageTool & abrir \url{http://localhost:8010} & Página do
+LanguageTool \\
+MinIO & abrir \url{http://localhost:9001} (\texttt{minioadmin} /
+\texttt{minioadmin}) & Console do MinIO \\
+Frontend & abrir \url{http://localhost:5173} & Tela inicial com o menu
+lateral \\
+\end{longtable}
+}
+
+\begin{quote}
+Os endereços acima são os padrões dos serviços do Docker. Em produção ou
+na intranet, troque as senhas padrão.
+\end{quote}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{5. Operação do dia a dia}\label{operauxe7uxe3o-do-dia-a-dia}
+
+Depois da instalação, o ciclo normal é:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{\# 1. containers (se estiverem parados)}
+\NormalTok{docker compose up }\OperatorTok{{-}}\NormalTok{d}
+
+\CommentTok{\# 2. backend}
+\OperatorTok{.}\FunctionTok{venv}\NormalTok{\textbackslash{}Scripts\textbackslash{}activate}
+\NormalTok{uvicorn app}\OperatorTok{.}\FunctionTok{main}\OperatorTok{:}\NormalTok{app }\OperatorTok{{-}{-}}\NormalTok{reload }\OperatorTok{{-}{-}}\NormalTok{port }\DecValTok{8000}
+
+\CommentTok{\# 3. frontend, em outro terminal}
+\FunctionTok{cd}\NormalTok{ frontend}
+\NormalTok{npm run dev}
+\end{Highlighting}
+\end{Shaded}
+
+Para parar: \texttt{Ctrl+C} nos terminais do backend e do frontend, e
+\texttt{docker\ compose\ stop} para os containers (preserva os dados).
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{6. Atualização do sistema}\label{atualizauxe7uxe3o-do-sistema}
+
+Quando houver mudanças no repositório:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{git pull}
+\OperatorTok{.}\FunctionTok{venv}\NormalTok{\textbackslash{}Scripts\textbackslash{}activate}
+\NormalTok{pip install }\OperatorTok{{-}}\NormalTok{r requirements}\OperatorTok{.}\FunctionTok{txt}          \CommentTok{\# só se a lista de dependências mudou}
+\NormalTok{alembic upgrade head                     }\CommentTok{\# sempre que houver migrações novas}
+\NormalTok{docker compose up }\OperatorTok{{-}}\NormalTok{d }\OperatorTok{{-}{-}}\NormalTok{build             }\CommentTok{\# só se a configuração dos serviços ou o serviço latex{-}compiler mudou}
+\FunctionTok{cd}\NormalTok{ frontend}\OperatorTok{;}\NormalTok{ npm install}\OperatorTok{;} \FunctionTok{cd} \OperatorTok{..}          \CommentTok{\# só se as dependências do frontend mudaram}
+\end{Highlighting}
+\end{Shaded}
+
+Regras:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Migrações novas são aplicadas com
+  \texttt{alembic\ upgrade\ head}.} Não apague o banco para atualizar.
+\item
+  As configurações editadas pela tela \textbf{não são sobrescritas} em
+  atualizações: o banco é a fonte da verdade depois da primeira subida.
+  Alterar parâmetros no \texttt{.}\allowbreak{}\texttt{env} depois disso
+  não tem efeito.
+\item
+  Depois de atualizar, reinicie o backend.
+\end{itemize}
+
+Para criar uma nova migração (desenvolvedores):
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{alembic revision }\OperatorTok{{-}{-}}\NormalTok{autogenerate }\OperatorTok{{-}}\NormalTok{m }\StringTok{"descrição curta"}
+\end{Highlighting}
+\end{Shaded}
+
+Revise sempre o arquivo de migração gerado antes de aplicar: o
+autogenerate não detecta tudo (renomeações e mudanças de tipo podem sair
+erradas).
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{7. Testes automatizados}\label{testes-automatizados}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{pip install }\OperatorTok{{-}}\NormalTok{r requirements{-}dev}\OperatorTok{.}\FunctionTok{txt}   \CommentTok{\# pytest e dependências de teste}
+\NormalTok{pytest }\OperatorTok{{-}{-}}\NormalTok{ignore}\OperatorTok{=}\NormalTok{tests}\OperatorTok{/}\NormalTok{test\_intake}\OperatorTok{.}\FunctionTok{py}
+\end{Highlighting}
+\end{Shaded}
+
+Os testes que falham hoje não impedem a instalação nem a execução do
+sistema. A lista atual de falhas e o motivo de cada uma é mantida junto
+do código do projeto.
+
+Se você rodar \texttt{pytest} sem o
+\texttt{-}\allowbreak{}\texttt{-}\allowbreak{}\texttt{ignore}, a suíte
+inteira é interrompida na coleta: isso não significa que a instalação
+falhou.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{8. Solução de problemas}\label{soluuxe7uxe3o-de-problemas}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3333}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Sintoma
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Causa provável
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Solução
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{docker\ compose\ up} falha com ``Docker Desktop is unable to
+start \ldots{} WSL update required'' & WSL 2 desatualizado & Abra um
+terminal como administrador, rode
+\texttt{wsl\ -}\allowbreak{}\texttt{-}\allowbreak{}\texttt{update} e
+reinicie o Docker Desktop. \\
+Porta já em uso (5432, 8000, 8001, 9000, 11434\ldots) & Outro processo
+usa a porta & Veja quem usa:
+\texttt{netstat\ -}\allowbreak{}\texttt{ano\ \textbackslash{}\textbar{}\ findstr\ :}\allowbreak{}\texttt{PORTA}.
+Pare o processo ou mude a porta nos serviços do Docker e no
+\texttt{.}\allowbreak{}\texttt{env}. \\
+\textbf{MinIO ou ChromaDB não respondem e o backend trava na subida, sem
+log} & Algum processo segura a porta (9000 ou 8001) e aceita conexão sem
+responder. No Windows, o próprio
+\texttt{com.}\allowbreak{}\texttt{docker.}\allowbreak{}\texttt{backend}
+pode segurar essas portas mesmo com o Docker parado. & Libere a porta ou
+troque-a. Não há tempo limite nessa conexão, e esse travamento é um
+ponto conhecido a corrigir. \\
+Backend não sobe com erro
+\texttt{error\ parsing\ value\ for\ field\ "allowed\_}\allowbreak{}\texttt{origins"}
+& \texttt{ALLOWED\_}\allowbreak{}\texttt{ORIGINS} em formato de vírgula
+& Use JSON:
+\texttt{ALLOWED\_}\allowbreak{}\texttt{ORIGINS=}\allowbreak{}\texttt{{[}"http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{3000","http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{5173"{]}}. \\
+Termos extraídos diferentes do esperado; log com
+\texttt{spacy\_}\allowbreak{}\texttt{model\_}\allowbreak{}\texttt{not\_}\allowbreak{}\texttt{found}
+& Modelo do spaCy ausente &
+\texttt{python\ -}\allowbreak{}\texttt{m\ spacy\ download\ en\_}\allowbreak{}\texttt{core\_}\allowbreak{}\texttt{web\_}\allowbreak{}\texttt{sm} \\
+Geração de texto do relatório ou queries da IA falha & Modelo do Ollama
+não baixado &
+\texttt{docker\ exec\ -}\allowbreak{}\texttt{it\ pfc\_}\allowbreak{}\texttt{ollama\ ollama\ pull\ qwen2.}\allowbreak{}\texttt{5:}\allowbreak{}\texttt{3b-}\allowbreak{}\texttt{instruct} \\
+Geração muito lenta (minutos por seção) & Ollama rodando em CPU &
+Verifique o log (\texttt{inference\ compute}) e a GPU (passo 4 da
+instalação). \\
+Primeira subida do backend demora muito ou falha no modelo de embeddings
+& Download do Hugging Face bloqueado ou lento & Garanta internet na
+primeira subida; depois fica em cache. \\
+Build do \texttt{latex-}\allowbreak{}\texttt{compiler} falha no
+\texttt{tlmgr} & Sem internet ou repositório do CTAN indisponível & Rode
+de novo com internet. A imagem pronta não precisa de internet para
+compilar. \\
+Busca retorna vazia & Sem credenciais de patente/artigo & Preencha as
+chaves no \texttt{.}\allowbreak{}\texttt{env} (ou pela tela) e
+\textbf{reinicie o backend} (veja ``Credenciais de busca''). \\
+Página em branco no frontend, erro de CORS no console & Origem do
+frontend não está em \texttt{ALLOWED\_}\allowbreak{}\texttt{ORIGINS} &
+Adicione
+\texttt{http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{5173}
+ao \texttt{ALLOWED\_}\allowbreak{}\texttt{ORIGINS} (JSON) e reinicie o
+backend. \\
+\texttt{pytest} interrompido com erro de coleta do teste de intake &
+Teste desatualizado (ver seção 7) & Use
+\texttt{pytest\ -}\allowbreak{}\texttt{-}\allowbreak{}\texttt{ignore=}\allowbreak{}\texttt{tests/}\allowbreak{}\texttt{test\_}\allowbreak{}\texttt{intake.}\allowbreak{}\texttt{py}. \\
+\texttt{/}\allowbreak{}\texttt{chat/}\allowbreak{}\texttt{current-}\allowbreak{}\texttt{provider}
+mostra \texttt{available:}\allowbreak{}\texttt{\ true} mesmo com o
+Ollama parado & O status não testa a conexão com o Ollama & Confirme com
+\texttt{curl\ http:}\allowbreak{}\texttt{/}\allowbreak{}\texttt{/}\allowbreak{}\texttt{localhost:}\allowbreak{}\texttt{11434/}\allowbreak{}\texttt{api/}\allowbreak{}\texttt{tags}. \\
+\end{longtable}
+}
+
+Quando um problema não estiver aqui, consulte os logs:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{docker compose logs }\OperatorTok{{-}{-}}\NormalTok{tail}\OperatorTok{=}\DecValTok{100} \OperatorTok{\textless{}}\NormalTok{servico}\OperatorTok{\textgreater{}}      \CommentTok{\# ex.: postgres, ollama, latex{-}compiler}
+\end{Highlighting}
+\end{Shaded}
+
+e o terminal do \texttt{uvicorn}, que mostra cada requisição e erro com
+a linha do código.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{9. Desinstalação e reset}\label{desinstalauxe7uxe3o-e-reset}
+
+\textbf{Parar tudo, mantendo os dados:}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{docker compose stop}
+\end{Highlighting}
+\end{Shaded}
+
+\textbf{Remover os containers, mantendo os volumes (dados preservados):}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{docker compose down}
+\end{Highlighting}
+\end{Shaded}
+
+\textbf{Apagar tudo, inclusive o banco, os gráficos e os modelos do
+Ollama:}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{docker compose down }\OperatorTok{{-}}\NormalTok{v}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{quote}
+\textbf{Cuidado:} \texttt{down\ -}\allowbreak{}\texttt{v} apaga
+\textbf{permanentemente} sessões, configurações, gráficos e o modelo
+baixado do Ollama. Não é reversível.
+\end{quote}
+
+Para recomeçar só o banco (mantendo o restante):
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{docker compose down}
+\NormalTok{docker volume }\FunctionTok{rm}\NormalTok{ pfc\_postgres\_data}
+\NormalTok{docker compose up }\OperatorTok{{-}}\NormalTok{d postgres}
+\NormalTok{alembic upgrade head}
+\end{Highlighting}
+\end{Shaded}
+
+(O nome do volume depende do nome da pasta do projeto. Confira com
+\texttt{docker\ volume\ ls}.)
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\chapter{10. Referência: portas e
+endereços}\label{referuxeancia-portas-e-endereuxe7os}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.1667}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2333}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.3000}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.3000}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Serviço
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Endereço no host
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Credenciais padrão
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Observação
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Frontend & \url{http://localhost:5173} & --- & \texttt{npm\ run\ dev} \\
+Backend (API) & \url{http://localhost:8000/api/v1} & --- & \\
+Swagger (docs da API) & \url{http://localhost:8000/docs} & --- & \\
+PostgreSQL & \texttt{localhost:}\allowbreak{}\texttt{5432} &
+\texttt{postgres} / \texttt{postgres}, banco
+\texttt{pfc\_}\allowbreak{}\texttt{db} & \\
+pgAdmin & \url{http://localhost:5050} &
+\texttt{admin@example.}\allowbreak{}\texttt{com} / \texttt{admin} &
+opcional \\
+MinIO (API) & \texttt{localhost:}\allowbreak{}\texttt{9000} &
+\texttt{minioadmin} / \texttt{minioadmin} & \\
+MinIO (console) & \url{http://localhost:9001} & \texttt{minioadmin} /
+\texttt{minioadmin} & \\
+Ollama & \url{http://localhost:11434} & --- & API compatível com a da
+OpenAI em \texttt{/}\allowbreak{}\texttt{v1} \\
+ChromaDB & \texttt{localhost:}\allowbreak{}\texttt{8001} & --- & 8001 no
+host (8000 é do backend) \\
+Compilador LaTeX & \url{http://localhost:8090} & --- &
+\texttt{POST\ /}\allowbreak{}\texttt{compile} \\
+LanguageTool & \url{http://localhost:8010} & --- & \\
+\end{longtable}
+}
+
+Todas as credenciais acima são \textbf{padrões de desenvolvimento}. Em
+uso compartilhado ou em intranet, troque as senhas padrão antes de expor
+qualquer porta, e limite as portas publicadas à máquina local.
+
+\end{document}

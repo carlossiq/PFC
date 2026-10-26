@@ -18,6 +18,7 @@ from app.adapters.driving.http import (
     session_input,
 )
 from app.container import build_container, shutdown_container
+from app.core.services.report_cover_image import ensure_default_cover_image
 from app.core.services.report_static_figures import ensure_static_figures_uploaded
 from core.config import settings
 from core.logging import configure_logging, get_logger
@@ -86,6 +87,7 @@ async def lifespan(app: FastAPI):
         await app.state.container["services"]["storage"].ensure_bucket()
         logger.info("minio_bucket_ready")
         await ensure_static_figures_uploaded(app.state.container["services"]["storage"])
+        await ensure_default_cover_image(app.state.container["services"]["storage"])
     except Exception as exc:
         logger.warning("minio_bucket_ensure_failed", error=str(exc))
 

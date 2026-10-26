@@ -1,9 +1,82 @@
 .venv
 .env
+.env.*
+!.env.example
+!**/.env.example
 *.db
+*.sqlite3
 __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
 .chroma_db/
 .claude/skills/
+.claude/settings.local.json
+.claude/worktrees/
+
+# Dependências e builds locais (recriados pelo npm/pip)
+node_modules/
+dist/
+*.tsbuildinfo
+*.egg-info/
+build/
+
+# Caches de ferramentas
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# Saídas geradas em execução (não lidas pelo código)
+gerados/
+graphify-out/
+*.tmp
+
+# Sistema operacional e editor
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# Documentos pessoais e rascunhos de trabalho (fora da instalação)
+Artefatos/
+PLANO_*.md
+VERIFICACAO_*.md
+TESTE_*.md
+EXTRACAO_*.md
+
+# Documentação de frontend fora da instalação
+frontend/README.md
+frontend/CHANGELOG.md
+frontend/RELEASE_NOTES.md
+frontend/BPMN_IMPLEMENTATION.md
+frontend/DESIGN_REFERENCE.md
+frontend/DESIGN_UPDATE.md
+frontend/FIGMA_DESIGN_PROMPT.md
+frontend/FIGMA_QUICK_REFERENCE.md
+frontend/TAILWIND_GUIDE.md
+frontend/VISUAL_CHANGES.md
+
+# Pasta da monografia (PFC) - não rastreada
+PFC/
+
+# Intermediários de compilação LaTeX
+*.aux
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.toc
+*.lof
+*.lot
+*.out
+*.bbl
+*.blg
+*.nav
+*.snm
+*.vrb
+*.idx
+*.ind
+*.ilg
+*.glo
+*.log

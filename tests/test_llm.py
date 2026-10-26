@@ -56,10 +56,7 @@ def test_llm_output_normalizer_removes_empty_terms():
         ]
     )
 
-    normalized = LLMOutputNormalizer._normalize_textual_field(
-        field,
-        "test_field",
-    )
+    normalized = LLMOutputNormalizer._normalize_textual_field(field)
 
     assert "valid" in [t for group in normalized.groups for t in group.terms]
     assert "" not in [t for group in normalized.groups for t in group.terms]

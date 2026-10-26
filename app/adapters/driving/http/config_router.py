@@ -29,6 +29,7 @@ from app.core.services.report_cover_image import (
     InvalidCoverImageError,
     REPORT_COVER_IMAGE_OBJECT_KEY,
     process_cover_image,
+    restore_default_cover_image,
 )
 from app.core.services.settings_sync_service import SettingsSyncService
 from core.logging import get_logger
@@ -350,8 +351,11 @@ async def upload_report_cover_image(request: Request, file: UploadFile = File(..
 
 @router.delete("/report-cover-image", response_model=SuccessResponse[ReportCoverImageResponse])
 async def delete_report_cover_image(request: Request):
+    # "Remover" restaura a capa padrão (brasão) em vez de apagar: o seed da
+    # subida só repõe a capa se a chave não existir, então apagar de vez faria
+    # a capa padrão voltar sozinha no próximo boot.
     try:
-        await _storage(request).delete(REPORT_COVER_IMAGE_OBJECT_KEY)
+        await restore_default_cover_image(_storage(request))
     except Exception as exc:
-        logger.warning("report_cover_image_delete_failed error=%s", exc)
-    return SuccessResponse(success=True, data=ReportCoverImageResponse(has_image=False), run_id=_run_id(request))
+        logger.warning("report_cover_image_restore_failed error=%s", exc)
+    return SuccessResponse(success=True, data=ReportCoverImageResponse(has_image=True), run_id=_run_id(request))

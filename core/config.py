@@ -40,10 +40,6 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/pfc_db"
 
-    # Security
-    secret_key: str = "65E3ifwj_6WAL3FBVmOIpg4axw656GNbEOqYTJdx-cg"
-    algorithm: str = "HS256"
-
     # LLM Configuration
     llm_provider: str = "mock"
     test_mode: bool = False

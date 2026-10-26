@@ -138,5 +138,6 @@ class DedupService:
             for c in unicodedata.normalize("NFD", text)
             if unicodedata.category(c) != "Mn"
         )
+        text = re.sub(r"[-_]+", " ", text)
         text = re.sub(r"[^a-z0-9\s]", "", text)
         return " ".join(text.split())

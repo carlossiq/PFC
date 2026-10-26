@@ -44,6 +44,18 @@ def upgrade() -> None:
     # cancelar/fechar aba) - linhas remanescentes não têm session_id (conceito
     # não existia) e não representam sessões reais, por isso são descartadas
     # antes da coluna se tornar not null.
+    # Em banco novo (instalação do zero) a tabela não existe mais - ela foi
+    # criada numa versão antiga do projeto. Recria só pra essa migração poder
+    # seguir e renomear pra session_input como nos bancos antigos.
+    if not sa.inspect(op.get_bind()).has_table("param_init"):
+        op.create_table(
+            "param_init",
+            sa.Column("id", sa.Integer(), primary_key=True),
+            sa.Column("tema", sa.String(length=500), nullable=False),
+            sa.Column("descricao", sa.Text(), nullable=True),
+            sa.Column("keywords", sa.JSON(), nullable=True),
+            sa.Column("area_estudo", sa.String(length=500), nullable=True),
+        )
     op.execute("DELETE FROM param_init")
 
     op.rename_table("param_init", "session_input")

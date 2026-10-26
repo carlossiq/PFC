@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
+from core.config import settings
 from db.models import Base
 from db.session import DatabaseSession
 
@@ -63,5 +64,7 @@ def test_mode_enabled(monkeypatch):
     """
     Ativa TEST_MODE para testes.
     """
-    monkeypatch.setenv("TEST_MODE", "true")
-    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    # settings é carregado na importação (a partir do .env), então setenv não
+    # chegaria à fábrica: altera-se o singleton, que o monkeypatch restaura depois.
+    monkeypatch.setattr(settings, "test_mode", True)
+    monkeypatch.setattr(settings, "llm_provider", "mock")

@@ -108,6 +108,9 @@ async def main() -> None:
     print("=" * 60)
 
     try:
+        # Standalone não passa pelo lifespan do FastAPI, então o engine
+        # precisa ser inicializado aqui antes de criar as tabelas.
+        db_session.initialize()
         await init_db()
         print("\n" + "=" * 60)
         print("Setup completed successfully!")
@@ -117,6 +120,8 @@ async def main() -> None:
         print(f"Setup failed: {exc}")
         print("=" * 60)
         raise SystemExit(1)
+    finally:
+        await db_session.close()
 
 
 if __name__ == "__main__":

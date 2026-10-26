@@ -4,7 +4,7 @@ Tests for intake validation and models.
 
 import pytest
 
-from schemas.intake import InputIntake, DocumentTypeEnum
+from schemas.intake import InputIntake
 
 
 def test_intake_requires_theme():
@@ -15,15 +15,12 @@ def test_intake_requires_theme():
         InputIntake(theme="")
 
 
-def test_intake_normalizes_document_type():
+def test_intake_strips_theme_whitespace():
     """
-    Verifica que document_type é normalizado para 'both'.
+    Verifica que o tema é normalizado (espaços nas pontas removidos).
     """
-    intake = InputIntake(
-        theme="test",
-        document_type="patent",
-    )
-    assert intake.document_type == DocumentTypeEnum.BOTH
+    intake = InputIntake(theme="  test  ")
+    assert intake.theme == "test"
 
 
 def test_intake_validates_theme_length():
@@ -41,14 +38,13 @@ def test_intake_validates_theme_length():
 
 def test_intake_deduplicates_keywords():
     """
-    Verifica que keywords são dedupadas.
+    Verifica que keywords repetidas são removidas (duplicata exata).
     """
     intake = InputIntake(
         theme="test",
-        initial_keywords=["ai", "AI", "machine learning", "machine learning"],
+        keywords=["ai", "AI", "machine learning", "machine learning"],
     )
-    # Keywords devem ser dedupadas (case-insensitive)
-    assert len(intake.initial_keywords) <= 3
+    assert sorted(intake.keywords) == sorted({"ai", "AI", "machine learning"})
 
 
 def test_intake_removes_empty_keywords():
@@ -57,7 +53,6 @@ def test_intake_removes_empty_keywords():
     """
     intake = InputIntake(
         theme="test",
-        initial_keywords=["", "  ", "valid_keyword"],
+        keywords=["", "  ", "valid_keyword"],
     )
-    assert "valid_keyword" in intake.initial_keywords
-    assert len(intake.initial_keywords) == 1
+    assert intake.keywords == ["valid_keyword"]

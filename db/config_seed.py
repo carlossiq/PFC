@@ -13,7 +13,7 @@ from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.config import settings
+from core.config import Settings, settings
 from core.logging import get_logger
 from db.config_models import (
     AppSetting,
@@ -23,6 +23,10 @@ from db.config_models import (
 )
 
 logger = get_logger(__name__)
+
+# Provedor que atende as queries (theme/probe/final) na primeira subida. Local,
+# sem chave. Pode ser trocado depois pela tela Configurações > Inteligência Artificial.
+_DEFAULT_QUERY_PROVIDER = "ollama"
 
 
 @dataclass(frozen=True)
@@ -98,8 +102,16 @@ _SETTINGS_SEED: list[_SettingSeed] = [
 ]
 
 
-def _current_value_as_str(key: str, value_type: str) -> str:
-    raw = getattr(settings, key, None)
+def _code_default(key: str):
+    """Padrão do código (core/config.py). Parâmetros de comportamento são
+    sempre semeados a partir daqui, nunca do .env: o .env só fornece
+    infraestrutura, flags e credenciais."""
+    return Settings.model_fields[key].default
+
+
+def _seed_value_as_str(key: str, value_type: str, is_secret: bool) -> str:
+    # Segredo vem do .env (ou fica vazio). O resto, do padrão do código.
+    raw = getattr(settings, key, None) if is_secret else _code_default(key)
     if raw is None:
         return ""
     if value_type == "bool":
@@ -113,7 +125,7 @@ async def seed_app_settings(session: AsyncSession) -> None:
         return
 
     for seed in _SETTINGS_SEED:
-        current_value = _current_value_as_str(seed.key, seed.value_type)
+        current_value = _seed_value_as_str(seed.key, seed.value_type, seed.is_secret)
         session.add(
             AppSetting(
                 key=seed.key,
@@ -146,7 +158,7 @@ async def seed_missing_app_settings(session: AsyncSession) -> None:
     existing = set((await session.execute(select(AppSetting.key))).scalars())
     missing = [seed for seed in _SETTINGS_SEED if seed.key not in existing]
     for seed in missing:
-        current_value = _current_value_as_str(seed.key, seed.value_type)
+        current_value = _seed_value_as_str(seed.key, seed.value_type, seed.is_secret)
         session.add(
             AppSetting(
                 key=seed.key,
@@ -197,21 +209,21 @@ async def seed_llm_configs_and_bindings(session: AsyncSession) -> None:
     if getattr(settings, "llm_anthropic_api_key", None):
         configs["anthropic"] = LLMProviderConfig(
             provider_code="anthropic",
-            model=settings.llm_anthropic_model,
+            model=_code_default("llm_anthropic_model"),
             api_key=settings.llm_anthropic_api_key,
             base_url="",
         )
     if getattr(settings, "llm_gemini_api_key", None):
         configs["gemini"] = LLMProviderConfig(
             provider_code="gemini",
-            model=settings.llm_gemini_model,
+            model=_code_default("llm_gemini_model"),
             api_key=settings.llm_gemini_api_key,
             base_url="",
         )
     # Ollama sempre semeado - servidor local não exige api_key.
     configs["ollama"] = LLMProviderConfig(
         provider_code="ollama",
-        model=getattr(settings, "ollama_model", "qwen2.5:3b-instruct"),
+        model=_code_default("ollama_model"),
         api_key=getattr(settings, "ollama_api_key", None) or "",
         base_url=getattr(settings, "ollama_base_url", "http://localhost:11434"),
     )
@@ -222,7 +234,7 @@ async def seed_llm_configs_and_bindings(session: AsyncSession) -> None:
     for row in configs.values():
         await session.refresh(row)
 
-    query_provider = (getattr(settings, "llm_provider", "mock") or "mock").lower()
+    query_provider = _DEFAULT_QUERY_PROVIDER
     query_config = configs.get(query_provider) or configs.get("ollama")
 
     if query_config is not None:
